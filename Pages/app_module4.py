@@ -21,6 +21,9 @@ from Modules.Module_4.human_boundary import (
     normalize_image,
     validate_rectangle,
 )
+from Modules.Module_4.rgb_preprocessing import (
+    decode_rgb, map_rectangle, prepared_rgb_upload,
+)
 from Modules.Module_4.thermal_boundary import (
     find_thermal_boundary,
     normalize_thermal_image,
@@ -90,6 +93,7 @@ def update_rgb_upload():
     uploaded = st.session_state.get(f"module4_upload_{st.session_state['module4_upload_generation']}")
     st.session_state["module4_rgb_bytes"] = uploaded.getvalue() if uploaded is not None else None
     st.session_state["module4_rgb_filename"] = uploaded.name if uploaded is not None else None
+    st.session_state.pop("module4_rgb_prepared", None)
     reset_rectangle()
 
 
@@ -97,6 +101,7 @@ def clear_rgb_upload():
     st.session_state["module4_upload_generation"] += 1
     st.session_state.pop("module4_rgb_bytes", None)
     st.session_state.pop("module4_rgb_filename", None)
+    st.session_state.pop("module4_rgb_prepared", None)
     reset_rectangle()
 
 
@@ -139,20 +144,26 @@ def render_rgb():
         st.session_state["module4_image_digest"] = image_digest
 
     image = None
+    original_shape = None
     if image_bytes is not None:
-        try:
-            # Decode to BGR uint8, then let the backend normalize to its RGB convention.
-            decoded = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
-            image = normalize_image(decoded, color_order="BGR")
-        except (ValueError, cv2.error):
-            st.error("This file could not be read as an image. Please upload another JPG or PNG.")
+        image, original_shape, preparation_error = prepared_rgb_upload(
+            st.session_state, image_bytes, image_digest,
+        )
+        if preparation_error:
+            st.error(preparation_error)
+    resized = image is not None and image.shape != original_shape
+    if resized:
+        st.caption(
+            f"Image resized from {original_shape[1]} × {original_shape[0]} to "
+            f"{image.shape[1]} × {image.shape[0]} pixels for processing."
+        )
 
     rectangle = None
     rectangle_image = None
     if image is None:
         st.info("Upload an image to select a person and run the experiment.")
     else:
-        st.image(image, caption="Original RGB Image", width="stretch")
+        st.image(image, caption="RGB Image for Classical Processing" if resized else "Original RGB Image", width="stretch")
         st.subheader("Select Person Rectangle")
         st.write("Click two opposite corners to create a rectangle around the person.")
         st.caption("Include the entire person and leave some background outside the rectangle.")
@@ -223,7 +234,9 @@ def render_rgb():
     }
     shared_inputs = (image_digest, tuple(image.shape) if image is not None else None, rectangle)
     classical_inputs = (shared_inputs, tuple(settings.items()))
-    sam2_inputs = (shared_inputs, sam2_configuration())
+    sam2_rectangle = map_rectangle(rectangle, image.shape, original_shape) if rectangle is not None else None
+    sam2_shared_inputs = (image_digest, original_shape, sam2_rectangle)
+    sam2_inputs = (sam2_shared_inputs, sam2_configuration())
     if st.session_state.get("module4_shared_inputs") != shared_inputs:
         clear_results()
         st.session_state["module4_shared_inputs"] = shared_inputs
@@ -271,11 +284,12 @@ def render_rgb():
             source, config, requested_device, _ = sam2_inputs[1]
             device = select_device(requested_device)
             # Refuse oversized CPU requests before downloading or loading weights.
-            check_image_budget(image.shape, device, cpu_pixel_limit())
+            check_image_budget(original_shape, device, cpu_pixel_limit())
             with st.spinner("Preparing SAM2 model…"):
                 resource = cached_sam2_model(source, config, device)
             with st.spinner("Segmenting the selected person with SAM2…"):
-                result = run_sam2(image, rectangle, resource)
+                sam2_image = decode_rgb(image_bytes) if resized else image
+                result = run_sam2(sam2_image, sam2_rectangle, resource)
                 st.session_state["module4_sam2_results"] = result
                 st.session_state["module4_sam2_identity"] = sam2_inputs
         except SAM2ResourceLimitError as error:
@@ -312,7 +326,7 @@ def render_rgb():
         st.subheader("Results")
         original_column, smoothed_column = st.columns(2)
         with original_column:
-            st.image(rectangle_image, caption="Original Image with GrabCut Rectangle", width="stretch")
+            st.image(rectangle_image, caption="Classical Processing Image with GrabCut Rectangle" if resized else "Original Image with GrabCut Rectangle", width="stretch")
         with smoothed_column:
             st.image(results["smoothed_image"], caption="Gaussian Smoothed Image", width="stretch")
         st.image(results["canny_edges"], caption="Canny Edge Map", width="stretch")
@@ -330,7 +344,7 @@ def render_rgb():
         st.subheader("Final Human Boundary")
         if results["contour"] is None:
             st.warning("No foreground contour was found. Adjust the rectangle or settings and try again; the image below is unchanged.")
-        st.image(results["boundary_overlay"], caption="External Boundary on the Original Image", width="stretch")
+        st.image(results["boundary_overlay"], caption="External Boundary on the Classical Processing Image" if resized else "External Boundary on the Original Image", width="stretch")
         st.caption("Contour extraction selects the largest external foreground contour, assuming the person is the dominant foreground component.")
         st.metric("Selected contour area (pixels²)", f"{results['contour_area']:,.1f}")
         st.caption(f"Rectangle width × height: {rectangle[2]} × {rectangle[3]} pixels. Contour area is geometric area, not a foreground pixel count.")
@@ -371,6 +385,12 @@ def render_rgb():
     if comparison_ready and st.session_state.get("module4_comparison") == (classical_inputs, sam2_inputs):
         st.divider()
         st.subheader("Compare Results")
+        if resized:
+            st.caption(
+                f"Classical: {image.shape[1]} × {image.shape[0]} pixels. "
+                f"SAM2: original {original_shape[1]} × {original_shape[0]} pixels; "
+                "the selected rectangle is mapped to the original image."
+            )
         classical_column, sam2_column = st.columns(2)
         with classical_column:
             st.markdown("**Classical Method**")
