@@ -1,4 +1,21 @@
-streamlit
-numpy
-opencv-python-headless
-streamlit-image-coordinates
+# Streamlit Community Cloud: select Python 3.12 in deployment Advanced settings.
+# .python-version is for local tooling; it does not change an existing Cloud app.
+# Linux uses CPU wheels to avoid installing the NVIDIA runtime on Community Cloud.
+# For manual pip installation: SAM2_BUILD_CUDA=0 python -m pip install -r requirements.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+streamlit==1.64.0
+numpy==2.5.3
+opencv-python-headless==5.0.0.93
+streamlit-image-coordinates==0.4.1
+torch==2.14.0+cpu ; sys_platform == "linux"
+torchvision==0.29.0+cpu ; sys_platform == "linux"
+torch==2.14.0 ; sys_platform != "linux"
+torchvision==0.29.0 ; sys_platform != "linux"
+SAM-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4
+# Tested SAM2 runtime dependencies (no notebook/training extras).
+hydra-core==1.3.7
+omegaconf==2.3.1
+iopath==0.1.10
+tqdm==4.70.1
+pillow==12.3.0
+filelock==4.0.5

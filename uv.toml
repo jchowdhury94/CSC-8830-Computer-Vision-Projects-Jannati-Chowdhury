@@ -1,0 +1,8 @@
+# Community Cloud attempts requirements.txt installation with uv first.
+# Match pip's selection across PyPI and the official PyTorch CPU index.
+[pip]
+index-strategy = "unsafe-best-match"
+extra-build-variables = { sam-2 = { SAM2_BUILD_CUDA = "0" } }
+# SAM2 requests torch in its isolated build environment too. Keep that small
+# on Linux instead of downloading a separate CUDA build just to build SAM2.
+extra-build-dependencies = { sam-2 = ["setuptools==83.0.0", "torch==2.14.0+cpu; sys_platform == 'linux'", "torch==2.14.0; sys_platform != 'linux'"] }

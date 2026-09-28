@@ -29,6 +29,11 @@ page = st.navigation(
             title="Module 3 - Image Filtering",
             url_path="module-3",
         ),
+        st.Page(
+            "Pages/app_module4.py",
+            title="Module 4 - Edge Detection, Boundary Detection, and Features",
+            url_path="module-4",
+        ),
     ]
 )
 page.run()

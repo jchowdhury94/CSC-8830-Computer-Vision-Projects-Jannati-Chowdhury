@@ -1,0 +1,47 @@
+{
+  "input_filename": "james-kern-oWXc-6M-8UA-unsplash.jpg",
+  "input_sha256": "df55b1b5d0d50c663ed06c2326508df8ee747093d7f975c505c9cddfa9bd9ccc",
+  "image_dimensions": {
+    "width": 4554,
+    "height": 6376
+  },
+  "image_decode": "OpenCV IMREAD_COLOR, BGR converted to RGB",
+  "box_xywh": [
+    2249,
+    382,
+    1758,
+    5766
+  ],
+  "box_xyxy": [
+    2249,
+    382,
+    4007,
+    6148
+  ],
+  "model_name": "sam2.1_hiera_tiny",
+  "model_config": "configs/sam2.1/sam2.1_hiera_t.yaml",
+  "checkpoint_filename": "sam2.1_hiera_tiny.pt",
+  "device": "mps",
+  "extra_point_prompts_used": false,
+  "mask_prompt_used": false,
+  "multimask_output": false,
+  "postprocessing": {
+    "stability_fallback": true,
+    "max_hole_area": 0,
+    "max_sprinkle_area": 0
+  },
+  "overlay": "All external contours, green, thickness 2; no mask editing",
+  "outputs": {
+    "mask": "sam2_mask.png",
+    "overlay": "sam2_overlay.png",
+    "metadata": "metadata.json"
+  },
+  "package_versions": {
+    "SAM-2": "1.0",
+    "torch": "2.14.0",
+    "torchvision": "0.29.0",
+    "numpy": "2.5.3",
+    "opencv-python-headless": "5.0.0.93"
+  },
+  "sam2_revision": "2b90b9f5ceec907a1c18123530e92e794ad901a4"
+}

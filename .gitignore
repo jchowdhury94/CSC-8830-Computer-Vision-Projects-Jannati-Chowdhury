@@ -18,3 +18,7 @@ dist/
 
 # Local Streamlit cache (if present)
 .streamlit/cache/
+
+# SAM2 weights and interrupted runtime downloads never belong in Git.
+sam2.1_hiera_tiny.pt
+sam2.1_hiera_tiny.pt.*.part

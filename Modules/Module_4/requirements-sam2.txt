@@ -1,0 +1,10 @@
+# Offline comparison environment ONLY (prefer Python 3.12).
+# Install torch/torchvision together first, then use SAM2_BUILD_CUDA=0 when
+# installing this file. Never install this into the main project .venv.
+# These are setup constraints, not a tested lockfile. Preserve pip freeze and
+# metadata.json after successful inference to record resolved versions/revision.
+torch>=2.5.1
+torchvision>=0.20.1
+numpy>=1.24.4
+opencv-python-headless>=4.7.0
+SAM-2 @ git+https://github.com/facebookresearch/sam2.git
