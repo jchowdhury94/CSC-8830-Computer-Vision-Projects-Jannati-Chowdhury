@@ -16,7 +16,7 @@
 
 [https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury](https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury)
 
-This repository contains Streamlit-based projects completed for CSC 8830 Computer Vision. Modules 2, 3, and Module 4 Question 1 are currently available, and additional modules will be added throughout the course. The public Streamlit website is the easiest way to view the projects without local installation. Select a module from the sidebar to explore its interface and results.
+This repository contains Streamlit-based projects completed for CSC 8830 Computer Vision. Modules 2, 3, and 4 are currently available, and additional modules will be added throughout the course. The public Streamlit website is the easiest way to view the projects without local installation. Select a module from the sidebar to explore its interface and results.
 
 ## Current Modules
 
@@ -50,14 +50,14 @@ Representative Module 3 validation results:
 
 These representative differences are extremely close to zero and consistent with floating-point roundoff. Exact comparison values depend on the input image and filter settings.
 
-### Module 4 - Edge Detection, Boundary Detection, and Features
+### Module 4 - Edge Detection and Boundary Detection
 
-- **Question 1 - RGB Human Boundary Detection:** `Pages/app_module4.py` accepts an RGB image and lets the user select a rectangle around the person. It runs a classical computer-vision boundary-detection workflow and SAM 2.1 as the required comparison, with side-by-side masks and boundaries.
-- **Classical method:** Gaussian preprocessing smooths the image, Canny edge detection provides edge visualization, GrabCut segments the foreground using the selected rectangle, and contour extraction selects the largest external contour for the human boundary. Optional morphological cleanup is available.
-- **SAM2 comparison:** SAM 2.1 Hiera Tiny uses the same uploaded image and user-selected rectangle with a box-only prompt and no point prompts. Run SAM2 generates results dynamically; Compare Results uses the current session results. The displayed predicted mask-quality score is not measured accuracy.
-- **Model checkpoint:** The checkpoint is not stored in Git. The deployment runtime obtains and caches the official checkpoint when needed, or reuses verified local weights.
-- **Question 2 - Thermal Image:** Currently a placeholder.
-- **Question 3 - Frequency Domain Analysis:** Currently a placeholder.
+`Pages/app_module4.py` provides two human-boundary workflows:
+
+- **Question 1 - RGB Human Boundary Detection:** Upload a regular RGB image and select a rectangle around the person. Gaussian preprocessing smooths the image, Canny provides an edge visualization, and GrabCut segments the foreground using the rectangle. After optional morphological cleanup, the largest external contour is extracted and displayed over the original image. SAM 2.1 Hiera Tiny processes the same image with a box-only prompt. Classical and SAM2 masks and boundaries can be compared side by side; SAM2's predicted mask-quality score is not ground-truth accuracy.
+- **Question 2 - Thermal Human Boundary Detection:** Upload a thermal pseudocolor image. The Classical pipeline is HSV conversion → warm-color thresholding → 3×3 elliptical morphological closing → connected-component analysis → largest foreground component → external contour extraction → human-boundary overlay. The Classical boundary is bright magenta. SAM2 processes the same original uploaded thermal image using a user-selected rectangle as a box-only prompt. This rectangle affects only SAM2; the Classical thermal method does not use it. Either method can be started first, with contextual actions leading to side-by-side mask and boundary comparisons.
+- **Thermal comparison metric:** IoU is the single numerical comparison metric: foreground intersection divided by foreground union, calculated from the original masks without resizing. IoU measures the overlap/agreement between the Classical and SAM2 segmentation masks. It is not a ground-truth accuracy metric. The interface displays four decimal places, or N/A when both masks are empty.
+- **Model checkpoint:** Both workflows use SAM 2.1 Hiera Tiny. The checkpoint is not stored in Git. The runtime obtains and caches the official checkpoint when required, or reuses verified local weights.
 
 ## Project Structure
 
@@ -76,6 +76,7 @@ CSC_8830_Projects_Jannati_Chowdhury/
     ├── Module_3/
     └── Module_4/
         ├── human_boundary.py
+        ├── thermal_boundary.py
         ├── sam2_comparison.py
         ├── sam2_runtime.py
         └── requirements-sam2.txt

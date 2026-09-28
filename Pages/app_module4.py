@@ -21,6 +21,10 @@ from Modules.Module_4.human_boundary import (
     normalize_image,
     validate_rectangle,
 )
+from Modules.Module_4.thermal_boundary import (
+    find_thermal_boundary,
+    normalize_thermal_image,
+)
 from Modules.Module_4.sam2_runtime import (
     CPU_MAX_PIXELS,
     SAM2ResourceLimitError,
@@ -98,6 +102,8 @@ def clear_rgb_upload():
 
 def navigate_module4(section):
     st.session_state["module4_section"] = section
+    if section == "thermal":
+        st.session_state["module4_q2_click_generation"] = st.session_state.get("module4_q2_click_generation", 0) + 1
     # Replace the click component when revisiting RGB so an old click cannot replay.
     if section == "rgb":
         st.session_state["module4_click_generation"] = st.session_state.get("module4_click_generation", 0) + 1
@@ -379,6 +385,316 @@ def render_rgb():
             st.image(sam2_results["binary_mask"], caption="SAM2 Binary Mask", width="stretch")
             st.image(sam2_results["boundary_overlay"], caption="SAM2 Boundary", width="stretch")
 
+def clear_thermal_results(method=None):
+    """Invalidate one Q2 method or both, and always invalidate comparison."""
+    st.session_state.pop("module4_q2_comparison", None)
+    if method in (None, "classical"):
+        for key in ("module4_q2_results", "module4_q2_error", "module4_q2_classical_identity"):
+            st.session_state.pop(key, None)
+    if method in (None, "sam2"):
+        for key in ("module4_q2_sam2_results", "module4_q2_sam2_error", "module4_q2_sam2_identity"):
+            st.session_state.pop(key, None)
+
+
+def reset_thermal_rectangle():
+    """Replace Q2 click state; preserve classical thermal and all Q1 results."""
+    st.session_state["module4_q2_points"] = []
+    st.session_state["module4_q2_click_generation"] = st.session_state.get("module4_q2_click_generation", 0) + 1
+    clear_thermal_results("sam2")
+
+
+def record_thermal_corner(component_key, image_shape):
+    """Consume each actual component click once; rerenders are not clicks."""
+    click = st.session_state.get(component_key)
+    if not isinstance(click, dict):
+        return
+    event_time = click.get("unix_time")
+    if event_time is None or event_time == st.session_state.get("module4_q2_last_click_time"):
+        return
+    points = st.session_state.get("module4_q2_points", [])
+    if len(points) >= 2:
+        return
+    try:
+        point = original_point(click, image_shape)
+    except (KeyError, ValueError, TypeError, OverflowError):
+        return
+    st.session_state["module4_q2_last_click_time"] = event_time
+    st.session_state["module4_q2_points"] = [*points, point]
+    clear_thermal_results("sam2")
+
+
+def open_thermal_sam2_setup():
+    """Reveal the optional SAM2 box prompt without changing processing state."""
+    st.session_state["module4_q2_setup_open"] = True
+    st.session_state.setdefault("module4_q2_workflow", "sam2")
+
+
+def update_thermal_upload():
+    """Persist Q2 bytes across navigation, independently of uploader widgets."""
+    uploaded = st.session_state.get(f"module4_q2_upload_{st.session_state['module4_q2_upload_generation']}")
+    st.session_state["module4_q2_bytes"] = uploaded.getvalue() if uploaded is not None else None
+    st.session_state["module4_q2_filename"] = uploaded.name if uploaded is not None else None
+    clear_thermal_results()
+    reset_thermal_rectangle()
+    st.session_state["module4_q2_setup_open"] = False
+    st.session_state.pop("module4_q2_workflow", None)
+
+
+def reset_thermal_upload():
+    """Replace the Q2 uploader and clear Q2 data without touching RGB state."""
+    st.session_state["module4_q2_upload_generation"] = st.session_state.get("module4_q2_upload_generation", 0) + 1
+    for key in ("module4_q2_bytes", "module4_q2_filename", "module4_q2_digest"):
+        st.session_state.pop(key, None)
+    clear_thermal_results()
+    reset_thermal_rectangle()
+    st.session_state["module4_q2_setup_open"] = False
+    st.session_state.pop("module4_q2_workflow", None)
+
+
+def thermal_mask_iou(classical_mask, sam2_mask):
+    """Compare same-size masks without modifying pixels; empty union is undefined."""
+    if classical_mask.shape != sam2_mask.shape or classical_mask.ndim != 2:
+        raise ValueError("IoU requires two masks with matching original dimensions.")
+    classical_foreground = classical_mask != 0
+    sam2_foreground = sam2_mask != 0
+    union = np.count_nonzero(classical_foreground | sam2_foreground)
+    if union == 0:
+        return None
+    return float(np.count_nonzero(classical_foreground & sam2_foreground) / union)
+
+
+def render_thermal():
+    st.subheader("Question 2 – Thermal Image Human Boundary Detection")
+    st.caption(
+        "Upload a false-color thermal image containing one person. "
+        "This method selects the largest warm-colored region, so use an image "
+        "where the person is green/yellow/orange/red against a mostly blue background."
+    )
+    st.session_state.setdefault("module4_q2_upload_generation", 0)
+    st.button("Reset Question 2", key="module4_q2_reset", on_click=reset_thermal_upload)
+    uploaded = st.file_uploader(
+        "Upload Thermal Image", type=["jpg", "jpeg", "png"],
+        key=f"module4_q2_upload_{st.session_state['module4_q2_upload_generation']}",
+        on_change=update_thermal_upload,
+    )
+    image_bytes = uploaded.getvalue() if uploaded is not None else st.session_state.get("module4_q2_bytes")
+    if uploaded is not None:
+        st.session_state["module4_q2_bytes"] = image_bytes
+        st.session_state["module4_q2_filename"] = uploaded.name
+    elif image_bytes is not None:
+        st.caption(f"Loaded thermal image: {st.session_state.get('module4_q2_filename', 'previous upload')}")
+    digest = hashlib.sha256(image_bytes).hexdigest() if image_bytes is not None else None
+    if st.session_state.get("module4_q2_digest") != digest:
+        clear_thermal_results()
+        reset_thermal_rectangle()
+        st.session_state["module4_q2_setup_open"] = False
+        st.session_state.pop("module4_q2_workflow", None)
+        st.session_state["module4_q2_digest"] = digest
+
+    image = None
+    if image_bytes is not None:
+        try:
+            # Match the validated experiment's stored dimensions and BGR decoding.
+            decoded = cv2.imdecode(
+                np.frombuffer(image_bytes, np.uint8),
+                cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION,
+            )
+            image = normalize_thermal_image(decoded, color_order="BGR")
+        except (ValueError, cv2.error):
+            st.error("This file could not be read as an image. Please upload another JPG or PNG.")
+    if image is None:
+        st.info("Upload a false-color thermal image to run the classical method.")
+    else:
+        st.image(image, caption="Original Thermal Image", width="stretch")
+
+    st.session_state.setdefault("module4_q2_points", [])
+    st.session_state.setdefault("module4_q2_click_generation", 0)
+    # Presentation order follows the chosen starting method, not processing identity.
+    workflow = st.session_state.get("module4_q2_workflow")
+    initial_actions = st.container()
+    if workflow == "classical":
+        classical_display = st.container()
+        sam2_setup_display = st.container()
+        sam2_display = st.container()
+    else:
+        sam2_setup_display = st.container()
+        sam2_display = st.container()
+        classical_display = st.container()
+    st.session_state.setdefault("module4_q2_setup_open", False)
+    rectangle = None
+    with sam2_setup_display:
+        if image is not None and st.session_state["module4_q2_setup_open"]:
+            st.subheader("Select SAM2 Rectangle")
+            st.caption("Click two opposite corners around the person on the original thermal image. This box prompts SAM2 only; the classical method does not use it.")
+            st.button("Reset SAM2 Rectangle", key="module4_q2_reset_rectangle", on_click=reset_thermal_rectangle)
+            points = st.session_state["module4_q2_points"]
+            height, width = image.shape[:2]
+            # Resize only the click preview; inference always uses original pixels.
+            scale = min(1.0, 700 / width, 700 / height)
+            preview = cv2.resize(image, (max(1, round(width * scale)), max(1, round(height * scale))))
+            for x, y in points:
+                cv2.circle(preview, (round(x * preview.shape[1] / width), round(y * preview.shape[0] / height)), 5, (255, 0, 255), -1)
+            if len(points) == 2:
+                left, right = sorted((points[0][0], points[1][0]))
+                top, bottom = sorted((points[0][1], points[1][1]))
+                try:
+                    rectangle = validate_rectangle((left, top, right - left, bottom - top), image.shape)
+                except ValueError as error:
+                    st.warning(f"{error} Use Reset SAM2 Rectangle to select again.")
+                else:
+                    cv2.rectangle(preview, (round(left * scale), round(top * scale)),
+                                  (round((right - 1) * scale), round((bottom - 1) * scale)), (255, 0, 255), 2)
+                    st.caption(f"SAM2 box (x, y, width, height): {rectangle} pixels")
+                st.image(preview, caption="SAM2 box on original thermal image", width="content")
+            else:
+                st.info("Select the first SAM2 corner." if not points else "Select the second SAM2 corner.")
+                component_key = f"module4_q2_click_{st.session_state['module4_q2_click_generation']}"
+                streamlit_image_coordinates(
+                    preview, width="content", cursor="crosshair", key=component_key,
+                    on_click=lambda: record_thermal_corner(component_key, image.shape),
+                )
+
+    classical_inputs = (digest, tuple(image.shape) if image is not None else None)
+    sam2_inputs = (classical_inputs, rectangle, sam2_configuration())
+    if st.session_state.get("module4_q2_sam2_inputs") != sam2_inputs:
+        clear_thermal_results("sam2")
+        st.session_state["module4_q2_sam2_inputs"] = sam2_inputs
+
+    def process_classical():
+        clear_thermal_results("classical")
+        try:
+            with st.spinner("Extracting the thermal human boundary…"):
+                result = find_thermal_boundary(image)
+                # Retain display stages and metrics; the upload preserves the original.
+                for key in ("original_image", "hsv_image", "closed_mask"):
+                    result.pop(key)
+                st.session_state["module4_q2_results"] = result
+                st.session_state["module4_q2_classical_identity"] = classical_inputs
+        except ValueError as error:
+            st.session_state["module4_q2_error"] = str(error)
+        except cv2.error:
+            logging.getLogger(__name__).exception("Module 4 thermal processing failed")
+            st.session_state["module4_q2_error"] = "Thermal processing could not complete. Please try another image."
+
+    def process_sam2():
+        clear_thermal_results("sam2")
+        try:
+            from Modules.Module_4.sam2_comparison import run_sam2, select_device
+
+            source, config, requested_device, _ = sam2_inputs[2]
+            device = select_device(requested_device)
+            check_image_budget(image.shape, device, cpu_pixel_limit())
+            with st.spinner("Preparing SAM2 model…"):
+                resource = cached_sam2_model(source, config, device)
+            with st.spinner("Segmenting the thermal person with SAM2…"):
+                result = run_sam2(image, rectangle, resource)
+                # Q2 presentation only: preserve every SAM2 mask pixel/component.
+                contours, _ = cv2.findContours(result["binary_mask"].copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                result["boundary_overlay"] = image.copy()
+                cv2.drawContours(result["boundary_overlay"], contours, -1, (255, 0, 255), 3)
+                result["metadata"] = {**result["metadata"], "overlay": "All external contours, magenta, thickness 3; no mask editing"}
+                st.session_state["module4_q2_sam2_results"] = result
+                st.session_state["module4_q2_sam2_identity"] = sam2_inputs
+        except SAM2ResourceLimitError as error:
+            st.session_state["module4_q2_sam2_error"] = str(error)
+        except Exception:
+            logging.getLogger(__name__).exception("Module 4 thermal SAM2 inference failed")
+            st.session_state["module4_q2_sam2_error"] = "SAM2 could not complete. Please try again. The classical thermal method remains available."
+
+    if workflow is None and image is not None:
+        with initial_actions:
+            classical_column, sam2_column = st.columns(2)
+            if classical_column.button("Run Classical Method", key="module4_q2_run", type="primary"):
+                st.session_state["module4_q2_workflow"] = "classical"
+                process_classical()
+                st.rerun()
+            sam2_column.button("Set Up SAM2", key="module4_q2_setup",
+                               on_click=open_thermal_sam2_setup)
+    results = st.session_state.get("module4_q2_results")
+    sam2_results = st.session_state.get("module4_q2_sam2_results")
+    comparison_ready = (
+        image is not None and rectangle is not None
+        and results is not None and sam2_results is not None
+        and st.session_state.get("module4_q2_classical_identity") == classical_inputs
+        and st.session_state.get("module4_q2_sam2_identity") == sam2_inputs
+    )
+    def open_thermal_comparison():
+        st.session_state["module4_q2_comparison"] = (classical_inputs, sam2_inputs)
+
+    with classical_display:
+        if st.session_state.get("module4_q2_error"):
+            st.error(st.session_state["module4_q2_error"])
+        results = st.session_state.get("module4_q2_results")
+        if results is not None and image is not None:
+            st.subheader("Classical Thermal Results")
+            initial_column, cleaned_column = st.columns(2)
+            with initial_column:
+                st.image(results["initial_hsv_mask"], caption="Initial HSV Mask", width="stretch")
+            with cleaned_column:
+                st.image(results["cleaned_human_mask"], caption="Cleaned Human Mask", width="stretch")
+            st.image(results["boundary_overlay"], caption="Human Boundary", width="stretch")
+            st.caption(f"Image dimensions: {results['width']} × {results['height']} pixels. Original resolution preserved.")
+            count_column, area_column, percentage_column = st.columns(3)
+            count_column.metric("Foreground components", results["foreground_components"])
+            area_column.metric("Selected area (pixels)", f"{results['selected_component_area']:,}")
+            percentage_column.metric("Selected image occupancy", f"{results['selected_component_percentage']:.2f}%")
+            st.caption(
+                "Warm-color HSV thresholding → 3×3 elliptical closing → largest "
+                "8-connected foreground component → external contour. "
+                "Occupancy is the fraction of image pixels selected, not segmentation accuracy."
+            )
+
+    with sam2_display:
+        if st.session_state.get("module4_q2_sam2_error"):
+            st.error(st.session_state["module4_q2_sam2_error"])
+        if sam2_results is not None:
+            st.subheader("SAM2 Results")
+            st.image(sam2_results["binary_mask"], caption="SAM2 Binary Mask", width="stretch")
+            st.image(sam2_results["boundary_overlay"], caption="SAM2 Human Boundary", width="stretch")
+            quality_column, device_column = st.columns(2)
+            quality_column.metric("Predicted Mask Quality", f"{sam2_results['predicted_mask_quality']:.6f}")
+            device_column.metric("Device Used", sam2_results["metadata"]["device"].upper())
+            st.caption("SAM 2.1 Hiera Tiny, box-only prompt. Predicted Mask Quality is the model's score, not measured segmentation accuracy.")
+            if sam2_results["metadata"]["empty_mask"]:
+                st.info("SAM2 predicted no foreground. Try another rectangle.")
+
+    # Keep next actions below their corresponding workflow, with no top duplicates.
+    if workflow is not None and results is None and (workflow == "classical" or sam2_results is not None):
+        with classical_display:
+            if st.button("Run Classical Method", key="module4_q2_classical_next", disabled=image is None):
+                process_classical()
+                st.rerun()
+    if results is not None and not st.session_state["module4_q2_setup_open"]:
+        with classical_display:
+            st.button("Set Up SAM2", key="module4_q2_setup_after_classical",
+                      on_click=open_thermal_sam2_setup)
+    if rectangle is not None and sam2_results is None:
+        with sam2_setup_display:
+            if st.button("Run SAM2", key="module4_q2_run_sam2"):
+                process_sam2()
+                st.rerun()
+    if comparison_ready:
+        if st.button("Compare Results", key="module4_q2_compare_after_results"):
+            open_thermal_comparison()
+
+    if comparison_ready and st.session_state.get("module4_q2_comparison") == (classical_inputs, sam2_inputs):
+        st.subheader("Compare Results")
+        iou = thermal_mask_iou(results["cleaned_human_mask"], sam2_results["binary_mask"])
+        st.metric("IoU with SAM2", f"{iou:.4f}" if iou is not None else "N/A")
+        st.caption("IoU measures the overlap between the Classical and SAM2 segmentation masks. A value closer to 1 indicates greater agreement between the two segmentations.")
+        st.caption("SAM2 is the comparison segmentation, not ground truth.")
+        if iou is None:
+            st.caption("IoU is undefined because both masks contain no foreground.")
+        st.caption("Classical Thermal Method: HSV thresholding + morphology + largest connected component + contour. SAM2: SAM 2.1 Hiera Tiny, box-only prompt.")
+        # Each equal-width row starts together, independently of caption wrapping.
+        classical_column, sam2_column = st.columns(2)
+        classical_column.image(results["cleaned_human_mask"], caption="Classical Mask", width="stretch")
+        sam2_column.image(sam2_results["binary_mask"], caption="SAM2 Mask", width="stretch")
+        classical_column, sam2_column = st.columns(2)
+        classical_column.image(results["boundary_overlay"], caption="Classical Boundary", width="stretch")
+        sam2_column.image(sam2_results["boundary_overlay"], caption="SAM2 Boundary", width="stretch")
+
+
 st.set_page_config(page_title="Module 4 - Human Boundary Detection", layout="centered")
 st.title("Module 4 – Human Boundary Detection")
 st.session_state.setdefault("module4_section", "home")
@@ -395,10 +711,9 @@ for setting_key in (
 section = st.session_state["module4_section"]
 if section == "home":
     st.write("Select an experiment:")
-    for column, (label, destination, question) in zip(st.columns(3), (
+    for column, (label, destination, question) in zip(st.columns(2), (
         ("RGB Image", "rgb", "Question 1"),
         ("Thermal Image", "thermal", "Question 2"),
-        ("Frequency Domain Analysis", "frequency", "Question 3"),
     )):
         with column:
             st.button(label, key=f"module4_open_{destination}", on_click=navigate_module4, args=(destination,))
@@ -408,8 +723,4 @@ else:
     if section == "rgb":
         render_rgb()
     elif section == "thermal":
-        st.subheader("Question 2 – Thermal Image Human Boundary Detection")
-        st.info("Thermal image workflow will be implemented next.")
-    elif section == "frequency":
-        st.subheader("Question 3 – Frequency Domain Analysis")
-        st.info("Frequency-domain analysis will be added after the experimental sections.")
+        render_thermal()
