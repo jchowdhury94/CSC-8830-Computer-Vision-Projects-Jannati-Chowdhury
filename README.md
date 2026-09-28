@@ -16,7 +16,7 @@
 
 [https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury](https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury)
 
-This repository contains Streamlit-based projects completed for CSC 8830 Computer Vision. Modules 2 and 3 are currently available, and additional modules will be added throughout the course. The public Streamlit website is the easiest way to view the projects without local installation. Select a module from the sidebar to explore its interface and results.
+This repository contains Streamlit-based projects completed for CSC 8830 Computer Vision. Modules 2, 3, and Module 4 Question 1 are currently available, and additional modules will be added throughout the course. The public Streamlit website is the easiest way to view the projects without local installation. Select a module from the sidebar to explore its interface and results.
 
 ## Current Modules
 
@@ -50,6 +50,15 @@ Representative Module 3 validation results:
 
 These representative differences are extremely close to zero and consistent with floating-point roundoff. Exact comparison values depend on the input image and filter settings.
 
+### Module 4 - Edge Detection, Boundary Detection, and Features
+
+- **Question 1 - RGB Human Boundary Detection:** `Pages/app_module4.py` accepts an RGB image and lets the user select a rectangle around the person. It runs a classical computer-vision boundary-detection workflow and SAM 2.1 as the required comparison, with side-by-side masks and boundaries.
+- **Classical method:** Gaussian preprocessing smooths the image, Canny edge detection provides edge visualization, GrabCut segments the foreground using the selected rectangle, and contour extraction selects the largest external contour for the human boundary. Optional morphological cleanup is available.
+- **SAM2 comparison:** SAM 2.1 Hiera Tiny uses the same uploaded image and user-selected rectangle with a box-only prompt and no point prompts. Run SAM2 generates results dynamically; Compare Results uses the current session results. The displayed predicted mask-quality score is not measured accuracy.
+- **Model checkpoint:** The checkpoint is not stored in Git. The deployment runtime obtains and caches the official checkpoint when needed, or reuses verified local weights.
+- **Question 2 - Thermal Image:** Currently a placeholder.
+- **Question 3 - Frequency Domain Analysis:** Currently a placeholder.
+
 ## Project Structure
 
 ```text
@@ -60,10 +69,16 @@ CSC_8830_Projects_Jannati_Chowdhury/
 ├── .gitignore
 ├── Pages/
 │   ├── app_module2.py
-│   └── app_module3.py
+│   ├── app_module3.py
+│   └── app_module4.py
 └── Modules/
     ├── Module_2/
-    └── Module_3/
+    ├── Module_3/
+    └── Module_4/
+        ├── human_boundary.py
+        ├── sam2_comparison.py
+        ├── sam2_runtime.py
+        └── requirements-sam2.txt
 ```
 
 `home.py` is the single Streamlit entry point and registers each module page. This root README contains the documentation for the combined course website.
@@ -72,19 +87,19 @@ CSC_8830_Projects_Jannati_Chowdhury/
 
 1. Add implementation, data, and support files under `Modules/Module_N/`.
 2. Add the module's Streamlit page at `Pages/app_moduleN.py`.
-3. Register the new page in the existing `st.navigation` list in `home.py`, using the same `st.Page` pattern as Modules 2 and 3.
+3. Register the new page in the existing `st.navigation` list in `home.py`, using the same `st.Page` pattern as the existing modules.
 4. Add dependencies to `requirements.txt` only when needed.
 
-For example, Module 4 uses `Modules/Module_4/` and `Pages/app_module4.py`. Existing modules do not need to be reorganized when future modules are added. Extend this root README to document new modules instead of creating separate module README files.
+Existing modules do not need to be reorganized when future modules are added. Extend this root README to document new modules instead of creating separate module README files.
 
 ## Local Installation and Run Instructions
 
-With Python installed, open a terminal in the project root. On macOS or Linux, run:
+With Python 3.12 installed, open a terminal in the project root. On macOS or Linux, run:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+SAM2_BUILD_CUDA=0 python -m pip install -r requirements.txt
 python -m streamlit run home.py
 ```
 
