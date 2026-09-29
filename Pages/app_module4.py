@@ -646,6 +646,10 @@ def render_thermal():
                 st.rerun()
             sam2_column.button("Set Up SAM2", key="module4_q2_setup",
                                on_click=open_thermal_sam2_setup)
+    if rectangle is not None and st.session_state.get("module4_q2_sam2_results") is None:
+        with sam2_setup_display:
+            if st.button("Run SAM2", key="module4_q2_run_sam2"):
+                process_sam2()
     results = st.session_state.get("module4_q2_results")
     sam2_results = st.session_state.get("module4_q2_sam2_results")
     comparison_ready = (
@@ -704,11 +708,6 @@ def render_thermal():
         with classical_display:
             st.button("Set Up SAM2", key="module4_q2_setup_after_classical",
                       on_click=open_thermal_sam2_setup)
-    if rectangle is not None and sam2_results is None:
-        with sam2_setup_display:
-            if st.button("Run SAM2", key="module4_q2_run_sam2"):
-                process_sam2()
-                st.rerun()
     if comparison_ready:
         if st.button("Compare Results", key="module4_q2_compare_after_results"):
             open_thermal_comparison()

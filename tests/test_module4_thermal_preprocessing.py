@@ -120,7 +120,22 @@ class ThermalPreparationTests(unittest.TestCase):
                         app.button(key='module4_q2_setup').click().run()
                     app.session_state['module4_q2_points'] = [(100, 80), (500, 750)]
                     app.run()
-                    app.button(key='module4_q2_run_sam2').click().run()
+                    sam2.assert_not_called()
+                    # Results must render in the click execution, without an explicit rerun.
+                    with patch('streamlit.rerun') as rerun:
+                        app.button(key='module4_q2_run_sam2').click().run()
+                        rerun.assert_not_called()
+                    self.assertFalse(app.exception)
+                    sam2.assert_called_once()
+                    self.assertIs(app.session_state['module4_q2_sam2_results'], sam2.return_value)
+                    self.assertEqual(app.session_state['module4_q2_sam2_identity'],
+                                     app.session_state['module4_q2_sam2_inputs'])
+                    self.assertTrue(any(s.value == 'SAM2 Results' for s in app.subheader))
+                    for _ in range(2):
+                        app.run()
+                        self.assertFalse(app.exception)
+                        sam2.assert_called_once()
+                        self.assertTrue(any(s.value == 'SAM2 Results' for s in app.subheader))
                     if first == 'sam2':
                         app.button(key='module4_q2_classical_next').click().run()
                     self.assertFalse(app.exception)
@@ -143,6 +158,17 @@ class ThermalPreparationTests(unittest.TestCase):
                     app.session_state['module4_section'] = 'thermal'
                     app.run()
                     self.assertIs(app.session_state['module4_q2_prepared'][1], image)
+                    # A different valid rectangle invalidates SAM2 without running it.
+                    app.session_state['module4_q2_points'] = [(110, 90), (490, 740)]
+                    app.run()
+                    self.assertFalse(app.exception)
+                    sam2.assert_called_once()
+                    self.assertNotIn('module4_q2_sam2_results', app.session_state)
+                    self.assertNotIn('module4_q2_sam2_identity', app.session_state)
+                    self.assertNotIn('module4_q2_comparison', app.session_state)
+                    self.assertIs(app.session_state['module4_q2_results'], results)
+                    self.assertFalse(any(s.value == 'SAM2 Results' for s in app.subheader))
+                    self.assertIsNotNone(app.button(key='module4_q2_run_sam2'))
                     with patch.object(prep, 'MAX_THERMAL_PIXELS', 100000):
                         app.run()
                         self.assertFalse(app.exception)
