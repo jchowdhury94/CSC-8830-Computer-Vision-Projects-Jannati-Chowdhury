@@ -313,6 +313,19 @@ def render_rgb():
     def open_comparison():
         st.session_state["module4_comparison"] = (classical_inputs, sam2_inputs)
 
+    # Reserve display order while handling the secondary action before result reads.
+    comparison_display = st.container()
+    classical_display = st.container()
+    after_classical_actions = st.container()
+    if (st.session_state.get("module4_results") is not None
+            and st.session_state.get("module4_sam2_results") is None):
+        with after_classical_actions:
+            if st.button(
+                "Run SAM2", key="module4_run_sam2_after_classical",
+                disabled=image is None or rectangle is None,
+            ):
+                process_sam2()
+
     results = st.session_state.get("module4_results")
     sam2_results = st.session_state.get("module4_sam2_results")
     comparison_ready = (
@@ -321,43 +334,39 @@ def render_rgb():
         and st.session_state.get("module4_classical_identity") == classical_inputs
         and st.session_state.get("module4_sam2_identity") == sam2_inputs
     )
-    if st.button("Compare Results", key="module4_compare", disabled=not comparison_ready):
-        open_comparison()
-    if st.session_state.get("module4_classical_error"):
-        st.error(st.session_state["module4_classical_error"])
-    if results is not None:
-        st.divider()
-        st.subheader("Results")
-        original_column, smoothed_column = st.columns(2)
-        with original_column:
-            st.image(rectangle_image, caption="Processing Image with GrabCut Rectangle" if resized else "Original Image with GrabCut Rectangle", width="stretch")
-        with smoothed_column:
-            st.image(results["smoothed_image"], caption="Gaussian Smoothed Image", width="stretch")
-        st.image(results["canny_edges"], caption="Canny Edge Map", width="stretch")
-        st.caption(
-            "Canny detects intensity changes: outer edges of the person, internal "
-            "clothing/body edges, and background edges. This edge map is not used as GrabCut input."
-        )
-        raw_column, cleaned_column = st.columns(2)
-        with raw_column:
-            st.image(results["raw_mask"], caption="Raw GrabCut Foreground Mask", width="stretch")
-        with cleaned_column:
-            mask_caption = "Cleaned Foreground Mask" if cleanup_enabled else "Foreground Mask — Unchanged (Cleanup Off)"
-            st.image(results["cleaned_mask"], caption=mask_caption, width="stretch")
-        st.caption("GrabCut uses the selected rectangle to initialize foreground/background segmentation. White = foreground; black = background.")
-        st.subheader("Final Human Boundary")
-        if results["contour"] is None:
-            st.warning("No foreground contour was found. Adjust the rectangle or settings and try again; the image below is unchanged.")
-        st.image(results["boundary_overlay"], caption="External Boundary on the Processing Image" if resized else "External Boundary on the Original Image", width="stretch")
-        st.caption("Contour extraction selects the largest external foreground contour, assuming the person is the dominant foreground component.")
-        st.metric("Selected contour area (pixels²)", f"{results['contour_area']:,.1f}")
-        st.caption(f"Rectangle width × height: {rectangle[2]} × {rectangle[3]} pixels. Contour area is geometric area, not a foreground pixel count.")
-        if sam2_results is None and st.button(
-            "Run SAM2", key="module4_run_sam2_after_classical",
-            disabled=image is None or rectangle is None,
-        ):
-            process_sam2()
-            st.rerun()
+    with comparison_display:
+        if st.button("Compare Results", key="module4_compare", disabled=not comparison_ready):
+            open_comparison()
+    with classical_display:
+        if st.session_state.get("module4_classical_error"):
+            st.error(st.session_state["module4_classical_error"])
+        if results is not None:
+            st.divider()
+            st.subheader("Results")
+            original_column, smoothed_column = st.columns(2)
+            with original_column:
+                st.image(rectangle_image, caption="Processing Image with GrabCut Rectangle" if resized else "Original Image with GrabCut Rectangle", width="stretch")
+            with smoothed_column:
+                st.image(results["smoothed_image"], caption="Gaussian Smoothed Image", width="stretch")
+            st.image(results["canny_edges"], caption="Canny Edge Map", width="stretch")
+            st.caption(
+                "Canny detects intensity changes: outer edges of the person, internal "
+                "clothing/body edges, and background edges. This edge map is not used as GrabCut input."
+            )
+            raw_column, cleaned_column = st.columns(2)
+            with raw_column:
+                st.image(results["raw_mask"], caption="Raw GrabCut Foreground Mask", width="stretch")
+            with cleaned_column:
+                mask_caption = "Cleaned Foreground Mask" if cleanup_enabled else "Foreground Mask — Unchanged (Cleanup Off)"
+                st.image(results["cleaned_mask"], caption=mask_caption, width="stretch")
+            st.caption("GrabCut uses the selected rectangle to initialize foreground/background segmentation. White = foreground; black = background.")
+            st.subheader("Final Human Boundary")
+            if results["contour"] is None:
+                st.warning("No foreground contour was found. Adjust the rectangle or settings and try again; the image below is unchanged.")
+            st.image(results["boundary_overlay"], caption="External Boundary on the Processing Image" if resized else "External Boundary on the Original Image", width="stretch")
+            st.caption("Contour extraction selects the largest external foreground contour, assuming the person is the dominant foreground component.")
+            st.metric("Selected contour area (pixels²)", f"{results['contour_area']:,.1f}")
+            st.caption(f"Rectangle width × height: {rectangle[2]} × {rectangle[3]} pixels. Contour area is geometric area, not a foreground pixel count.")
 
     if sam2_results is not None or st.session_state.get("module4_sam2_error"):
         st.divider()

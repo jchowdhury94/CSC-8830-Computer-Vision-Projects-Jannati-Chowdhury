@@ -109,6 +109,61 @@ class RGBPreparationTests(unittest.TestCase):
         cv2.drawContours(expected, [result['contour']], -1, (0, 255, 0), 2)
         np.testing.assert_array_equal(result['boundary_overlay'], expected)
 
+    def test_both_sam2_buttons_render_without_explicit_rerun(self):
+        for key in ('module4_run_sam2', 'module4_run_sam2_after_classical'):
+            with self.subTest(button=key):
+                image = np.full((100, 100, 3), 30, np.uint8)
+                image[25:75, 30:70] = (190, 100, 70)
+                app = AppTest.from_file(str(PAGE))
+                app.session_state['module4_section'] = 'rgb'
+                app.session_state['module4_rgb_bytes'] = encoded(image)
+                app.run()
+                app.session_state['module4_points'] = [(10, 10), (90, 90)]
+                app.run()
+                secondary = key == 'module4_run_sam2_after_classical'
+                if secondary:
+                    app.button(key='module4_detect').click().run()
+                with patch('Modules.Module_4.sam2_comparison.select_device', return_value='cpu'), \
+                     patch('Modules.Module_4.sam2_runtime.resolve_checkpoint', return_value=Path('/unused')), \
+                     patch('Modules.Module_4.sam2_comparison.load_sam2_model', return_value=object()), \
+                     patch('Modules.Module_4.sam2_comparison.run_sam2') as sam2:
+                    sam2.return_value = {
+                        'binary_mask': np.zeros(image.shape[:2], np.uint8),
+                        'boundary_overlay': image.copy(), 'predicted_mask_quality': .5,
+                        'metadata': {'device': 'cpu', 'empty_mask': True},
+                    }
+                    with patch('streamlit.rerun') as rerun:
+                        app.button(key=key).click().run()
+                        rerun.assert_not_called()
+                    self.assertFalse(app.exception)
+                    sam2.assert_called_once()
+                    self.assertIs(app.session_state['module4_sam2_results'], sam2.return_value)
+                    self.assertEqual(app.session_state['module4_sam2_identity'],
+                                     app.session_state['module4_sam2_inputs'])
+                    self.assertTrue(any(s.value == 'SAM2 Results' for s in app.subheader))
+                    self.assertEqual(app.button(key='module4_compare').disabled, not secondary)
+                    app.run()
+                    self.assertFalse(app.exception)
+                    sam2.assert_called_once()
+                    self.assertTrue(any(s.value == 'SAM2 Results' for s in app.subheader))
+                    if not secondary:
+                        app.button(key='module4_detect_after_sam2').click().run()
+                    self.assertFalse(app.exception)
+                    self.assertFalse(app.button(key='module4_compare').disabled)
+                    app.button(key='module4_compare').click().run()
+                    self.assertFalse(app.exception)
+                    sam2.assert_called_once()
+                    self.assertIn('module4_comparison', app.session_state)
+                    app.session_state['module4_points'] = [(15, 15), (85, 85)]
+                    app.run()
+                    self.assertFalse(app.exception)
+                    sam2.assert_called_once()
+                    self.assertNotIn('module4_sam2_results', app.session_state)
+                    self.assertNotIn('module4_sam2_identity', app.session_state)
+                    self.assertNotIn('module4_comparison', app.session_state)
+                    self.assertFalse(any(s.value == 'SAM2 Results' for s in app.subheader))
+                    self.assertTrue(app.button(key='module4_compare').disabled)
+
     def test_page_reruns_and_identical_method_inputs(self):
         image = np.full((1600, 800, 3), 50, np.uint8)
         image[300:1200, 200:500] = (190, 100, 70)
