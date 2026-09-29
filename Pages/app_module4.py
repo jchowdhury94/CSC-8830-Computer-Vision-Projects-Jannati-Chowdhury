@@ -26,8 +26,8 @@ from Modules.Module_4.rgb_preprocessing import (
 )
 from Modules.Module_4.thermal_boundary import (
     find_thermal_boundary,
-    normalize_thermal_image,
 )
+from Modules.Module_4.thermal_preprocessing import prepared_thermal_upload
 from Modules.Module_4.sam2_runtime import (
     CPU_MAX_PIXELS,
     SAM2ResourceLimitError,
@@ -457,6 +457,8 @@ def update_thermal_upload():
     uploaded = st.session_state.get(f"module4_q2_upload_{st.session_state['module4_q2_upload_generation']}")
     st.session_state["module4_q2_bytes"] = uploaded.getvalue() if uploaded is not None else None
     st.session_state["module4_q2_filename"] = uploaded.name if uploaded is not None else None
+    st.session_state.pop("module4_q2_prepared", None)
+    st.session_state.pop("module4_q2_processing_identity", None)
     clear_thermal_results()
     reset_thermal_rectangle()
     st.session_state["module4_q2_setup_open"] = False
@@ -468,6 +470,8 @@ def reset_thermal_upload():
     st.session_state["module4_q2_upload_generation"] = st.session_state.get("module4_q2_upload_generation", 0) + 1
     for key in ("module4_q2_bytes", "module4_q2_filename", "module4_q2_digest"):
         st.session_state.pop(key, None)
+    st.session_state.pop("module4_q2_prepared", None)
+    st.session_state.pop("module4_q2_processing_identity", None)
     clear_thermal_results()
     reset_thermal_rectangle()
     st.session_state["module4_q2_setup_open"] = False
@@ -477,7 +481,7 @@ def reset_thermal_upload():
 def thermal_mask_iou(classical_mask, sam2_mask):
     """Compare same-size masks without modifying pixels; empty union is undefined."""
     if classical_mask.shape != sam2_mask.shape or classical_mask.ndim != 2:
-        raise ValueError("IoU requires two masks with matching original dimensions.")
+        raise ValueError("IoU requires two masks with matching processing dimensions.")
     classical_foreground = classical_mask != 0
     sam2_foreground = sam2_mask != 0
     union = np.count_nonzero(classical_foreground | sam2_foreground)
@@ -515,20 +519,29 @@ def render_thermal():
         st.session_state["module4_q2_digest"] = digest
 
     image = None
+    original_shape = None
+    prepared_identity = None
     if image_bytes is not None:
-        try:
-            # Match the validated experiment's stored dimensions and BGR decoding.
-            decoded = cv2.imdecode(
-                np.frombuffer(image_bytes, np.uint8),
-                cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION,
-            )
-            image = normalize_thermal_image(decoded, color_order="BGR")
-        except (ValueError, cv2.error):
-            st.error("This file could not be read as an image. Please upload another JPG or PNG.")
+        image, original_shape, preparation_error = prepared_thermal_upload(
+            st.session_state, image_bytes, digest,
+        )
+        prepared_identity = st.session_state["module4_q2_prepared"][0]
+        if preparation_error:
+            st.error(preparation_error)
+    if st.session_state.get("module4_q2_processing_identity") != prepared_identity:
+        clear_thermal_results()
+        reset_thermal_rectangle()
+        st.session_state["module4_q2_processing_identity"] = prepared_identity
+    resized = image is not None and image.shape != original_shape
+    if resized:
+        st.caption(
+            f"Thermal image resized from {original_shape[1]} × {original_shape[0]} to "
+            f"{image.shape[1]} × {image.shape[0]} pixels for Classical and SAM2 processing."
+        )
     if image is None:
         st.info("Upload a false-color thermal image to run the classical method.")
     else:
-        st.image(image, caption="Original Thermal Image", width="stretch")
+        st.image(image, caption="Thermal Image for Processing" if resized else "Original Thermal Image", width="stretch")
 
     st.session_state.setdefault("module4_q2_points", [])
     st.session_state.setdefault("module4_q2_click_generation", 0)
@@ -548,11 +561,11 @@ def render_thermal():
     with sam2_setup_display:
         if image is not None and st.session_state["module4_q2_setup_open"]:
             st.subheader("Select SAM2 Rectangle")
-            st.caption("Click two opposite corners around the person on the original thermal image. This box prompts SAM2 only; the classical method does not use it.")
+            st.caption("Click two opposite corners around the person on the thermal processing image. This box prompts SAM2 only; the classical method does not use it.")
             st.button("Reset SAM2 Rectangle", key="module4_q2_reset_rectangle", on_click=reset_thermal_rectangle)
             points = st.session_state["module4_q2_points"]
             height, width = image.shape[:2]
-            # Resize only the click preview; inference always uses original pixels.
+            # Preview clicks map to the shared processing image used for inference.
             scale = min(1.0, 700 / width, 700 / height)
             preview = cv2.resize(image, (max(1, round(width * scale)), max(1, round(height * scale))))
             for x, y in points:
@@ -568,7 +581,7 @@ def render_thermal():
                     cv2.rectangle(preview, (round(left * scale), round(top * scale)),
                                   (round((right - 1) * scale), round((bottom - 1) * scale)), (255, 0, 255), 2)
                     st.caption(f"SAM2 box (x, y, width, height): {rectangle} pixels")
-                st.image(preview, caption="SAM2 box on original thermal image", width="content")
+                st.image(preview, caption="SAM2 box on thermal processing image", width="content")
             else:
                 st.info("Select the first SAM2 corner." if not points else "Select the second SAM2 corner.")
                 component_key = f"module4_q2_click_{st.session_state['module4_q2_click_generation']}"
@@ -577,7 +590,7 @@ def render_thermal():
                     on_click=lambda: record_thermal_corner(component_key, image.shape),
                 )
 
-    classical_inputs = (digest, tuple(image.shape) if image is not None else None)
+    classical_inputs = (prepared_identity, tuple(image.shape) if image is not None else None)
     sam2_inputs = (classical_inputs, rectangle, sam2_configuration())
     if st.session_state.get("module4_q2_sam2_inputs") != sam2_inputs:
         clear_thermal_results("sam2")
@@ -656,7 +669,7 @@ def render_thermal():
             with cleaned_column:
                 st.image(results["cleaned_human_mask"], caption="Cleaned Human Mask", width="stretch")
             st.image(results["boundary_overlay"], caption="Human Boundary", width="stretch")
-            st.caption(f"Image dimensions: {results['width']} × {results['height']} pixels. Original resolution preserved.")
+            st.caption(f"Processing dimensions: {results['width']} × {results['height']} pixels. Masks, overlays, and measurements use this resolution.")
             count_column, area_column, percentage_column = st.columns(3)
             count_column.metric("Foreground components", results["foreground_components"])
             area_column.metric("Selected area (pixels)", f"{results['selected_component_area']:,}")
@@ -702,6 +715,10 @@ def render_thermal():
 
     if comparison_ready and st.session_state.get("module4_q2_comparison") == (classical_inputs, sam2_inputs):
         st.subheader("Compare Results")
+        st.caption(
+            f"Classical and SAM2: {image.shape[1]} × {image.shape[0]} pixels, "
+            "using the same processing image. IoU uses masks at this resolution."
+        )
         iou = thermal_mask_iou(results["cleaned_human_mask"], sam2_results["binary_mask"])
         st.metric("IoU with SAM2", f"{iou:.4f}" if iou is not None else "N/A")
         st.caption("IoU measures the overlap between the Classical and SAM2 segmentation masks. A value closer to 1 indicates greater agreement between the two segmentations.")
