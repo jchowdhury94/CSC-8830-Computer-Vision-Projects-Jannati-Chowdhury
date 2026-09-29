@@ -70,8 +70,30 @@ def clear_results(method=None):
         st.session_state.pop("module4_sam2_error", None)
 
 
+def reset_classical_result():
+    """Discard the Classical run while preserving shared inputs and SAM2."""
+    clear_results("classical")
+    st.session_state["module4_classical_config_open"] = True
+    if st.session_state.get("module4_sam2_results") is not None:
+        st.session_state["module4_rgb_first_method"] = "sam2"
+
+
+def open_classical_settings():
+    """Select Classical without executing either processing method."""
+    st.session_state["module4_classical_config_open"] = True
+
+
+def reset_sam2_result():
+    """Discard the SAM2 run while preserving shared inputs and Classical."""
+    clear_results("sam2")
+    if st.session_state.get("module4_results") is not None:
+        st.session_state["module4_rgb_first_method"] = "classical"
+
+
 def reset_rectangle():
     """Clear corners and replace the component so old clicks cannot replay."""
+    st.session_state["module4_classical_config_open"] = False
+    st.session_state.pop("module4_rgb_first_method", None)
     st.session_state["module4_points"] = []
     st.session_state["module4_click_generation"] += 1
     clear_results()
@@ -112,6 +134,24 @@ def navigate_module4(section):
     # Replace the click component when revisiting RGB so an old click cannot replay.
     if section == "rgb":
         st.session_state["module4_click_generation"] = st.session_state.get("module4_click_generation", 0) + 1
+
+
+def render_classical_settings():
+    """Render the single Q1 parameter editor in the active method area."""
+    st.subheader("Processing Settings")
+    gaussian_column, canny_column = st.columns(2)
+    with gaussian_column:
+        st.selectbox("Gaussian kernel size", [1, 3, 5, 7], index=1, key="module4_gaussian_kernel")
+        st.slider("Gaussian sigma", 0.1, 3.0, 0.8, 0.1, key="module4_gaussian_sigma")
+    with canny_column:
+        st.slider("Canny lower threshold", 0, 255, 50, key="module4_canny_lower")
+        st.slider("Canny upper threshold", 1, 255, 150, key="module4_canny_upper")
+    st.slider("GrabCut iterations", 1, 10, 5, key="module4_grabcut_iterations")
+    cleanup_enabled = st.checkbox("Apply Morphological Cleanup", value=False, key="module4_cleanup_enabled")
+    st.selectbox(
+        "Cleanup kernel size", [3, 5], disabled=not cleanup_enabled, key="module4_morphology_kernel",
+        help="One elliptical closing operation; small kernels help preserve thin body parts.",
+    )
 
 
 def render_rgb():
@@ -170,7 +210,6 @@ def render_rgb():
     if image is None:
         st.info("Upload an image to select a person and run the experiment.")
     else:
-        st.image(image, caption="RGB Image for Processing" if resized else "Original RGB Image", width="stretch")
         st.subheader("Select Person Rectangle")
         st.write("Click two opposite corners to create a rectangle around the person.")
         st.caption("Include the entire person and leave some background outside the rectangle.")
@@ -216,29 +255,26 @@ def render_rgb():
         else:
             st.image(preview, caption="Selected corners and GrabCut rectangle", width="content")
 
-    st.subheader("Processing Settings")
-    gaussian_column, canny_column = st.columns(2)
-    with gaussian_column:
-        gaussian_kernel = st.selectbox("Gaussian kernel size", [1, 3, 5, 7], index=1, key="module4_gaussian_kernel")
-        gaussian_sigma = st.slider("Gaussian sigma", 0.1, 3.0, 0.8, 0.1, key="module4_gaussian_sigma")
-    with canny_column:
-        canny_lower = st.slider("Canny lower threshold", 0, 255, 50, key="module4_canny_lower")
-        canny_upper = st.slider("Canny upper threshold", 1, 255, 150, key="module4_canny_upper")
-    grabcut_iterations = st.slider("GrabCut iterations", 1, 10, 5, key="module4_grabcut_iterations")
-    cleanup_enabled = st.checkbox("Apply Morphological Cleanup", value=False, key="module4_cleanup_enabled")
-    morphology_kernel = st.selectbox(
-        "Cleanup kernel size", [3, 5], disabled=not cleanup_enabled, key="module4_morphology_kernel",
-        help="One elliptical closing operation; small kernels help preserve thin body parts.",
-    )
-    settings = {
-        "gaussian_kernel_size": gaussian_kernel,
-        "gaussian_sigma": gaussian_sigma,
-        "canny_lower": canny_lower,
-        "canny_upper": canny_upper,
-        "grabcut_iterations": grabcut_iterations,
-        "cleanup_enabled": cleanup_enabled,
-        "morphology_kernel_size": morphology_kernel,
+    # Reassign the same widget keys to preserve values while settings are hidden.
+    defaults = {
+        "gaussian_kernel": 3, "gaussian_sigma": 0.8,
+        "canny_lower": 50, "canny_upper": 150, "grabcut_iterations": 5,
+        "cleanup_enabled": False, "morphology_kernel": 3,
     }
+    for name, default in defaults.items():
+        key = f"module4_{name}"
+        if key in st.session_state:
+            st.session_state[key] = st.session_state[key]
+    settings = {
+        "gaussian_kernel_size": st.session_state.get("module4_gaussian_kernel", defaults["gaussian_kernel"]),
+        "gaussian_sigma": st.session_state.get("module4_gaussian_sigma", defaults["gaussian_sigma"]),
+        "canny_lower": st.session_state.get("module4_canny_lower", defaults["canny_lower"]),
+        "canny_upper": st.session_state.get("module4_canny_upper", defaults["canny_upper"]),
+        "grabcut_iterations": st.session_state.get("module4_grabcut_iterations", defaults["grabcut_iterations"]),
+        "cleanup_enabled": st.session_state.get("module4_cleanup_enabled", defaults["cleanup_enabled"]),
+        "morphology_kernel_size": st.session_state.get("module4_morphology_kernel", defaults["morphology_kernel"]),
+    }
+    cleanup_enabled = settings["cleanup_enabled"]
     shared_inputs = (image_digest, tuple(image.shape) if image is not None else None, rectangle)
     classical_inputs = (shared_inputs, tuple(settings.items()))
     sam2_inputs = (shared_inputs, sam2_configuration())
@@ -252,20 +288,7 @@ def render_rgb():
         clear_results("sam2")
         st.session_state["module4_sam2_inputs"] = sam2_inputs
 
-    thresholds_valid = canny_lower < canny_upper
-    if not thresholds_valid:
-        st.warning("Canny lower threshold must be less than the upper threshold.")
-    classical_button, sam2_button = st.columns(2)
-    with classical_button:
-        run_classical = st.button(
-            "Run Classical Method", key="module4_detect", type="primary",
-            disabled=image is None or rectangle is None or not thresholds_valid,
-        )
-    with sam2_button:
-        run_sam = st.button(
-            "Run SAM2", key="module4_run_sam2",
-            disabled=image is None or rectangle is None,
-        )
+    thresholds_valid = settings["canny_lower"] < settings["canny_upper"]
     def process_classical():
         clear_results("classical")
         try:
@@ -305,38 +328,73 @@ def render_rgb():
                 "unavailable; please try again. You can still use the classical method."
             )
 
-    if run_classical:
-        process_classical()
-    if run_sam:
-        process_sam2()
-
     def open_comparison():
         st.session_state["module4_comparison"] = (classical_inputs, sam2_inputs)
 
-    # Reserve display order while handling the secondary action before result reads.
-    comparison_display = st.container()
-    classical_display = st.container()
-    after_classical_actions = st.container()
-    if (st.session_state.get("module4_results") is not None
-            and st.session_state.get("module4_sam2_results") is None):
-        with after_classical_actions:
-            if st.button(
-                "Run SAM2", key="module4_run_sam2_after_classical",
-                disabled=image is None or rectangle is None,
-            ):
-                process_sam2()
+    # Reserve contextual areas once, then render each settings widget at most once.
+    top_actions = st.container()
+    if st.session_state.get("module4_rgb_first_method") == "sam2":
+        sam2_display = st.container()
+        after_sam2_actions = st.container()
+        classical_display = st.container()
+        after_classical_actions = st.container()
+    else:
+        classical_display = st.container()
+        after_classical_actions = st.container()
+        sam2_display = st.container()
+        after_sam2_actions = st.container()
 
     results = st.session_state.get("module4_results")
     sam2_results = st.session_state.get("module4_sam2_results")
+    run_classical = run_sam = False
+    if results is None:
+        area = after_sam2_actions if sam2_results is not None else top_actions
+        with area:
+            if st.session_state.get("module4_classical_config_open", False):
+                render_classical_settings()
+                if not thresholds_valid:
+                    st.warning("Canny lower threshold must be less than the upper threshold.")
+                run_classical = st.button(
+                    "Apply Classical Method", key="module4_apply_classical", type="primary",
+                    disabled=image is None or rectangle is None or not thresholds_valid,
+                )
+            elif sam2_results is not None:
+                st.button("Classical Method", key="module4_detect_after_sam2",
+                          on_click=open_classical_settings)
+            else:
+                classical_button, sam2_button = st.columns(2)
+                classical_button.button(
+                    "Classical Method", key="module4_detect", on_click=open_classical_settings,
+                    disabled=image is None or rectangle is None,
+                )
+                run_sam = sam2_button.button(
+                    "Run SAM2", key="module4_run_sam2",
+                    disabled=image is None or rectangle is None,
+                )
+    if sam2_results is None and (results is not None or st.session_state.get("module4_classical_config_open")):
+        with after_classical_actions if results is not None else top_actions:
+            run_sam = st.button(
+                "Run SAM2", key="module4_run_sam2_after_classical" if results is not None else "module4_run_sam2",
+                disabled=image is None or rectangle is None,
+            )
+    if run_classical:
+        process_classical()
+        if st.session_state.get("module4_results") is not None:
+            st.session_state["module4_classical_config_open"] = False
+            st.session_state.setdefault("module4_rgb_first_method", "classical")
+            st.rerun()
+    if run_sam:
+        process_sam2()
+        if st.session_state.get("module4_sam2_results") is not None:
+            st.session_state.setdefault("module4_rgb_first_method", "sam2")
+            st.rerun()
+
     comparison_ready = (
         image is not None and rectangle is not None
         and results is not None and sam2_results is not None
         and st.session_state.get("module4_classical_identity") == classical_inputs
         and st.session_state.get("module4_sam2_identity") == sam2_inputs
     )
-    with comparison_display:
-        if st.button("Compare Results", key="module4_compare", disabled=not comparison_ready):
-            open_comparison()
     with classical_display:
         if st.session_state.get("module4_classical_error"):
             st.error(st.session_state["module4_classical_error"])
@@ -367,31 +425,27 @@ def render_rgb():
             st.caption("Contour extraction selects the largest external foreground contour, assuming the person is the dominant foreground component.")
             st.metric("Selected contour area (pixels²)", f"{results['contour_area']:,.1f}")
             st.caption(f"Rectangle width × height: {rectangle[2]} × {rectangle[3]} pixels. Contour area is geometric area, not a foreground pixel count.")
+            st.button("Reset Classical Method", key="module4_reset_classical", on_click=reset_classical_result)
 
-    if sam2_results is not None or st.session_state.get("module4_sam2_error"):
-        st.divider()
-        st.subheader("SAM2 Results")
-        if st.session_state.get("module4_sam2_error"):
-            st.error(st.session_state["module4_sam2_error"])
-        if sam2_results is not None:
-            st.image(sam2_results["binary_mask"], caption="SAM2 Binary Mask", width="stretch")
-            st.image(sam2_results["boundary_overlay"], caption="SAM2 Human Boundary", width="stretch")
-            quality_column, device_column = st.columns(2)
-            with quality_column:
-                st.metric("Predicted Mask Quality", f"{sam2_results['predicted_mask_quality']:.6f}")
-            with device_column:
-                st.metric("Device Used", sam2_results["metadata"]["device"].upper())
-            st.caption("This is SAM2's predicted mask-quality score, not measured segmentation accuracy.")
-            st.caption("SAM 2.1 Hiera Tiny, box-only prompt. All external foreground boundaries are shown.")
-            if sam2_results["metadata"]["empty_mask"]:
-                st.info("SAM2 predicted no foreground. Try selecting another rectangle.")
-            if results is None and st.button(
-                "Run Classical Method", key="module4_detect_after_sam2",
-                disabled=image is None or rectangle is None or not thresholds_valid,
-            ):
-                process_classical()
-                st.rerun()
-
+    with sam2_display:
+        if sam2_results is not None or st.session_state.get("module4_sam2_error"):
+            st.divider()
+            st.subheader("SAM2 Results")
+            if st.session_state.get("module4_sam2_error"):
+                st.error(st.session_state["module4_sam2_error"])
+            if sam2_results is not None:
+                st.image(sam2_results["binary_mask"], caption="SAM2 Binary Mask", width="stretch")
+                st.image(sam2_results["boundary_overlay"], caption="SAM2 Human Boundary", width="stretch")
+                quality_column, device_column = st.columns(2)
+                with quality_column:
+                    st.metric("Predicted Mask Quality", f"{sam2_results['predicted_mask_quality']:.6f}")
+                with device_column:
+                    st.metric("Device Used", sam2_results["metadata"]["device"].upper())
+                st.caption("This is SAM2's predicted mask-quality score, not measured segmentation accuracy.")
+                st.caption("SAM 2.1 Hiera Tiny, box-only prompt. All external foreground boundaries are shown.")
+                if sam2_results["metadata"]["empty_mask"]:
+                    st.info("SAM2 predicted no foreground. Try selecting another rectangle.")
+                st.button("Reset SAM2", key="module4_reset_sam2", on_click=reset_sam2_result)
     if comparison_ready and st.button("Compare Results", key="module4_compare_after_results"):
         open_comparison()
 
@@ -416,6 +470,10 @@ def render_rgb():
             st.caption("SAM 2.1 Hiera Tiny, box-only prompt")
             st.image(sam2_results["binary_mask"], caption="SAM2 Binary Mask", width="stretch")
             st.image(sam2_results["boundary_overlay"], caption="SAM2 Boundary", width="stretch")
+
+    if results is not None or sam2_results is not None:
+        st.button("Reset RGB Experiment", key="module4_reset_rgb_bottom", on_click=clear_rgb_upload)
+
 
 def clear_thermal_results(method=None):
     """Invalidate one Q2 method or both, and always invalidate comparison."""
