@@ -22,7 +22,7 @@ from Modules.Module_4.human_boundary import (
     validate_rectangle,
 )
 from Modules.Module_4.rgb_preprocessing import (
-    decode_rgb, map_rectangle, prepared_rgb_upload,
+    prepared_rgb_upload,
 )
 from Modules.Module_4.thermal_boundary import (
     find_thermal_boundary,
@@ -151,6 +151,13 @@ def render_rgb():
         )
         if preparation_error:
             st.error(preparation_error)
+    prepared_identity = (
+        st.session_state["module4_rgb_prepared"][0],
+        tuple(image.shape) if image is not None else None,
+    ) if image_bytes is not None else None
+    if st.session_state.get("module4_rgb_processing_identity") != prepared_identity:
+        reset_rectangle()
+        st.session_state["module4_rgb_processing_identity"] = prepared_identity
     resized = image is not None and image.shape != original_shape
     if resized:
         st.caption(
@@ -163,7 +170,7 @@ def render_rgb():
     if image is None:
         st.info("Upload an image to select a person and run the experiment.")
     else:
-        st.image(image, caption="RGB Image for Classical Processing" if resized else "Original RGB Image", width="stretch")
+        st.image(image, caption="RGB Image for Processing" if resized else "Original RGB Image", width="stretch")
         st.subheader("Select Person Rectangle")
         st.write("Click two opposite corners to create a rectangle around the person.")
         st.caption("Include the entire person and leave some background outside the rectangle.")
@@ -234,9 +241,7 @@ def render_rgb():
     }
     shared_inputs = (image_digest, tuple(image.shape) if image is not None else None, rectangle)
     classical_inputs = (shared_inputs, tuple(settings.items()))
-    sam2_rectangle = map_rectangle(rectangle, image.shape, original_shape) if rectangle is not None else None
-    sam2_shared_inputs = (image_digest, original_shape, sam2_rectangle)
-    sam2_inputs = (sam2_shared_inputs, sam2_configuration())
+    sam2_inputs = (shared_inputs, sam2_configuration())
     if st.session_state.get("module4_shared_inputs") != shared_inputs:
         clear_results()
         st.session_state["module4_shared_inputs"] = shared_inputs
@@ -284,12 +289,11 @@ def render_rgb():
             source, config, requested_device, _ = sam2_inputs[1]
             device = select_device(requested_device)
             # Refuse oversized CPU requests before downloading or loading weights.
-            check_image_budget(original_shape, device, cpu_pixel_limit())
+            check_image_budget(image.shape, device, cpu_pixel_limit())
             with st.spinner("Preparing SAM2 model…"):
                 resource = cached_sam2_model(source, config, device)
             with st.spinner("Segmenting the selected person with SAM2…"):
-                sam2_image = decode_rgb(image_bytes) if resized else image
-                result = run_sam2(sam2_image, sam2_rectangle, resource)
+                result = run_sam2(image, rectangle, resource)
                 st.session_state["module4_sam2_results"] = result
                 st.session_state["module4_sam2_identity"] = sam2_inputs
         except SAM2ResourceLimitError as error:
@@ -326,7 +330,7 @@ def render_rgb():
         st.subheader("Results")
         original_column, smoothed_column = st.columns(2)
         with original_column:
-            st.image(rectangle_image, caption="Classical Processing Image with GrabCut Rectangle" if resized else "Original Image with GrabCut Rectangle", width="stretch")
+            st.image(rectangle_image, caption="Processing Image with GrabCut Rectangle" if resized else "Original Image with GrabCut Rectangle", width="stretch")
         with smoothed_column:
             st.image(results["smoothed_image"], caption="Gaussian Smoothed Image", width="stretch")
         st.image(results["canny_edges"], caption="Canny Edge Map", width="stretch")
@@ -344,7 +348,7 @@ def render_rgb():
         st.subheader("Final Human Boundary")
         if results["contour"] is None:
             st.warning("No foreground contour was found. Adjust the rectangle or settings and try again; the image below is unchanged.")
-        st.image(results["boundary_overlay"], caption="External Boundary on the Classical Processing Image" if resized else "External Boundary on the Original Image", width="stretch")
+        st.image(results["boundary_overlay"], caption="External Boundary on the Processing Image" if resized else "External Boundary on the Original Image", width="stretch")
         st.caption("Contour extraction selects the largest external foreground contour, assuming the person is the dominant foreground component.")
         st.metric("Selected contour area (pixels²)", f"{results['contour_area']:,.1f}")
         st.caption(f"Rectangle width × height: {rectangle[2]} × {rectangle[3]} pixels. Contour area is geometric area, not a foreground pixel count.")
@@ -387,9 +391,8 @@ def render_rgb():
         st.subheader("Compare Results")
         if resized:
             st.caption(
-                f"Classical: {image.shape[1]} × {image.shape[0]} pixels. "
-                f"SAM2: original {original_shape[1]} × {original_shape[0]} pixels; "
-                "the selected rectangle is mapped to the original image."
+                f"Classical and SAM2: {image.shape[1]} × {image.shape[0]} pixels, "
+                "using the same processing image and rectangle."
             )
         classical_column, sam2_column = st.columns(2)
         with classical_column:
