@@ -10,7 +10,7 @@
 
 **Public Web Interface:**
 
-[https://jannati-chowdhury-computer-vision-projects.streamlit.app](https://jannati-chowdhury-computer-vision-projects.streamlit.app)
+[https://jannati-chowdhury-computer-vision-projects.streamlit.app](https://jannati-chowdhury-computer-vision-projects.streamlit.app/)
 
 **GitHub Repository:**
 
@@ -54,7 +54,7 @@ These representative differences are extremely close to zero and consistent with
 
 `Pages/app_module4.py` provides two human-boundary workflows:
 
-- **Question 1 - RGB Human Boundary Detection:** Upload a regular RGB image and select a rectangle around the person. Large uploaded RGB images are automatically resized to a shared processing resolution for memory-safe execution. Classical and SAM2 both receive the same prepared image and rectangle coordinates. Gaussian preprocessing smooths the image, Canny provides an edge visualization, and GrabCut segments the foreground using the rectangle. After optional morphological cleanup, the largest external contour is extracted and displayed over the prepared image. SAM 2.1 Hiera Tiny processes the same image with a box-only prompt. Classical and SAM2 masks and boundaries can be compared side by side; SAM2's predicted mask-quality score is not ground-truth accuracy.
+- **Question 1 - RGB Human Boundary Detection:** Upload a regular RGB image and select a rectangle around the person. Large RGB images are automatically resized to a shared processing resolution for memory-safe execution; Classical and SAM2 receive the same prepared RGB image and rectangle coordinates. Either method can be run first. Selecting Classical Method reveals its processing settings before application. The Classical pipeline uses Gaussian preprocessing, Canny edge detection for visualization, GrabCut segmentation, optional morphological cleanup, and largest external contour extraction for the boundary overlay. SAM 2.1 Hiera Tiny uses the same prepared image with a box-only prompt. Method-specific reset controls allow either method to be rerun while preserving the shared image and rectangle selection and without unnecessarily rerunning the other method. When both current results are available, masks and boundaries can be compared side by side. SAM2's predicted mask-quality score is not ground-truth accuracy.
 - **Question 2 - Thermal Human Boundary Detection:** Upload a thermal pseudocolor image. The Classical pipeline is HSV conversion → warm-color thresholding → 3×3 elliptical morphological closing → connected-component analysis → largest foreground component → external contour extraction → human-boundary overlay. The Classical boundary is bright magenta. Large thermal images are automatically resized to a shared processing resolution before processing. Classical and SAM2 both use the same prepared thermal image. SAM2 uses a user-selected rectangle as a box-only prompt. This rectangle affects only SAM2; the Classical thermal method does not use it. Either method can be started first, with contextual actions leading to side-by-side mask and boundary comparisons.
 - **Thermal comparison metric:** IoU is the single numerical comparison metric: foreground intersection divided by foreground union, calculated directly from the Classical and SAM2 masks at their shared processing resolution. IoU measures the overlap/agreement between the Classical and SAM2 segmentation masks. It is not a ground-truth accuracy metric. The interface displays four decimal places, or N/A when both masks are empty.
 - **Model checkpoint:** Both workflows use SAM 2.1 Hiera Tiny. The checkpoint is not stored in Git. The runtime obtains and caches the official checkpoint when required, or reuses verified local weights.
@@ -106,4 +106,4 @@ SAM2_BUILD_CUDA=0 python -m pip install -r requirements.txt
 python -m streamlit run home.py
 ```
 
-Open the local URL printed by Streamlit, then choose a module from the sidebar. For access without local installation, use the [public Streamlit website](https://jannati-chowdhury-computer-vision-projects.streamlit.app).
+Open the local URL printed by Streamlit, then choose a module from the sidebar. For access without local installation, use the [public Streamlit website](https://jannati-chowdhury-computer-vision-projects.streamlit.app/).
