@@ -1,0 +1,90 @@
+{
+  "coordinate_convention": "Full-resolution upright pixels; origin upper-left; +x right; +y down",
+  "views": [
+    {
+      "view": 1,
+      "original": "IMG_7596.jpeg",
+      "exif_orientation": 6,
+      "width": 4284,
+      "height": 5712,
+      "opencv_shape": [
+        5712,
+        4284,
+        3
+      ]
+    },
+    {
+      "view": 2,
+      "original": "IMG_7597.jpeg",
+      "exif_orientation": 6,
+      "width": 4284,
+      "height": 5712,
+      "opencv_shape": [
+        5712,
+        4284,
+        3
+      ]
+    },
+    {
+      "view": 3,
+      "original": "IMG_7598.jpeg",
+      "exif_orientation": 6,
+      "width": 4284,
+      "height": 5712,
+      "opencv_shape": [
+        5712,
+        4284,
+        3
+      ]
+    },
+    {
+      "view": 4,
+      "original": "IMG_7603.jpeg",
+      "exif_orientation": 6,
+      "width": 4284,
+      "height": 5712,
+      "opencv_shape": [
+        5712,
+        4284,
+        3
+      ]
+    }
+  ],
+  "point_count": 8,
+  "checks": {
+    "all_four_views_present": true,
+    "no_missing_coordinates": true,
+    "finite_coordinates_inside_bounds": true,
+    "same_count_each_view": 8,
+    "identical_point_ids_and_order": [
+      "P1",
+      "P2",
+      "P3",
+      "P4",
+      "P5",
+      "P6",
+      "P7",
+      "P8"
+    ],
+    "four_cover_corners_present": true,
+    "no_duplicate_coordinates_per_view": true
+  },
+  "original_sha256": {
+    "IMG_7596.jpeg": "09c292edb19c357b56ade79a6b5c0917b7b906e25cfbe5c838b79707a00696f0",
+    "IMG_7597.jpeg": "5d628a61ed73ad997a4424176ba8699ca737b9a46d58cc6fa3e3bee4e5f8d852",
+    "IMG_7598.jpeg": "2ca7f6b8f8309adddd3a172426be9bf2222b8972fd9e825d411f68b81986f725",
+    "IMG_7603.jpeg": "3062e5ae569c61c5c5ac548318e7c7061528c9c2300a635b1e722f650d0fb0cf"
+  },
+  "original_hashes_unchanged": true,
+  "method": "Manual visual identification by assistant using scaled overviews and full-resolution landmark crops; no automatic matching",
+  "book_dimensions_cm": {
+    "width": 14.5,
+    "height": 21.7
+  },
+  "rejected_candidates": [
+    "Illustrated eyes/face details: less sharply localized in the oblique views",
+    "Repeated small stars/leaves and water texture: ambiguous identity",
+    "Shadows/glare/background: not printed front-cover landmarks"
+  ],
+  "accuracy_note": "Manually estimated pixel positions, not subpixel-refined or calibrated ground truth. Rounded/flexible cover corners are placed on the visible front-cover perimeter, excluding the back cover; review the close-up evidence before later geometry. P5/P6/P8 are manually located printed-feature centers."
+}

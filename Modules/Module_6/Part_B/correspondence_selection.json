@@ -1,0 +1,192 @@
+{
+  "method": "Manual visual identification by assistant using scaled overviews and full-resolution landmark crops; no automatic matching",
+  "accuracy_note": "Manually estimated pixel positions, not subpixel-refined or calibrated ground truth. Rounded/flexible cover corners are placed on the visible front-cover perimeter, excluding the back cover; review the close-up evidence before later geometry. P5/P6/P8 are manually located printed-feature centers.",
+  "coordinate_convention": "Full-resolution upright pixels; origin upper-left; +x right; +y down",
+  "book_dimensions_cm": {
+    "width": 14.5,
+    "height": 21.7
+  },
+  "rejected_candidates": [
+    "Illustrated eyes/face details: less sharply localized in the oblique views",
+    "Repeated small stars/leaves and water texture: ambiguous identity",
+    "Shadows/glare/background: not printed front-cover landmarks"
+  ],
+  "points": [
+    {
+      "point_id": "P1",
+      "description": "Front cover top-left corner",
+      "views": [
+        [
+          878,
+          1190
+        ],
+        [
+          241,
+          1335
+        ],
+        [
+          2210,
+          820
+        ],
+        [
+          993,
+          3911
+        ]
+      ]
+    },
+    {
+      "point_id": "P2",
+      "description": "Front cover top-right corner",
+      "views": [
+        [
+          3184,
+          1196
+        ],
+        [
+          1997,
+          654
+        ],
+        [
+          3983,
+          1224
+        ],
+        [
+          20,
+          2155
+        ]
+      ]
+    },
+    {
+      "point_id": "P3",
+      "description": "Front cover bottom-right corner",
+      "views": [
+        [
+          3338,
+          4706
+        ],
+        [
+          4026,
+          2710
+        ],
+        [
+          2455,
+          3974
+        ],
+        [
+          2595,
+          508
+        ]
+      ]
+    },
+    {
+      "point_id": "P4",
+      "description": "Front cover bottom-left corner",
+      "views": [
+        [
+          875,
+          4838
+        ],
+        [
+          1942,
+          4213
+        ],
+        [
+          275,
+          2705
+        ],
+        [
+          3760,
+          2220
+        ]
+      ]
+    },
+    {
+      "point_id": "P5",
+      "description": "Center of diamond-shaped head of apostrophe in Swan’s",
+      "views": [
+        [
+          2230,
+          1650
+        ],
+        [
+          1525,
+          1128
+        ],
+        [
+          2983,
+          1214
+        ],
+        [
+          770,
+          2650
+        ]
+      ]
+    },
+    {
+      "point_id": "P6",
+      "description": "Center of dot above final i in Roshani",
+      "views": [
+        [
+          2884,
+          2455
+        ],
+        [
+          2396,
+          1373
+        ],
+        [
+          3243,
+          1796
+        ],
+        [
+          1086,
+          1800
+        ]
+      ]
+    },
+    {
+      "point_id": "P7",
+      "description": "Tip of upper-right gold border flourish (physical upright cover)",
+      "views": [
+        [
+          2922,
+          1234
+        ],
+        [
+          1855,
+          720
+        ],
+        [
+          3726,
+          1149
+        ],
+        [
+          143,
+          2312
+        ]
+      ]
+    },
+    {
+      "point_id": "P8",
+      "description": "Center of round terminal loop of lower-left gold border",
+      "views": [
+        [
+          1056,
+          4637
+        ],
+        [
+          2064,
+          3736
+        ],
+        [
+          550,
+          2594
+        ],
+        [
+          3503,
+          2182
+        ]
+      ]
+    }
+  ]
+}

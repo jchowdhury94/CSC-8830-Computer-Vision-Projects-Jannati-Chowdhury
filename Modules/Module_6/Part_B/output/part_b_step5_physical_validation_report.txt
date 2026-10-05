@@ -1,0 +1,109 @@
+Module 6 Part B — Step 5: physical alignment, scaling, and validation
+Input: output/part_b_reconstructed_points_unscaled.csv (approved Step 4, unchanged).
+Known front-cover dimensions: width=14.5 cm; height=21.7 cm.
+Best-fit plane normal in original reconstruction frame: [-0.136732249598  0.083181522421  0.987109480376]
+Plane agrees with Step 4 within sign/tolerance: PASS.
+Book axes are ROWS of basis B (original reconstruction coordinates):
+[[ 0.325121983387  0.945038865426 -0.03460113804 ]
+ [-0.935734998725  0.316199900637 -0.156261431578]
+ [-0.136732249598  0.083181522421  0.987109480376]]
+Axis norms: [1. 1. 1.]
+Basis Gram matrix (norms squared on diagonal; pairwise dot products off diagonal):
+[[ 1.000000000000e+00  2.255140518770e-17  0.000000000000e+00]
+ [ 2.255140518770e-17  1.000000000000e+00 -2.775557561563e-17]
+ [ 0.000000000000e+00 -2.775557561563e-17  1.000000000000e+00]]
+Rotation determinant: 1
+Corner-centroid origin, arbitrary units: [-276.489426512796    8.483281090652 -139.047594511172]
+Book coordinates = (original point - corner centroid) @ B.T.
+X points approximately left-to-right; Y top-to-bottom; Z completes a right-handed frame.
+No point projection/flattening: only the horizontal axis is projected into the plane.
+
+UNSCALED 3D COVER DISTANCES (arbitrary reconstruction units)
+top_width: 2157.1679426690944
+bottom_width: 2599.6224065747247
+mean_width: 2378.3951746219095
+left_height: 3511.9713317569312
+right_height: 3600.1963604131415
+mean_height: 3556.0838460850364
+diagonal_P1_P3: 4307.4576566732676
+diagonal_P2_P4: 4099.134930215625
+mean_diagonal: 4203.2962934444458
+Reconstructed aspect ratio: 0.66882426780806425
+Physical aspect ratio: 0.66820276497695852
+
+ONE ISOTROPIC SCALE
+Width-only scale (cm/unit): 0.0060965478549228251
+Height-only scale (cm/unit): 0.006102218321958286
+s = (mean_width*true_width + mean_height*true_height)/(mean_width^2 + mean_height^2)
+Chosen joint least-squares scale (cm/unit): 0.0061004657472446058
+The same positive scale applies to X,Y,Z, preserving shape without stretching an axis.
+
+SCALED SfM RECONSTRUCTION COORDINATES (cm; not ground-truth 3D coordinates)
+P1: [ -6.943199761189 -10.564790444457  -1.798172529186]
+P2: [  5.791674972777 -10.80634987333    1.509860984907]
+P3: [ 8.342706047574 10.80634987333  -1.448400317843]
+P4: [-7.191181259162 10.564790444457  1.736711862121]
+P5: [ 0.607610973694 -8.295781887467  0.61334641819 ]
+P6: [ 4.606844384921 -3.967849978311  1.500638178425]
+P7: [  4.383355321819 -10.63324108463    1.380781263892]
+P8: [-5.836773236837  9.079024137879  1.324334891711]
+
+PHYSICAL VALIDATION: measurement, reconstructed cm, reference cm, absolute error cm, percentage error
+top_width, 13.1597291453, 14.5, 1.34027085469, 9.24324727375
+bottom_width, 15.8589074471, 14.5, 1.35890744708, 9.37177549709
+mean_width, 14.5093182962, 14.5, 0.00931829619281, 0.0642641116746
+left_height, 21.4246608147, 21.7, 0.275339185312, 1.26884417194
+right_height, 21.9628745801, 21.7, 0.262874580055, 1.21140359472
+mean_height, 21.6937676974, 21.7, 0.00623230262837, 0.02872028861
+diagonal_P1_P3, 26.2774978922, 26.0986589694, 0.178838922862, 0.685241809058
+diagonal_P2_P4, 25.0066322351, 26.0986589694, 1.09202673427, 4.18422546364
+mean_diagonal, 25.6420650637, 26.0986589694, 0.456593905702, 1.74949182729
+opposite_width_discrepancy, 2.69917830177, , , 
+opposite_height_discrepancy, 0.538213765367, , , 
+RMS_plane_displacement, 1.32347545685, , , 
+max_plane_displacement, 2.40056012321, , , 
+Ideal rectangle diagonal (validation only): 26.098658969380015
+
+ORIGIN / FITTED-PLANE OFFSET
+The mandated four-corner centroid generally lies off the all-point fitted plane.
+Fitted plane location in book frame: Z_book = 98.744525251912506 arbitrary units.
+Fitted plane location after scaling: Z_cm = 0.60238759402722231 cm.
+Thus Z_cm is the normal coordinate relative to the corner-centroid origin; it is NOT
+the signed distance to the fitted plane. Signed plane distance = Z_cm - fitted_plane_Z_cm.
+The corner-centroid origin is preserved; no hidden shift or flattening is applied.
+point_id, Z_cm, abs(Z_cm), signed_plane_distance_cm, abs(plane_distance_cm)
+P1, -1.798172529186, 1.798172529186, -2.400560123213, 2.400560123213
+P2, 1.509860984907, 1.509860984907, 0.907473390880, 0.907473390880
+P3, -1.448400317843, 1.448400317843, -2.050787911870, 2.050787911870
+P4, 1.736711862121, 1.736711862121, 1.134324268094, 1.134324268094
+P5, 0.613346418190, 0.613346418190, 0.010958824162, 0.010958824162
+P6, 1.500638178425, 1.500638178425, 0.898250584398, 0.898250584398
+P7, 1.380781263892, 1.380781263892, 0.778393669865, 0.778393669865
+P8, 1.324334891711, 1.324334891711, 0.721947297684, 0.721947297684
+RMS actual plane displacement (cm): 1.3234754568507536
+Maximum actual absolute plane displacement (cm): 2.4005601232127325
+Normalized planarity error, RMS / known height (%): 6.098965238943566
+RMS book-frame Z coordinate (distinct origin-based statistic, cm): 1.454117635655457
+
+INTERIOR LANDMARKS (broad corner XY bounding-box check, not a rectangle constraint)
+Corner XY lower extent (cm): [ -7.191181259162 -10.80634987333 ]
+Corner XY upper extent (cm): [ 8.342706047574 10.80634987333 ]
+P5: coordinates=[ 0.607610973694 -8.295781887467  0.61334641819 ], plane distance=0.010958824162 cm; inside broad extent=True
+P6: coordinates=[ 4.606844384921 -3.967849978311  1.500638178425], plane distance=0.898250584398 cm; inside broad extent=True
+P7: coordinates=[  4.383355321819 -10.63324108463    1.380781263892], plane distance=0.778393669865 cm; inside broad extent=True
+P8: coordinates=[-5.836773236837  9.079024137879  1.324334891711], plane distance=0.721947297684 cm; inside broad extent=True
+
+INTERPRETATION
+One isotropic scale converts arbitrary SfM units to approximate cm and preserves all
+recovered geometry. This provides a quantitative reconstruction and dimension comparison.
+Width and height were used to determine scale; their agreement is not fully independent
+validation. The joint scale forces neither mean width nor mean height to match exactly.
+Diagonal and opposite-edge differences were used only for validation, not fitting.
+Perspective iPhone images are approximated by affine/orthographic factorization;
+correspondences were manually localized and all landmarks are on one nearly planar surface.
+Recovered depth is weak and should not be read as true cover relief. Apparent nonplanarity
+and boundary distortion remain visible; this is not a calibrated metric 3D scan.
+No new SfM, point adjustment, independent axis scaling, flattening, rectangle forcing,
+or homography rectification was performed.
+Protected file hash checks: PASS (84 files).
+No commit, push, Part A, or Streamlit edits. STOP after Step 5.

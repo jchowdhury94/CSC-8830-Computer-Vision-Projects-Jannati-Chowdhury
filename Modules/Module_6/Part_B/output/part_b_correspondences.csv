@@ -1,0 +1,9 @@
+point_id,description,view1_x,view1_y,view2_x,view2_y,view3_x,view3_y,view4_x,view4_y
+P1,Front cover top-left corner,878,1190,241,1335,2210,820,993,3911
+P2,Front cover top-right corner,3184,1196,1997,654,3983,1224,20,2155
+P3,Front cover bottom-right corner,3338,4706,4026,2710,2455,3974,2595,508
+P4,Front cover bottom-left corner,875,4838,1942,4213,275,2705,3760,2220
+P5,Center of diamond-shaped head of apostrophe in Swan’s,2230,1650,1525,1128,2983,1214,770,2650
+P6,Center of dot above final i in Roshani,2884,2455,2396,1373,3243,1796,1086,1800
+P7,Tip of upper-right gold border flourish (physical upright cover),2922,1234,1855,720,3726,1149,143,2312
+P8,Center of round terminal loop of lower-left gold border,1056,4637,2064,3736,550,2594,3503,2182

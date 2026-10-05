@@ -28,3 +28,18 @@ sam2.1_hiera_tiny.pt.*.part
 /Modules/Module_6/Part_A/input/video_2_diagonal.MOV
 /Modules/Module_6/Part_A/output/video_1_optical_flow.mp4
 /Modules/Module_6/Part_A/output/video_2_optical_flow.mp4
+
+# Module 6 Part B high-resolution source/intermediate images stay local.
+# Keep combined figures, scripts, and numerical assignment evidence in Git.
+/Modules/Module_6/Part_B/input/IMG_7596.jpeg
+/Modules/Module_6/Part_B/input/IMG_7597.jpeg
+/Modules/Module_6/Part_B/input/IMG_7598.jpeg
+/Modules/Module_6/Part_B/input/IMG_7603.jpeg
+/Modules/Module_6/Part_B/working/view_1_upright.png
+/Modules/Module_6/Part_B/working/view_2_upright.png
+/Modules/Module_6/Part_B/working/view_3_upright.png
+/Modules/Module_6/Part_B/working/view_4_upright.png
+/Modules/Module_6/Part_B/output/view_1_correspondences.png
+/Modules/Module_6/Part_B/output/view_2_correspondences.png
+/Modules/Module_6/Part_B/output/view_3_correspondences.png
+/Modules/Module_6/Part_B/output/view_4_correspondences.png

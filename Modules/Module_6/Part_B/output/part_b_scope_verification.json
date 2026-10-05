@@ -1,0 +1,13 @@
+{
+  "protected_files_checked": 32,
+  "part_a_and_streamlit_hashes_unchanged": true,
+  "protected_file_set_unchanged": true,
+  "invalid_coordinate_cases_rejected": [
+    "missing",
+    "out_of_bounds",
+    "duplicate",
+    "wrong_order",
+    "nonfinite"
+  ],
+  "manual_gui_interactively_tested": false
+}

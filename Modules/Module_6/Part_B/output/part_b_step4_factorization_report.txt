@@ -1,0 +1,157 @@
+Module 6 Part B — Step 4: factorization and unscaled reconstruction
+W shape: (8, 8); row order: V1_x, V1_y, V2_x, V2_y, V3_x, V3_y, V4_x, V4_y
+Point order: P1, P2, P3, P4, P5, P6, P7, P8
+Input: approved centered CSV, used without modification or re-centering.
+Coordinate convention: full-resolution upright pixels, origin upper-left, +x right, +y down.
+All recomputed singular values:
+[8.234407661023e+03 4.883061914753e+03 5.915907565263e+02 2.529698049700e+02 1.037979064141e+02 2.158882416504e+01 1.034435279434e+01
+ 2.235626465558e-13]
+SVD agrees with Step 3: PASS (rtol=1e-12, atol=1e-10).
+Retained singular values:
+[8234.407661023239 4883.061914752702  591.590756526329]
+W3 Frobenius approximation error: 274.482805592734
+W3 relative approximation error: 0.028605140364561705
+M_hat shape: (8, 3); S_hat shape: (3, 8)
+Initial ||M_hat S_hat - W3||_F: 1.1819036203704683e-12
+
+AFFINE FACTORIZATION AMBIGUITY
+For any invertible 3 x 3 Q: M_hat S_hat = (M_hat Q)(Q^-1 S_hat).
+Initial factors are therefore not unique Euclidean camera motion and structure.
+The metric upgrade chooses a transformation consistent approximately with unit, orthogonal
+camera rows. Global orthogonal rotations/reflections remain ambiguous.
+Numerical demonstration with an arbitrary invertible transformation T:
+[[1.2 0.1 0. ]
+ [0.  0.8 0.1]
+ [0.  0.  1.1]]
+||(M_hat T) solve(T, S_hat) - W3||_F: 1.7965419212718401e-12
+
+EXPLICIT METRIC CONSTRAINTS
+Unknown order: L11,L12,L13,L22,L23,L33; L = Q Q^T.
+Per view: a L a^T = 1, b L b^T = 1, a L b^T = 0.
+r L r^T coefficients: [r1^2,2r1r2,2r1r3,r2^2,2r2r3,r3^2].
+a L b^T coefficients: [a1b1,a1b2+a2b1,a1b3+a3b1,a2b2,a2b3+a3b2,a3b3].
+Constraint A shape: (12, 6); rhs shape: (12,)
+A:
+[[ 1.947936117351e+02  1.013186359980e+03  1.568065679470e+02  1.317479807098e+03  4.078015556674e+02  3.155686104424e+01]
+ [ 2.367618819358e+03 -1.147834611416e+03 -2.430106339253e+02  1.391191314659e+02  5.890644521853e+01  6.235607661796e+00]
+ [-6.791148805869e+02 -1.601531865930e+03 -2.384878254456e+02  4.281198973270e+02  1.568965273011e+02  1.402769419790e+01]
+ [ 1.740859055844e+02 -9.381778308105e+02 -1.154641417868e+01  1.263998999904e+03  3.111277093752e+01  1.914567407656e-01]
+ [ 1.586066890519e+03  6.305624865202e+02 -7.773689062373e+02  6.267217539551e+01 -1.545267962501e+02  9.525172298798e+01]
+ [ 5.254635010669e+02 -1.311452413513e+03 -1.461969812713e+02 -2.814561547057e+02  3.435203097324e+02  4.270431410945e+00]
+ [ 1.268378427015e+03  1.716091741425e+03 -3.473541040406e+01  5.804598222152e+02 -2.349817280861e+01  2.378132405599e-01]
+ [ 6.917844567520e+02 -1.104301425613e+03  1.046056133853e+03  4.407014449037e+02 -8.349141619259e+02  3.954387181194e+02]
+ [-9.367200654883e+02  1.139649506597e+02 -6.953868421354e+02  5.057761188102e+02 -4.893368689195e+02  9.697451366150e+00]
+ [ 1.820983482489e+03  5.659348370429e+02  4.442459756908e+01  4.397105229931e+01  6.903255199107e+00  2.709449163259e-01]
+ [ 1.306960675713e+02 -7.354615571291e+02 -1.806259346239e+02  1.034659481471e+03  5.082151039620e+02  6.240763181521e+01]
+ [-4.878477019251e+02  1.296816490927e+03  3.311594191983e+02  2.132957246917e+02  6.912766630229e+01  4.112059165463e+00]]
+rhs:
+[1. 1. 0. 1. 1. 0. 1. 1. 0. 1. 1. 0.]
+Constraint system rank: 6
+Condition number (2-norm): 19.152707315908305
+Least-squares residual norm ||A l - rhs||_2: 0.26282075991195819
+Least-squares sum of squared residuals: 0.069074751840699167
+Least-squares RMS constraint residual: 0.075869818241895537
+Constraint residual vector:
+[ 0.118337114318  0.113100550061  0.000379180739 -0.069117738434 -0.019385841075  0.020440070272  0.032865019065  0.007533055144  0.013822742422
+ -0.162284543422 -0.090122367498 -0.030365987173]
+L:
+[[ 4.319858633292e-04  4.249484506321e-05 -1.107076364979e-04]
+ [ 4.249484506321e-05  7.054737083793e-04  7.232954989132e-05]
+ [-1.107076364979e-04  7.232954989132e-05  1.570182999335e-03]]
+L eigenvalues:
+[0.000412917939 0.000708622695 0.001586101937]
+L exactly symmetric: True
+Positive-definiteness tolerance: 3.5218537804080944e-17
+L positive definite above tolerance: True
+No correction to L or its eigenvalues was used.
+
+METRIC UPGRADE
+NumPy Cholesky returns lower-triangular Q satisfying L = Q Q^T.
+Q:
+[[ 0.020784269613  0.              0.            ]
+ [ 0.00204456764   0.026481945766  0.            ]
+ [-0.005326510797  0.003142516877  0.039139952347]]
+||Q Q^T - L||_F: 2.4934440218091932e-19
+M_metric = M_hat Q; S_metric = solve(Q, S_hat).
+M_metric shape: (8, 3); S_metric shape: (3, 8)
+M_metric:
+[[ 0.334372844156  0.978871200944  0.219870615068]
+ [-1.000510315705  0.320198543378  0.097737152848]
+ [-0.203871641996  0.942881390053  0.017125987524]
+ [-0.895914117325 -0.178976317437  0.38199415061 ]
+ [ 0.792073986922  0.636489987095 -0.019087027886]
+ [-0.397821147245  0.493441621042 -0.778323041271]
+ [-0.897711875259 -0.177239316631 -0.02037327259 ]
+ [ 0.213923540923 -0.876646942285 -0.309199756991]]
+S_metric:
+[[ 1014.285048256403  1655.893187961802 -1456.963166147778 -2319.172776121613  1014.614766113826   544.014622094614  1557.177730051798
+  -2009.849412209054]
+ [-1639.21944498648    366.158221786938  1841.239751448236  -534.245403886086  -319.014719432626   536.941061806243   155.20434968284
+   -407.063816419066]
+ [ -120.013188541219   349.212707535916  -697.531594126975   -87.858302912409   169.244733434356   179.274663559433   331.880165200063
+   -124.209184149165]]
+||M_metric S_metric - W3||_F: 1.5245532932582089e-12
+
+CAMERA ROW CHECKS: view, ||i||, ||j||, i dot j, normalized cross-product k
+[[ 1.000000000000e+00  1.057514592957e+00  1.055035805109e+00  3.791807389340e-04  2.264898988961e-02 -2.264586482722e-01  9.737574153144e-01]
+ [ 2.000000000000e+00  9.648223989763e-01  9.902596421774e-01  2.044007027238e-02  3.802743246056e-01  6.546688336719e-02  9.225538061425e-01]
+ [ 3.000000000000e+00  1.016299669913e+00  1.003759460799e+00  1.382274242232e-02 -4.764350408896e-01  6.118296946218e-01  6.314064274234e-01]
+ [ 4.000000000000e+00  9.152679698195e-01  9.538750612642e-01 -3.036598717315e-02  4.233949664042e-02 -3.231211118973e-01  9.454100243125e-01]]
+k is for interpretation only; these are not exact calibrated perspective camera poses.
+
+UNSCALED POINTS: arbitrary reconstruction units; columns X,Y,Z
+P1: [ 1014.285048256403 -1639.21944498648   -120.013188541219]
+P2: [1655.893187961802  366.158221786938  349.212707535916]
+P3: [-1456.963166147778  1841.239751448236  -697.531594126975]
+P4: [-2319.172776121613  -534.245403886086   -87.858302912409]
+P5: [1014.614766113826 -319.014719432626  169.244733434356]
+P6: [544.014622094614 536.941061806243 179.274663559433]
+P7: [1557.177730051798  155.20434968284   331.880165200063]
+P8: [-2009.849412209054  -407.063816419066  -124.209184149165]
+
+BEST-FIT PLANE (no raw-axis depth assumption)
+3D centroid: [-8.526512829121e-14 -1.172395514004e-13 -2.842170943040e-14]
+Plane normal (sign arbitrary): [-0.136732249598  0.083181522421  0.987109480376]
+Plane equation: normal dot (point - centroid) = 0.
+Centered 3D singular values, descending: [4433.048773015131 2631.889391012317  613.617719726283]
+RMS spreads (in-plane 1, in-plane 2, normal): [1567.319424364851  930.513417858871  216.94662533734 ]
+P1 signed perpendicular distance: -393.50440157737012
+P2 signed perpendicular distance: 148.75477192699481
+P3 signed perpendicular distance: -336.16907246735599
+P4 signed perpendicular distance: 185.94060111008133
+P5 signed perpendicular distance: 1.7963913931380788
+P6 signed perpendicular distance: 147.24295186870526
+P7 signed perpendicular distance: 127.59577745619303
+P8 signed perpendicular distance: 118.34298028961369
+RMS plane distance: 216.94662533734038
+Maximum absolute plane distance: 393.50440157737012
+Normal RMS spread / in-plane RMS spreads: [0.138418896598 0.233147229447]
+The reconstructed nonplanarity is appreciable; it is not evidence that the real cover
+has this thickness. Model mismatch and weak planar depth recovery can cause apparent depth.
+Plane-aligned basis (visualization only):
+[[-0.981450628364  0.123803307342 -0.146381027377]
+ [-0.13438361509  -0.98881422695   0.064710652728]
+ [-0.136732249598  0.083181522421  0.987109480376]]
+Saved metric coordinates were not translated, rotated, or forced into a rectangle.
+
+MATRIX FIT / CENTERED REPROJECTION
+||W_centered - M_metric S_metric||_F: 274.48280559273383
+Relative reconstruction error: 0.028605140364561688
+Consistent with Step 3 rank-3 error: True
+Per-view RMS 2D point residual (sqrt(mean(dx^2+dy^2)), pixels): [39.95520083043  70.53803387695  42.977228332238 31.599475771131]
+
+LIMITATIONS
+These are perspective iPhone photographs; Tomasi-Kanade rank-3 factorization assumes
+an affine/orthographic-style camera model. The original centered matrix had numerical
+rank 7; rank 3 captured 99.918174594472% of squared energy.
+Correspondences were manually estimated. All eight landmarks lie on an approximately
+planar cover, making depth recovery weak/degenerate compared with noncoplanar points.
+A visually plausible planar reconstruction does not prove exact 3D recovery.
+Least-squares camera rows need not be exactly orthonormal; do not interpret them as
+calibrated perspective camera rotations. No row re-normalization was used to conceal residuals.
+All 3D units are arbitrary. No known physical dimensions were used, no physical scaling
+or corner rectification was performed, and no bundle adjustment was performed.
+
+Protected preexisting file hashes unchanged: PASS (68 files checked).
+Part A, Streamlit, original JPEGs, correspondences, and Step 3 results were read only.
+No commit or push. STOP after Step 4.

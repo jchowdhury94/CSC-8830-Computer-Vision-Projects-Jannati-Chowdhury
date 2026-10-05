@@ -1,0 +1,15 @@
+{
+  "preexisting_files_checked": 82,
+  "all_preexisting_file_hashes_unchanged": true,
+  "part_a_streamlit_unchanged": true,
+  "original_jpegs_and_steps_1_to_4_unchanged": true,
+  "csv_roundtrip_coordinates_verified": true,
+  "rigid_alignment_preserves_all_pairwise_distances": true,
+  "one_isotropic_scale_preserves_all_pairwise_distance_ratios": true,
+  "corner_centroid_origin_verified": true,
+  "right_handed_orthonormal_basis_and_directions_verified": true,
+  "joint_scale_least_squares_minimum_verified": true,
+  "plane_agrees_with_step4": true,
+  "corner_origin_plane_offset_correctly_accounted_for": true,
+  "scaled_planarity_agrees_with_step4": true
+}

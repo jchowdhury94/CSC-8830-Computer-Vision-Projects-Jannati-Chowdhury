@@ -1,0 +1,21 @@
+{
+  "all_preexisting_files_hashes_unchanged": true,
+  "preexisting_files_checked": 55,
+  "approved_correspondence_csv_sha256": "aa1e9ea000561c8530e54b0a0d03a1d9d0def4a0ace598955a4eba461463e534",
+  "original_jpeg_sha256": {
+    "Modules/Module_6/Part_B/input/IMG_7596.jpeg": "09c292edb19c357b56ade79a6b5c0917b7b906e25cfbe5c838b79707a00696f0",
+    "Modules/Module_6/Part_B/input/IMG_7597.jpeg": "5d628a61ed73ad997a4424176ba8699ca737b9a46d58cc6fa3e3bee4e5f8d852",
+    "Modules/Module_6/Part_B/input/IMG_7598.jpeg": "2ca7f6b8f8309adddd3a172426be9bf2222b8972fd9e825d411f68b81986f725",
+    "Modules/Module_6/Part_B/input/IMG_7603.jpeg": "3062e5ae569c61c5c5ac548318e7c7061528c9c2300a635b1e722f650d0fb0cf"
+  },
+  "part_a_streamlit_unchanged": true,
+  "serialized_matrix_roundtrips_exact": true,
+  "centering_and_svd_invariants_passed": true,
+  "invalid_csv_cases": {
+    "order": "correctly rejected",
+    "count": "correctly rejected",
+    "missing": "correctly rejected",
+    "nonfinite": "correctly rejected",
+    "extra_view": "correctly rejected"
+  }
+}

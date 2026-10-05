@@ -1,0 +1,14 @@
+{
+  "preexisting_files_checked": 64,
+  "all_preexisting_files_sha256_unchanged": true,
+  "original_jpegs_unchanged": true,
+  "approved_correspondences_unchanged": true,
+  "step3_matrices_and_results_unchanged": true,
+  "part_a_streamlit_unchanged": true,
+  "symmetric_cross_coefficients_verified": true,
+  "synthetic_known_metric_recovery_verified": true,
+  "saved_factor_products_verified": true,
+  "positive_definite_L_and_cholesky_verified": true,
+  "plane_basis_distance_and_spread_checks_passed": true,
+  "step3_error_agreement_verified": true
+}

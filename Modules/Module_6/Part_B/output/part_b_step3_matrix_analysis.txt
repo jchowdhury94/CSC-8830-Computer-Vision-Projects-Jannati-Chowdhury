@@ -1,0 +1,95 @@
+Module 6 Part B — Step 3: measurement matrix and rank/SVD analysis
+Views F = 4; points P = 8; raw and centered W shape = (8, 8)
+Coordinates: full-resolution upright pixels; origin upper-left; +x right; +y down.
+Point order: P1 P2 P3 P4 P5 P6 P7 P8
+Row order: V1_x V1_y V2_x V2_y V3_x V3_y V4_x V4_y
+Ordering matches the lecture-style arrangement explicitly supplied in the Step 3 request.
+No course lecture files were available in the repository for independent verification.
+Authoritative input: output/part_b_correspondences.csv
+Input SHA-256: aa1e9ea000561c8530e54b0a0d03a1d9d0def4a0ace598955a4eba461463e534
+Input CSV was read only; no point selection, refinement, or rematching.
+
+RAW W (pixels)
+row                    P1             P2             P3             P4             P5             P6             P7             P8
+V1_x           878.000000    3184.000000    3338.000000     875.000000    2230.000000    2884.000000    2922.000000    1056.000000
+V1_y          1190.000000    1196.000000    4706.000000    4838.000000    1650.000000    2455.000000    1234.000000    4637.000000
+V2_x           241.000000    1997.000000    4026.000000    1942.000000    1525.000000    2396.000000    1855.000000    2064.000000
+V2_y          1335.000000     654.000000    2710.000000    4213.000000    1128.000000    1373.000000     720.000000    3736.000000
+V3_x          2210.000000    3983.000000    2455.000000     275.000000    2983.000000    3243.000000    3726.000000     550.000000
+V3_y           820.000000    1224.000000    3974.000000    2705.000000    1214.000000    1796.000000    1149.000000    2594.000000
+V4_x           993.000000      20.000000    2595.000000    3760.000000     770.000000    1086.000000     143.000000    3503.000000
+V4_y          3911.000000    2155.000000     508.000000    2220.000000    2650.000000    1800.000000    2312.000000    2182.000000
+
+VIEW CENTROIDS (pixels)
+view          mean_x          mean_y
+1       2170.875000000  2738.250000000
+2       2005.750000000  1983.625000000
+3       2428.125000000  1934.500000000
+4       1608.750000000  2217.250000000
+
+CENTERED W (pixels)
+row                    P1             P2             P3             P4             P5             P6             P7             P8
+V1_x         -1292.875000    1013.125000    1167.125000   -1295.875000      59.125000     713.125000     751.125000   -1114.875000
+V1_y         -1548.250000   -1542.250000    1967.750000    2099.750000   -1088.250000    -283.250000   -1504.250000    1898.750000
+V2_x         -1764.750000      -8.750000    2020.250000     -63.750000    -480.750000     390.250000    -150.750000      58.250000
+V2_y          -648.625000   -1329.625000     726.375000    2229.375000    -855.625000    -610.625000   -1263.625000    1752.375000
+V3_x          -218.125000    1554.875000      26.875000   -2153.125000     554.875000     814.875000    1297.875000   -1878.125000
+V3_y         -1114.500000    -710.500000    2039.500000     770.500000    -720.500000    -138.500000    -785.500000     659.500000
+V4_x          -615.750000   -1588.750000     986.250000    2151.250000    -838.750000    -522.750000   -1465.750000    1894.250000
+V4_y          1693.750000     -62.250000   -1709.250000       2.750000     432.750000    -417.250000      94.750000     -35.250000
+
+CENTERED ROW MEANS (pixels)
+V1_x: 0.00000000000000000e+00
+V1_y: 0.00000000000000000e+00
+V2_x: 0.00000000000000000e+00
+V2_y: 0.00000000000000000e+00
+V3_x: 0.00000000000000000e+00
+V3_y: 0.00000000000000000e+00
+V4_x: 0.00000000000000000e+00
+V4_y: 0.00000000000000000e+00
+Centering check: PASS; absolute tolerance = 1.0e-10 pixels; rtol = 0
+No rounding was applied before SVD.
+
+ALL SINGULAR VALUES (descending)
+index singular_value         normalized_to_largest  energy_fraction         cumulative_energy_fraction
+1     8.23440766102323869e+03 1.00000000000000000e+00 7.36414965465291615e-01 7.36414965465291615e-01
+2     4.88306191475270225e+03 5.93007064474861623e-01 2.58965756256279822e-01 9.95380721721571438e-01
+3     5.91590756526328846e+02 7.18437537804407778e-02 3.80102422315225065e-03 9.99181745944723643e-01
+4     2.52969804969979037e+02 3.07210688836049260e-02 6.95016715783615337e-04 9.99876762660507290e-01
+5     1.03797906414080799e+02 1.26053883517812711e-02 1.17013256483439629e-04 9.99993775916990679e-01
+6     2.15888241650423574e+01 2.62178228887439448e-03 5.06192675020898635e-06 9.99998837843740884e-01
+7     1.03443527943406401e+01 1.25623520478644981e-03 1.16215625901130461e-06 9.99999999999999889e-01
+8     2.23562646555768158e-13 2.71498152337028479e-17 5.42820652094947457e-34 9.99999999999999889e-01
+
+NumPy numerical matrix rank: 7
+Default rank tolerance: 1.46272463670684493e-11
+sigma4 / sigma3: 0.42760946174236003
+sigma4 / sigma1: 0.030721068883604926
+First-three squared-singular-value energy fraction: 0.99918174594472364
+First-three energy percentage: 99.918174594472%
+Remaining energy fraction: 0.00081825405527627534
+Remaining energy percentage: 0.081825405528%
+Rank-3 Frobenius approximation error (pixels): 274.482805592734
+Relative rank-3 Frobenius error: 0.028605140364561705
+Relative error percentage: 2.860514036456%
+
+INTERPRETATION
+The ideal orthographic/affine model predicts centered W = M S with rank <= 3.
+The observed NumPy numerical rank is 7, so this data is not exactly rank 3.
+The first three components capture most measured energy and the relative rank-3
+error is small, making rank 3 a reasonable approximate measurement model for
+exploratory later analysis. However, sigma4 is a substantial fraction of sigma3,
+so the departure from the third component is appreciable; energy alone does
+not establish the accuracy of an eventual reconstruction.
+Perspective projection, manual localization, image noise, lens/camera effects,
+and small cover/edge deviations from the affine/rigid model can contribute.
+These diagnostics do not determine each source's individual contribution.
+Centering guarantees W_centered @ ones(8) = 0, so its rank cannot exceed 7.
+The eighth singular value is therefore numerical roundoff, not evidence for rank 3.
+The cover points are largely coplanar; ideal planar affine data has rank <= 2.
+A good rank-3 approximation does not by itself demonstrate recovered 3D depth.
+
+SCOPE
+W3 was computed only to measure approximation error; it was not saved as reconstruction.
+No motion/structure factors, metric upgrade, camera poses, or 3D points calculated.
+No physical cover dimensions used. No commit or push.
