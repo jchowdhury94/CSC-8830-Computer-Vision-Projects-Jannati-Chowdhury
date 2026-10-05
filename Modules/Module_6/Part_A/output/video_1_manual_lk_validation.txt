@@ -1,0 +1,24 @@
+Feature ID: 14; CSV frame: 485
+Original frame pair: 484 -> 485 (one-based)
+OpenCV frame indices: 483 -> 484 (zero-based)
+Old coordinate: (508.88922119, 1131.70117188)
+Window: 21 x 21; integer center: (509, 1132)
+Derivatives: 3x3 Sobel on average grayscale, scale=1/8; It=new-old; intensities in [0,1].
+Number of equations: 441; A shape: (441, 2); b shape: (441,)
+A^T A:
+[[ 0.150347642734 -0.037866986255]
+ [-0.037866986255  0.534424680411]]
+Eigenvalues: [0.146649855881 0.538122467264]
+Rank: 2; condition number of A^T A: 3.669437409488
+Manual u: 1.306048680516 px
+Manual v: -0.012911233275 px
+Manual magnitude: 1.306112497384 px
+Predicted new coordinate: (510.195269870516, 1131.688260646725)
+OpenCV u: 0.99725342 px; OpenCV v: -0.01696777 px
+OpenCV new coordinate: (509.88647461, 1131.68420410)
+u error: 0.308795260516 px; v error: 0.004056536725 px
+Position error: 0.308821904160 px
+Relative motion-vector error: 30.962763%
+The direction agrees with tracking; assess approximate magnitude using the reported error.
+Magnitude difference relative to OpenCV: 30.952018%
+OpenCV tracking is iterative and pyramidal; this is a single-level, one-step local linear least-squares estimate.

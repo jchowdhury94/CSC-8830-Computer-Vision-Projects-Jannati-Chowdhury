@@ -1,0 +1,17 @@
+Feature ID: 12; CSV frame: 483
+Original old frame: 482 (one-based); OpenCV index: 481
+P = (401.29635620, 1644.09863281)
+Q11 = (401, 1644); I11 = 83
+Q21 = (402, 1644); I21 = 90
+Q12 = (401, 1645); I12 = 104
+Q22 = (402, 1645); I22 = 109
+dx = 0.296356200000; dy = 0.098632810000
+w11 = 0.634241434767; w21 = 0.267125755233
+w12 = 0.069402365233; w22 = 0.029230444767
+Sum of weights = 1.000000000000
+I(x,y) = (1-dx)(1-dy)I11 + dx(1-dy)I21 + (1-dx)dy I12 + dx dy I22
+I(x,y) = 0.634241434767(83) + 0.267125755233(90) + 0.069402365233(104) + 0.029230444767(109)
+Manual interpolated intensity = 87.087321520467
+OpenCV interpolated intensity = 87.087326049805
+Absolute difference = 0.000004529338
+Intensities use the 0-255 grayscale range. Small verification differences can arise from float32 rounding.

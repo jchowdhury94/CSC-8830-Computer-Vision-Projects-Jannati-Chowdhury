@@ -1,0 +1,29 @@
+Feature ID: 12; CSV frame: 483
+Original frame pair: 482 -> 483 (one-based)
+OpenCV frame indices: 481 -> 482 (zero-based)
+Old coordinate: (401.29635620, 1644.09863281)
+Window: 21 x 21; integer center: (401, 1644)
+Derivatives: 3x3 Sobel on average grayscale, scale=1/8; It=new-old; intensities in [0,1].
+Number of equations: 441; A shape: (441, 2); b shape: (441,)
+A^T A:
+[[ 0.813748257882 -0.308142961842]
+ [-0.308142961842  1.445424055652]]
+Eigenvalues: [0.688331509987 1.570840803546]
+Rank: 2; condition number of A^T A: 2.282099222184
+Manual u: 1.080078063292 px
+Manual v: 0.662030599980 px
+Manual magnitude: 1.266827982843 px
+Manual direction angle: 31.506089542232 degrees
+Predicted new coordinate: (402.376434263292, 1644.760663409980)
+OpenCV u: 0.80606079 px; OpenCV v: 0.50659180 px
+OpenCV magnitude from CSV: 0.95203427 px
+OpenCV direction angle: 32.148474592586 degrees
+OpenCV new coordinate: (402.10241699, 1644.60522461)
+u error: 0.274017273292 px; v error: 0.155438799980 px
+Position error: 0.315034421296 px
+Absolute angle difference: 0.642385050354 degrees
+Relative motion-vector error: 33.090660%
+Both methods support rightward/downward diagonal motion; assess numerical agreement using the reported errors.
+The local feature provides intensity variation in two independent directions (full-rank system).
+Magnitude difference relative to OpenCV: 33.065376%
+OpenCV tracking is iterative and pyramidal; this is a single-level, one-step local linear least-squares estimate.

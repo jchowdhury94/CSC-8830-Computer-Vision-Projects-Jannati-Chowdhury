@@ -34,6 +34,11 @@ page = st.navigation(
             title="Module 4 - Edge Detection, Boundary Detection, and Features",
             url_path="module-4",
         ),
+        st.Page(
+            "Pages/app_module6.py",
+            title="Module 6 - Optical Flow and Structure from Motion",
+            url_path="module-6",
+        ),
     ]
 )
 page.run()

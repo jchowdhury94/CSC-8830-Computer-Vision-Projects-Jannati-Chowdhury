@@ -22,3 +22,9 @@ dist/
 # SAM2 weights and interrupted runtime downloads never belong in Git.
 sam2.1_hiera_tiny.pt
 sam2.1_hiera_tiny.pt.*.part
+
+# Module 6 raw inputs and original renderings stay local.
+/Modules/Module_6/Part_A/input/video_1_horizontal.MOV
+/Modules/Module_6/Part_A/input/video_2_diagonal.MOV
+/Modules/Module_6/Part_A/output/video_1_optical_flow.mp4
+/Modules/Module_6/Part_A/output/video_2_optical_flow.mp4
