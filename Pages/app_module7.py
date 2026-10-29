@@ -198,6 +198,7 @@ def init_state():
     ss.setdefault("m7_dialog_opened", None)
     ss.setdefault("m7_ack", None)
     ss.setdefault("m7_show_experiment", False)
+    ss.setdefault("m7_scroll_to_experiment", False)
     ss.setdefault("m7_points", {"left": [], "right": []})
     ss.setdefault("m7_pending", None)           # (side, coarse point) awaiting zoom refinement
     ss.setdefault("m7_refined", None)           # dragged position of the pending corner (original pixels), uncommitted
@@ -423,7 +424,29 @@ def on_calibration_file():
 
 
 def toggle_experiment():
-    st.session_state["m7_show_experiment"] = not st.session_state["m7_show_experiment"]
+    ss = st.session_state
+    ss["m7_show_experiment"] = not ss["m7_show_experiment"]
+    ss["m7_scroll_to_experiment"] = ss["m7_show_experiment"]  # one-shot: only when opening
+
+
+# Runs once, on the render right after the experiment opens. It scrolls the heading into view with a margin that keeps the
+# "View My Experiment & Results" button (found by its widget-key class) on screen when there is room.
+SCROLL_TO_EXPERIMENT_JS = """
+<script>
+setTimeout(function () {
+  var heading = document.getElementById("m7-experiment-heading");
+  if (!heading) { return; }
+  var margin = 24;
+  var button = document.querySelector(".st-key-m7_experiment_btn");
+  if (button) {
+    margin = heading.getBoundingClientRect().top - button.getBoundingClientRect().top + 16;
+    margin = Math.min(margin, window.innerHeight * 0.4);
+  }
+  heading.style.scrollMarginTop = margin + "px";
+  heading.scrollIntoView({behavior: "smooth", block: "start"});
+}, 150);
+</script>
+"""
 
 
 # ---------------------------------------------------------------- calibration reference
@@ -1255,7 +1278,9 @@ def experiment_overlay(pair_id, side, selection):
 
 
 def show_experiment():
-    st.header("My Experiment & Results")
+    st.header("My Experiment & Results", anchor="m7-experiment-heading")
+    if st.session_state.pop("m7_scroll_to_experiment", False):
+        st.html(SCROLL_TO_EXPERIMENT_JS, unsafe_allow_javascript=True)
     try:
         saved = load_saved_results()
     except (OSError, ValueError, KeyError) as error:

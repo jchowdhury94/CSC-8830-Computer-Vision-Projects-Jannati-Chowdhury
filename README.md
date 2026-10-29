@@ -16,11 +16,11 @@
 
 [https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury](https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury)
 
-This repository contains Streamlit-based projects completed for CSC 8830 Computer Vision. Modules 2, 3, and 4 are currently available, and additional modules will be added throughout the course. The public Streamlit website is the easiest way to view the projects without local installation. Select a module from the sidebar to explore its interface and results.
+This repository contains Streamlit-based projects completed for CSC 8830 Computer Vision. Modules 2, 3, 4, 6, and 7 are currently available, and additional modules will be added throughout the course. The public Streamlit website is the easiest way to view the projects without local installation. Select a module from the sidebar to explore its interface and results.
 
 ## Current Modules
 
-### Module 2 - Camera Calibration and 2D Object Measurement
+### Module 2 - 2D Object Measurement
 
 - **Camera calibration:** OpenCV detects and refines checkerboard corners to estimate camera intrinsics and lens distortion. The setup uses an 8 × 6 inner-corner pattern with 20 mm squares.
 - **Calibration parameters and results:** `Modules/Module_2/camera_calibration.npz` stores the camera matrix, distortion coefficients, RMS reprojection error, and calibration setup metadata. The Streamlit calibration reference displays these values, including focal lengths and the principal point.
@@ -50,7 +50,7 @@ Representative Module 3 validation results:
 
 These representative differences are extremely close to zero and consistent with floating-point roundoff. Exact comparison values depend on the input image and filter settings.
 
-### Module 4 - Edge Detection and Boundary Detection
+### Module 4 - Edge Detection, Boundary Detection, and Features
 
 `Pages/app_module4.py` provides two human-boundary workflows:
 
@@ -59,17 +59,20 @@ These representative differences are extremely close to zero and consistent with
 - **Thermal comparison metric:** IoU is the single numerical comparison metric: foreground intersection divided by foreground union, calculated directly from the Classical and SAM2 masks at their shared processing resolution. IoU measures the overlap/agreement between the Classical and SAM2 segmentation masks. It is not a ground-truth accuracy metric. The interface displays four decimal places, or N/A when both masks are empty.
 - **Model checkpoint:** Both workflows use SAM 2.1 Hiera Tiny. The checkpoint is not stored in Git. The runtime obtains and caches the official checkpoint when required, or reuses verified local weights.
 
+### Module 6 - Optical Flow and Structure from Motion
+
+`Pages/app_module6.py` presents saved results; the scripts and outputs are in `Modules/Module_6/`.
+
+- **Part A - Optical flow and Lucas-Kanade validation:** Sparse pyramidal Lucas-Kanade tracking of manually selected features in two videos (horizontal and diagonal motion), with a manual Lucas-Kanade estimate from the optical-flow constraint and a worked bilinear-interpolation example as validation.
+- **Part B - Structure from Motion by factorization:** Eight manually matched points on a book cover in four views form a measurement matrix. Rank-3 factorization (Tomasi-Kanade, orthographic model) gives an unscaled 3D reconstruction, which is scaled to the measured cover size and validated, with its limitations stated. Step notes are in `Modules/Module_6/Part_B/README*.md`.
+
+The original videos and high-resolution photographs are git-ignored; the page uses the saved outputs.
+
 ### Module 7 - Stereo Vision
 
-Module 7 is registered in `home.py` as **Module 7 - Stereo Vision** (`/module-7`, `Pages/app_module7.py`, code in `Modules/Module_7/`). Its home screen offers two parts: **Part 1 - Calibrated Stereo Object Measurement** and **Part 3 - Room Measurement from Video**. Part 3 is only a placeholder and has no implementation yet. A **Module 7 Home** button returns to the part selector.
+Calibrated stereo measurement of an object's Z-depth, width and height from two photographs, using classical OpenCV. A visitor can load a saved calibration (`.npz`) or compute one from their own checkerboard photographs, select the object's corners on both images with a draggable zoom view, and calculate the dimensions. The page also shows the author's saved experiment: an iPhone Air and iPhone 17 Pro Max calibrated from 30 checkerboard pairs, used to measure a notebook. Part 3 (Room Measurement from Video) is a placeholder. Visitor measurements never use the author's calibration, and the original photographs are not needed to run the page.
 
-- **Part 1 - Calibrated stereo measurement:** Measure an object's Z-depth, width and height from two photographs taken by a calibrated left/right camera pair, using classical OpenCV only (undistortion, `cv2.triangulatePoints`, 3D Euclidean edge lengths).
-- **Visitor calibration:** A visitor builds their own calibration by choosing a number of stereo pairs and uploading left and right checkerboard photos (JPEG or PNG, at least 8 valid pairs). The app detects the board corners, runs stereo calibration, and reports reprojection and epipolar quality checks and warnings.
-- **Saving and loading calibrations (NPZ):** A finished calibration can be downloaded as a small `.npz` file and loaded again later with **Load Saved Calibration (.npz)**. The loader never unpickles data, validates every field, and recomputes the derived geometry. A valid file is well-formed, not proof that the calibration is accurate or authentic.
-- **Object photos and corner selection:** After a calibration is active, the visitor uploads a left and a right object photo. Each is checked against the calibration's image size and camera metadata (a size mismatch is an error; metadata differences are warnings). The visitor then selects the four object corners (top-left, top-right, bottom-right, bottom-left) in each photo with a zoom view and can drag the markers to refine them.
-- **Depth and size estimation:** **Calculate Dimensions** triangulates the corners in the left-camera frame and reports each corner's Z-depth, the four edge lengths, and the width and height. Nothing is rescaled to a known size. Visitor measurements always use the visitor's active calibration and never the author's Model B calibration.
-- **My Experiment & Results:** The **View My Experiment & Results** button shows the author's own experiment: an iPhone Air (left) and an iPhone 17 Pro Max (right) were calibrated as Model B from 30 checkerboard pairs (8x6 inner corners, 20 mm squares), then used to measure a 305 x 215 mm notebook in three stereo pairs. The page shows saved corner selections, depths, edge lengths, errors against the known size, and figures. It reads only the saved files in `Modules/Module_7/` (`calibration/model_b/`, `selections/`, `outputs/`, `display/`, `reference/`), so it does not need the original photographs.
-- **Local files:** The original checkerboard and notebook JPEGs under `Modules/Module_7/data/` are kept locally and excluded from Git by `.gitignore`. Their reduced display copies in `Modules/Module_7/display/` are committed. `Modules/Module_7/README.md` has the full method and result tables.
+See [Modules/Module_7/README.md](Modules/Module_7/README.md) for the method, workflows, results, data files and verification commands.
 
 ## Project Structure
 
@@ -82,18 +85,29 @@ CSC_8830_Projects_Jannati_Chowdhury/
 ├── Pages/
 │   ├── app_module2.py
 │   ├── app_module3.py
-│   └── app_module4.py
-└── Modules/
-    ├── Module_2/
-    ├── Module_3/
-    └── Module_4/
-        ├── human_boundary.py
-        ├── rgb_preprocessing.py
-        ├── thermal_boundary.py
-        ├── thermal_preprocessing.py
-        ├── sam2_comparison.py
-        ├── sam2_runtime.py
-        └── requirements-sam2.txt
+│   ├── app_module4.py
+│   ├── app_module6.py
+│   └── app_module7.py
+├── Modules/
+│   ├── Module_2/
+│   ├── Module_3/
+│   ├── Module_4/
+│   │   ├── human_boundary.py
+│   │   ├── rgb_preprocessing.py
+│   │   ├── thermal_boundary.py
+│   │   ├── thermal_preprocessing.py
+│   │   ├── sam2_comparison.py
+│   │   ├── sam2_runtime.py
+│   │   └── requirements-sam2.txt
+│   ├── Module_6/
+│   │   ├── Part_A/
+│   │   └── Part_B/
+│   └── Module_7/
+│       ├── README.md
+│       ├── stereo_measure/
+│       ├── calibration/, selections/, reference/, display/, outputs/
+│       └── run_measurement.py, run_calibration.py, verify_pipeline.py
+└── tests/
 ```
 
 `home.py` is the single Streamlit entry point and registers each module page. This root README contains the documentation for the combined course website.
@@ -104,8 +118,10 @@ CSC_8830_Projects_Jannati_Chowdhury/
 2. Add the module's Streamlit page at `Pages/app_moduleN.py`.
 3. Register the new page in the existing `st.navigation` list in `home.py`, using the same `st.Page` pattern as the existing modules.
 4. Add dependencies to `requirements.txt` only when needed.
+5. Add tests under `tests/`.
+6. Add a short section for the module to this root README. A module with detailed methods or workflows may have its own `Modules/Module_N/README.md`, which the root section should link to rather than repeat.
 
-Existing modules do not need to be reorganized when future modules are added. Extend this root README to document new modules instead of creating separate module README files.
+Existing modules do not need to be reorganized when future modules are added.
 
 ## Local Installation and Run Instructions
 
@@ -119,3 +135,13 @@ python -m streamlit run home.py
 ```
 
 Open the local URL printed by Streamlit, then choose a module from the sidebar. For access without local installation, use the [public Streamlit website](https://jannati-chowdhury-computer-vision-projects.streamlit.app/).
+
+## Running the Tests
+
+From the project root, with the dependencies installed:
+
+```bash
+python -m unittest discover -s tests
+```
+
+`pytest tests` also works if pytest is installed. Some Module 7 tests need the original checkerboard and notebook photographs, which are git-ignored; those tests are skipped automatically when the photographs are absent, so the suite runs from a fresh clone and runs in full when the photographs are present.
