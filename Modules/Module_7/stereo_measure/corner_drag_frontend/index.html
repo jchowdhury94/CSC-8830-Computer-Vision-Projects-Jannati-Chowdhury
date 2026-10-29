@@ -1,0 +1,77 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  #wrap { position: relative; display: inline-block; line-height: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #img { display: block; max-width: 100%; height: auto; }
+  #overlay { position: absolute; left: 0; top: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+  #overlay.dragging { cursor: grabbing; }
+</style></head>
+<body>
+<div id="wrap"><img id="img" draggable="false" alt="zoomed corner view"><canvas id="overlay"></canvas></div>
+<script>
+// Minimal Streamlit component protocol (no build step, no dependencies). The marker lives in fractions of the displayed
+// image (0..1, edge-based), so it is independent of the rendered size; Python converts fractions to original pixel coordinates.
+const img = document.getElementById("img"), canvas = document.getElementById("overlay"), ctx = canvas.getContext("2d");
+const GRAB_RADIUS = 28;
+let pos = [0.5, 0.5], limits = [0, 1, 0, 1], token = null, seq = 0, dragging = false, offset = [0, 0];
+
+function send(type, data) { window.parent.postMessage(Object.assign({isStreamlitMessage: true, type}, data), "*"); }
+function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+function rect() { return img.getBoundingClientRect(); }
+
+function draw() {
+  const r = rect(), dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, r.width, r.height);
+  const x = pos[0] * r.width, y = pos[1] * r.height, arm = 22;
+  for (const [color, w] of [["#000", 4], ["#ffeb3b", 2]]) {
+    ctx.strokeStyle = color; ctx.lineWidth = w;
+    ctx.beginPath(); ctx.moveTo(x - arm, y); ctx.lineTo(x - 5, y); ctx.moveTo(x + 5, y); ctx.lineTo(x + arm, y);
+    ctx.moveTo(x, y - arm); ctx.lineTo(x, y - 5); ctx.moveTo(x, y + 5); ctx.lineTo(x, y + arm); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, 11, 0, 2 * Math.PI); ctx.stroke();
+  }
+}
+function setHeight() { send("streamlit:setFrameHeight", {height: Math.ceil(rect().height) + 2}); }
+function toFrac(e) { const r = rect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; }
+
+canvas.addEventListener("pointerdown", (e) => {
+  const r = rect(), f = toFrac(e);
+  const dist = Math.hypot((f[0] - pos[0]) * r.width, (f[1] - pos[1]) * r.height);
+  if (dist > GRAB_RADIUS) return;                    // only the marker can be dragged; other clicks do nothing
+  dragging = true; canvas.classList.add("dragging"); canvas.setPointerCapture(e.pointerId);
+  offset = [pos[0] - f[0], pos[1] - f[1]];           // keep the grab point so the marker does not jump
+  e.preventDefault();
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const f = toFrac(e);
+  pos = [clamp(f[0] + offset[0], limits[0], limits[1]), clamp(f[1] + offset[1], limits[2], limits[3])];
+  draw();                                            // cheap local redraw only; Python hears about it on release
+});
+function release(e) {
+  if (!dragging) return;
+  dragging = false; canvas.classList.remove("dragging");
+  seq += 1;
+  send("streamlit:setComponentValue", {value: {fx: pos[0], fy: pos[1], seq, token}, dataType: "json"});
+}
+canvas.addEventListener("pointerup", release);
+canvas.addEventListener("pointercancel", release);
+
+window.addEventListener("message", (event) => {
+  if (event.data.type !== "streamlit:render") return;
+  const args = event.data.args;
+  limits = args.limits;
+  if (args.token !== token) {                        // a new pending corner: take the starting marker from Python
+    token = args.token; pos = args.marker.slice(); seq = 0;
+  }
+  if (img.getAttribute("data-src-id") !== args.token) {
+    img.setAttribute("data-src-id", args.token); img.src = args.src;
+  }
+  if (img.complete) { draw(); setHeight(); }
+});
+img.addEventListener("load", () => { draw(); setHeight(); });
+new ResizeObserver(() => { draw(); setHeight(); }).observe(img);
+send("streamlit:componentReady", {apiVersion: 1});
+</script></body></html>

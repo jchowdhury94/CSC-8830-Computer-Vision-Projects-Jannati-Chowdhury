@@ -39,6 +39,11 @@ page = st.navigation(
             title="Module 6 - Optical Flow and Structure from Motion",
             url_path="module-6",
         ),
+        st.Page(
+            "Pages/app_module7.py",
+            title="Module 7 - Stereo Vision",
+            url_path="module-7",
+        ),
     ]
 )
 page.run()

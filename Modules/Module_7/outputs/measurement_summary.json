@@ -1,0 +1,65 @@
+{
+  "model": "Model B: 30-pair stereo calibration",
+  "frame": "left camera (iPhone Air), mm, X right, Y down, Z forward",
+  "ground_truth_mm": {
+    "width": 305.0,
+    "height": 215.0
+  },
+  "baseline_mm": 226.0876902247695,
+  "pairs": [
+    {
+      "pair": 1,
+      "mean_Z_depth_mm": 789.3853690332833,
+      "min_Z_mm": 764.47329374016,
+      "max_Z_mm": 813.5040786262217,
+      "top_width": 301.1555365559527,
+      "bottom_width": 302.70881278590963,
+      "left_height": 211.30743772073788,
+      "right_height": 212.7841932427375,
+      "width_mm": 301.9321746709312,
+      "height_mm": 212.0458154817377,
+      "width_err_mm": -3.0678253290687962,
+      "width_err_pct": -1.0058443701864905,
+      "height_err_mm": -2.954184518262309,
+      "height_err_pct": -1.3740393108196787,
+      "all_finite": true,
+      "depth_positive_both_cameras": true
+    },
+    {
+      "pair": 2,
+      "mean_Z_depth_mm": 779.0410580950147,
+      "min_Z_mm": 707.3245441991468,
+      "max_Z_mm": 854.7496094819629,
+      "top_width": 302.08257980459155,
+      "bottom_width": 298.838670884488,
+      "left_height": 207.25730162157802,
+      "right_height": 210.63324101438084,
+      "width_mm": 300.4606253445398,
+      "height_mm": 208.94527131797943,
+      "width_err_mm": -4.539374655460222,
+      "width_err_pct": -1.4883195591672858,
+      "height_err_mm": -6.054728682020567,
+      "height_err_pct": -2.8161528753584033,
+      "all_finite": true,
+      "depth_positive_both_cameras": true
+    },
+    {
+      "pair": 3,
+      "mean_Z_depth_mm": 767.0337720968377,
+      "min_Z_mm": 699.2558911303904,
+      "max_Z_mm": 834.0607831113922,
+      "top_width": 299.8568977748335,
+      "bottom_width": 300.0323201960794,
+      "left_height": 214.02675996111995,
+      "right_height": 212.17818549090802,
+      "width_mm": 299.94460898545645,
+      "height_mm": 213.10247272601399,
+      "width_err_mm": -5.055391014543545,
+      "width_err_pct": -1.6575052506700148,
+      "height_err_mm": -1.8975272739860145,
+      "height_err_pct": -0.8825708251097741,
+      "all_finite": true,
+      "depth_positive_both_cameras": true
+    }
+  ]
+}

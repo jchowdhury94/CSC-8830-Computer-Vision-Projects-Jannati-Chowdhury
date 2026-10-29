@@ -43,3 +43,14 @@ sam2.1_hiera_tiny.pt.*.part
 /Modules/Module_6/Part_B/output/view_2_correspondences.png
 /Modules/Module_6/Part_B/output/view_3_correspondences.png
 /Modules/Module_6/Part_B/output/view_4_correspondences.png
+
+# Module 7 stereo images stay local. Keep scripts, coordinate CSVs, and summary CSVs in Git.
+/Modules/Module_7/data/calibration/left/*.jpeg
+/Modules/Module_7/data/calibration/right/*.jpeg
+/Modules/Module_7/results/corner_detection/*.jpg
+/Modules/Module_7/results/stage1_5_validation/*.jpg
+
+# Module 7 original object photographs stay local (about 22 MB). The app runs from the smaller
+# Module_7/display/ images, selections/ and outputs/, which stay in Git.
+/Modules/Module_7/data/object_measurement/left/*.jpeg
+/Modules/Module_7/data/object_measurement/right/*.jpeg

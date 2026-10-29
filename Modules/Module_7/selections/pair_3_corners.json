@@ -1,0 +1,60 @@
+{
+  "pair": 3,
+  "confirmed": true,
+  "corner_order": [
+    "TL",
+    "TR",
+    "BR",
+    "BL"
+  ],
+  "corner_meaning": [
+    "top-left: OUTER top corner of red spine",
+    "top-right: OUTER top corner of red spine",
+    "bottom-right: outer bottom corner",
+    "bottom-left: outer bottom corner"
+  ],
+  "image_size_wh": [
+    4284,
+    5712
+  ],
+  "coordinate_frame": "original photograph pixels, EXIF orientation applied (4284 x 5712), origin top-left, sub-pixel floats",
+  "left_image": "data/object_measurement/left/air_image3.jpeg",
+  "right_image": "data/object_measurement/right/pro_image3.jpeg",
+  "left_px": [
+    [
+      1824.666666666667,
+      4125.333333333333
+    ],
+    [
+      3341.5200000000004,
+      3973.0133333333333
+    ],
+    [
+      3359.653333333334,
+      5151.04
+    ],
+    [
+      1811.9733333333338,
+      5534.293333333333
+    ]
+  ],
+  "right_px": [
+    [
+      466.4800000000005,
+      4144.373333333334
+    ],
+    [
+      2084.8800000000006,
+      3960.32
+    ],
+    [
+      2094.266666666667,
+      5079.2266666666665
+    ],
+    [
+      441.0933333333337,
+      5464.4800000000005
+    ]
+  ],
+  "source": "Stage 10G BR-refined selection (TL, TR, BL unchanged from the reselection; BR refined)"
+}

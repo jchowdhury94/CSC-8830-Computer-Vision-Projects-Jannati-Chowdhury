@@ -59,6 +59,18 @@ These representative differences are extremely close to zero and consistent with
 - **Thermal comparison metric:** IoU is the single numerical comparison metric: foreground intersection divided by foreground union, calculated directly from the Classical and SAM2 masks at their shared processing resolution. IoU measures the overlap/agreement between the Classical and SAM2 segmentation masks. It is not a ground-truth accuracy metric. The interface displays four decimal places, or N/A when both masks are empty.
 - **Model checkpoint:** Both workflows use SAM 2.1 Hiera Tiny. The checkpoint is not stored in Git. The runtime obtains and caches the official checkpoint when required, or reuses verified local weights.
 
+### Module 7 - Stereo Vision
+
+Module 7 is registered in `home.py` as **Module 7 - Stereo Vision** (`/module-7`, `Pages/app_module7.py`, code in `Modules/Module_7/`). Its home screen offers two parts: **Part 1 - Calibrated Stereo Object Measurement** and **Part 3 - Room Measurement from Video**. Part 3 is only a placeholder and has no implementation yet. A **Module 7 Home** button returns to the part selector.
+
+- **Part 1 - Calibrated stereo measurement:** Measure an object's Z-depth, width and height from two photographs taken by a calibrated left/right camera pair, using classical OpenCV only (undistortion, `cv2.triangulatePoints`, 3D Euclidean edge lengths).
+- **Visitor calibration:** A visitor builds their own calibration by choosing a number of stereo pairs and uploading left and right checkerboard photos (JPEG or PNG, at least 8 valid pairs). The app detects the board corners, runs stereo calibration, and reports reprojection and epipolar quality checks and warnings.
+- **Saving and loading calibrations (NPZ):** A finished calibration can be downloaded as a small `.npz` file and loaded again later with **Load Saved Calibration (.npz)**. The loader never unpickles data, validates every field, and recomputes the derived geometry. A valid file is well-formed, not proof that the calibration is accurate or authentic.
+- **Object photos and corner selection:** After a calibration is active, the visitor uploads a left and a right object photo. Each is checked against the calibration's image size and camera metadata (a size mismatch is an error; metadata differences are warnings). The visitor then selects the four object corners (top-left, top-right, bottom-right, bottom-left) in each photo with a zoom view and can drag the markers to refine them.
+- **Depth and size estimation:** **Calculate Dimensions** triangulates the corners in the left-camera frame and reports each corner's Z-depth, the four edge lengths, and the width and height. Nothing is rescaled to a known size. Visitor measurements always use the visitor's active calibration and never the author's Model B calibration.
+- **My Experiment & Results:** The **View My Experiment & Results** button shows the author's own experiment: an iPhone Air (left) and an iPhone 17 Pro Max (right) were calibrated as Model B from 30 checkerboard pairs (8x6 inner corners, 20 mm squares), then used to measure a 305 x 215 mm notebook in three stereo pairs. The page shows saved corner selections, depths, edge lengths, errors against the known size, and figures. It reads only the saved files in `Modules/Module_7/` (`calibration/model_b/`, `selections/`, `outputs/`, `display/`, `reference/`), so it does not need the original photographs.
+- **Local files:** The original checkerboard and notebook JPEGs under `Modules/Module_7/data/` are kept locally and excluded from Git by `.gitignore`. Their reduced display copies in `Modules/Module_7/display/` are committed. `Modules/Module_7/README.md` has the full method and result tables.
+
 ## Project Structure
 
 ```text

@@ -1,0 +1,60 @@
+{
+  "pair": 1,
+  "confirmed": true,
+  "corner_order": [
+    "TL",
+    "TR",
+    "BR",
+    "BL"
+  ],
+  "corner_meaning": [
+    "top-left: OUTER top corner of red spine",
+    "top-right: OUTER top corner of red spine",
+    "bottom-right: outer bottom corner",
+    "bottom-left: outer bottom corner"
+  ],
+  "image_size_wh": [
+    4284,
+    5712
+  ],
+  "coordinate_frame": "original photograph pixels, EXIF orientation applied (4284 x 5712), origin top-left, sub-pixel floats",
+  "left_image": "data/object_measurement/left/air_image1.jpeg",
+  "right_image": "data/object_measurement/right/pro_image1.jpeg",
+  "left_px": [
+    [
+      1526.373333333334,
+      3966.666666666667
+    ],
+    [
+      3220.9333333333334,
+      4042.826666666667
+    ],
+    [
+      3214.586666666667,
+      5324.8533333333335
+    ],
+    [
+      1475.6000000000004,
+      5185.2266666666665
+    ]
+  ],
+  "right_px": [
+    [
+      345.8933333333339,
+      4017.44
+    ],
+    [
+      1894.4800000000005,
+      4055.52
+    ],
+    [
+      1875.4400000000005,
+      5255.04
+    ],
+    [
+      288.77333333333354,
+      5147.1466666666665
+    ]
+  ],
+  "source": "Stage 10 original approved selection"
+}

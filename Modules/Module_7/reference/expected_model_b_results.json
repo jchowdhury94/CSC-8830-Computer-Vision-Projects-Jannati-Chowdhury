@@ -1,0 +1,61 @@
+{
+  "description": "Saved Model B results from the original Stage 10 / 10G / 10H runs, used only to verify the standalone pipeline. Pairs 1-2: full float precision (Stage 10 per_pair_measurements.csv). Pair 3: 4 decimals (Stage 10G / 10H CSVs).",
+  "model_b_npz_sha256": "c66c35519fa9a9b34d6b4795a08d95906067dc05cab0ccef9f6defa397027c94",
+  "ground_truth_mm": {
+    "width": 305.0,
+    "height": 215.0
+  },
+  "pairs": {
+    "1": {
+      "precision": "full",
+      "tolerance_mm": 1e-06,
+      "mean_Z_mm": 789.3853690332833,
+      "corner_Z_mm": {
+        "TL": 813.5040786262217,
+        "TR": 779.1884291752675,
+        "BR": 764.47329374016,
+        "BL": 800.3756745914836
+      },
+      "top_width_mm": 301.1555365559527,
+      "bottom_width_mm": 302.70881278590963,
+      "left_height_mm": 211.30743772073788,
+      "right_height_mm": 212.7841932427375,
+      "width_mm": 301.9321746709312,
+      "height_mm": 212.0458154817377
+    },
+    "2": {
+      "precision": "full",
+      "tolerance_mm": 1e-06,
+      "mean_Z_mm": 779.0410580950147,
+      "corner_Z_mm": {
+        "TL": 854.7496094819629,
+        "TR": 717.116646031252,
+        "BR": 707.3245441991468,
+        "BL": 836.973432667697
+      },
+      "top_width_mm": 302.08257980459155,
+      "bottom_width_mm": 298.838670884488,
+      "left_height_mm": 207.25730162157802,
+      "right_height_mm": 210.63324101438084,
+      "width_mm": 300.4606253445398,
+      "height_mm": 208.94527131797943
+    },
+    "3": {
+      "precision": "4dp",
+      "tolerance_mm": 0.0001,
+      "mean_Z_mm": 767.0338,
+      "corner_Z_mm": {
+        "TL": 714.3088,
+        "TR": 834.0608,
+        "BR": 820.5096,
+        "BL": 699.2559
+      },
+      "top_width_mm": 299.8569,
+      "bottom_width_mm": 300.0323,
+      "left_height_mm": 214.0268,
+      "right_height_mm": 212.1782,
+      "width_mm": 299.9446,
+      "height_mm": 213.1025
+    }
+  }
+}

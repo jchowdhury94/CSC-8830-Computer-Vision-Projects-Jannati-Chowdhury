@@ -1,0 +1,4 @@
+pair,mean_Z_depth_mm,min_Z_mm,max_Z_mm,top_width,bottom_width,left_height,right_height,width_mm,height_mm,width_err_mm,width_err_pct,height_err_mm,height_err_pct,all_finite,depth_positive_both_cameras
+1,789.3854,764.4733,813.5041,301.1555,302.7088,211.3074,212.7842,301.9322,212.0458,-3.0678,-1.0058,-2.9542,-1.3740,True,True
+2,779.0411,707.3245,854.7496,302.0826,298.8387,207.2573,210.6332,300.4606,208.9453,-4.5394,-1.4883,-6.0547,-2.8162,True,True
+3,767.0338,699.2559,834.0608,299.8569,300.0323,214.0268,212.1782,299.9446,213.1025,-5.0554,-1.6575,-1.8975,-0.8826,True,True
