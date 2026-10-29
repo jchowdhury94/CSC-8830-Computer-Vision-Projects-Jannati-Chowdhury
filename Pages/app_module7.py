@@ -582,10 +582,11 @@ def photo_slot(index, side, enabled):
             st.caption("Checkerboard detected.")
         else:
             st.error(f"Pair {index + 1}, {side} camera: {rec['message']}")
-    st.file_uploader(f"{'Replace' if rec else 'Upload'} {side} camera image (pair {index + 1})", type=["jpg", "jpeg", "png"],
-                     key=f"m7_cal_up_{key}_{wiz_state['slot_gen'].get(key, 0)}", on_change=on_photo_upload, args=(index, side),
-                     disabled=not enabled, label_visibility="collapsed")
-    if rec is not None:
+    if rec is None:
+        st.file_uploader(f"Upload {side} camera image (pair {index + 1})", type=["jpg", "jpeg", "png"],
+                         key=f"m7_cal_up_{key}_{wiz_state['slot_gen'].get(key, 0)}", on_change=on_photo_upload, args=(index, side),
+                         disabled=not enabled, label_visibility="collapsed")
+    else:
         st.button(f"Remove {side} photo", key=f"m7_cal_rm_{key}", on_click=on_photo_remove, args=(index, side))
 
 
