@@ -199,6 +199,7 @@ def init_state():
     ss.setdefault("m7_ack", None)
     ss.setdefault("m7_show_experiment", False)
     ss.setdefault("m7_scroll_to_experiment", False)
+    ss.setdefault("m7_scroll_to_cal_pair", False)
     ss.setdefault("m7_points", {"left": [], "right": []})
     ss.setdefault("m7_pending", None)           # (side, coarse point) awaiting zoom refinement
     ss.setdefault("m7_refined", None)           # dragged position of the pending corner (original pixels), uncommitted
@@ -400,12 +401,21 @@ def on_exclude(index):
     wiz.toggle_exclude(st.session_state["m7_cal"], index)
 
 
+def change_pair(move):
+    """Apply a pair change and request the one-shot scroll only if the selected pair really changed."""
+    ss = st.session_state
+    before = ss["m7_cal"]["current"]
+    move(ss["m7_cal"])
+    if ss["m7_cal"]["current"] != before:
+        ss["m7_scroll_to_cal_pair"] = True
+
+
 def on_step(delta):
-    wiz.step(st.session_state["m7_cal"], delta)
+    change_pair(lambda state: wiz.step(state, delta))
 
 
 def on_goto():
-    wiz.go_to(st.session_state["m7_cal"], st.session_state["m7_cal_goto"])
+    change_pair(lambda state: wiz.go_to(state, st.session_state["m7_cal_goto"]))
 
 
 def on_calibration_file():
@@ -444,6 +454,20 @@ setTimeout(function () {
   }
   heading.style.scrollMarginTop = margin + "px";
   heading.scrollIntoView({behavior: "smooth", block: "start"});
+}, 150);
+</script>
+"""
+
+
+# One-shot, like the experiment scroll: runs on the render right after Previous / Next / the pair selector changed the pair.
+# It brings the pair heading (the start of the left/right upload area) into view without going to the top of the module.
+SCROLL_TO_CAL_PAIR_JS = """
+<script>
+setTimeout(function () {
+  var anchor = document.getElementById("m7-cal-pair-anchor");
+  if (!anchor) { return; }
+  anchor.style.scrollMarginTop = "72px";
+  anchor.scrollIntoView({behavior: "smooth", block: "start"});
 }, 150);
 </script>
 """
@@ -595,6 +619,7 @@ def pair_navigator(evaluation, enabled):
     wiz_state = ss["m7_cal"]
     n, current = wiz_state["n_pairs"], wiz_state["current"]
     row = evaluation["pairs"][current]
+    st.html('<div id="m7-cal-pair-anchor"></div>')
     st.markdown(f"#### Pair {current + 1} of {n} · {row['status']}")
     for side_col, side in zip(st.columns(2), SIDES):
         with side_col:
@@ -616,6 +641,8 @@ def pair_navigator(evaluation, enabled):
     nav = st.columns(2)
     nav[0].button("Previous", key="m7_cal_prev", on_click=on_step, args=(-1,), disabled=current == 0, width="stretch")
     nav[1].button("Next", key="m7_cal_next", on_click=on_step, args=(1,), disabled=current == n - 1, width="stretch")
+    if ss.pop("m7_scroll_to_cal_pair", False):       # last element, so the pair section has rendered before the script runs
+        st.html(SCROLL_TO_CAL_PAIR_JS, unsafe_allow_javascript=True)
 
 
 def pair_overview(evaluation):
