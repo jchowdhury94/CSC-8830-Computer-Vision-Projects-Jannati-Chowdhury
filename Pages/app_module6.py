@@ -204,17 +204,66 @@ def show_part_b():
     st.write("The perspective smartphone photographs are approximated by an affine/orthographic camera model. Correspondences were manually localized, and all landmarks lie on one approximately planar surface, making true depth recovery weak or degenerate. This is an educational SfM reconstruction, not a calibrated metric 3D scan.")
 
 
+ACCENT = "#C9363E"
+HOME_TITLE = "Module 6"
+HOME_SUBTITLE = "Optical Flow and Structure from Motion"
+
+HOME_CSS = f"""
+<style>
+.st-key-m6_home_layout {{ gap: 0; padding-top: 4vh; }}
+.st-key-m6_home_title, .st-key-m6_home_subtitle {{ gap: 0; flex-shrink: 0; }}
+.st-key-m6_home_nav {{ flex-shrink: 0; }}
+.st-key-m6_home_title [data-testid="stMarkdownContainer"],
+.st-key-m6_home_subtitle [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
+.st-key-m6_home_subtitle {{ padding-top: 44px; }}
+.st-key-m6_home_nav {{ padding-top: 64px; }}
+.st-key-m6_home_title h1 {{
+    font-size: clamp(2.5rem, 13vw, 80px); font-weight: 800; color: inherit; line-height: 1.1; text-align: center;
+    padding: 0; margin: 0; overflow-wrap: anywhere;
+}}
+.st-key-m6_home_subtitle h2 {{
+    font-size: clamp(1.1rem, 4.6vw, 32px); font-weight: 600; color: inherit; opacity: 0.85; line-height: 1.2;
+    text-align: center; padding: 0; margin: 0;
+}}
+@media (min-width: 801px) {{ .st-key-m6_home_subtitle h2 {{ white-space: nowrap; }} }}
+.st-key-m6_home_nav {{ flex-direction: row; flex-wrap: wrap; gap: 24px; }}
+.st-key-m6_open_A, .st-key-m6_open_B {{ flex: 1 1 280px; width: auto; min-width: 0; max-width: 100%; }}
+.st-key-m6_open_A button, .st-key-m6_open_B button {{
+    width: 100%; height: 110px; min-height: 110px; padding: 0.75rem 1.25rem; border-radius: 12px;
+    background-color: {ACCENT}; border: 2px solid {ACCENT}; color: #FFFFFF;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+}}
+.st-key-m6_open_A button p, .st-key-m6_open_B button p {{
+    font-size: 21px; font-weight: 700; color: #FFFFFF; line-height: 1.3; text-align: center; text-wrap: balance;
+}}
+.st-key-m6_open_A button:hover, .st-key-m6_open_B button:hover {{ background-color: #A62A31; border-color: #A62A31; color: #FFFFFF; }}
+.st-key-m6_open_A button:focus-visible, .st-key-m6_open_B button:focus-visible {{
+    outline: 3px solid #FFFFFF; outline-offset: 2px; box-shadow: 0 0 0 6px {ACCENT};
+}}
+.st-key-m6_open_A button:active, .st-key-m6_open_B button:active {{ background-color: #8E2229; border-color: #8E2229; }}
+@media (max-width: 640px) {{
+    .st-key-m6_home_nav {{ flex-direction: column; flex-wrap: nowrap; gap: 16px; }}
+    .st-key-m6_open_A, .st-key-m6_open_B {{ flex: 0 0 auto; width: 100%; }}
+}}
+</style>
+"""
+
+
 st.set_page_config(page_title="Module 6", layout="centered")
-st.title("Module 6")
 st.session_state.setdefault("module6_part", "home")
 if st.session_state["module6_part"] == "home":
-    for column, part, description in zip(st.columns(2), ("A", "B"),
-                                         ("Optical Flow and Motion Tracking", "Structure from Motion")):
-        with column:
-            st.button(f"Part {part}", key=f"module6_open_{part}", on_click=select_part, args=(part,))
-            st.caption(description)
+    st.markdown(HOME_CSS, unsafe_allow_html=True)
+    with st.container(key="m6_home_layout"):
+        with st.container(key="m6_home_title"):
+            st.title(HOME_TITLE, anchor=False)
+        with st.container(key="m6_home_subtitle"):
+            st.header(HOME_SUBTITLE, anchor=False)
+        with st.container(key="m6_home_nav"):
+            for part, label in (("A", "View Optical Flow and Motion Tracking"),
+                                ("B", "View Structure from Motion Reconstruction")):
+                st.button(label, key=f"m6_open_{part}", on_click=select_part, args=(part,), width="stretch")
 else:
-    st.button("Module 6 Home", on_click=select_part, args=("home",))
+    st.button("Back to Module 6", key="m6_back", on_click=select_part, args=("home",))
     if st.session_state["module6_part"] == "A":
         show_part_a()
     else:
