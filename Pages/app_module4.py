@@ -801,8 +801,52 @@ def render_thermal():
         sam2_column.image(sam2_results["boundary_overlay"], caption="SAM2 Boundary", width="stretch")
 
 
+ACCENT = "#C9363E"
+HOME_TITLE = "Module 4"
+HOME_SUBTITLE = "Human Boundary Detection"
+
+HOME_CSS = f"""
+<style>
+.st-key-m4_home_layout {{ gap: 0; padding-top: 4vh; }}
+.st-key-m4_home_title, .st-key-m4_home_subtitle {{ gap: 0; flex-shrink: 0; }}
+.st-key-m4_home_nav {{ flex-shrink: 0; }}
+.st-key-m4_home_title [data-testid="stMarkdownContainer"],
+.st-key-m4_home_subtitle [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
+.st-key-m4_home_subtitle {{ padding-top: 44px; }}
+.st-key-m4_home_nav {{ padding-top: 64px; }}
+.st-key-m4_home_title h1 {{
+    font-size: clamp(2.5rem, 13vw, 80px); font-weight: 800; color: inherit; line-height: 1.1; text-align: center;
+    padding: 0; margin: 0; overflow-wrap: anywhere;
+}}
+.st-key-m4_home_subtitle h2 {{
+    font-size: clamp(1.1rem, 4.6vw, 32px); font-weight: 600; color: inherit; opacity: 0.85; line-height: 1.2;
+    text-align: center; padding: 0; margin: 0;
+}}
+@media (min-width: 641px) {{ .st-key-m4_home_subtitle h2 {{ white-space: nowrap; }} }}
+.st-key-m4_home_nav {{ flex-direction: row; flex-wrap: wrap; gap: 24px; }}
+.st-key-m4_open_rgb, .st-key-m4_open_thermal {{ flex: 1 1 280px; width: auto; min-width: 0; max-width: 100%; }}
+.st-key-m4_open_rgb button, .st-key-m4_open_thermal button {{
+    width: 100%; height: 110px; min-height: 110px; padding: 0.75rem 1.25rem; border-radius: 12px;
+    background-color: {ACCENT}; border: 2px solid {ACCENT}; color: #FFFFFF;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+}}
+.st-key-m4_open_rgb button p, .st-key-m4_open_thermal button p {{
+    font-size: 21px; font-weight: 700; color: #FFFFFF; line-height: 1.3; text-align: center; text-wrap: balance;
+}}
+.st-key-m4_open_rgb button:hover, .st-key-m4_open_thermal button:hover {{ background-color: #A62A31; border-color: #A62A31; color: #FFFFFF; }}
+.st-key-m4_open_rgb button:focus-visible, .st-key-m4_open_thermal button:focus-visible {{
+    outline: 3px solid #FFFFFF; outline-offset: 2px; box-shadow: 0 0 0 6px {ACCENT};
+}}
+.st-key-m4_open_rgb button:active, .st-key-m4_open_thermal button:active {{ background-color: #8E2229; border-color: #8E2229; }}
+@media (max-width: 640px) {{
+    .st-key-m4_home_nav {{ flex-direction: column; flex-wrap: nowrap; gap: 16px; }}
+    .st-key-m4_open_rgb, .st-key-m4_open_thermal {{ flex: 0 0 auto; width: 100%; }}
+}}
+</style>
+"""
+
+
 st.set_page_config(page_title="Module 4 - Human Boundary Detection", layout="centered")
-st.title("Module 4 – Human Boundary Detection")
 st.session_state.setdefault("module4_section", "home")
 
 # Keep RGB settings when their widgets are absent from the selected section.
@@ -816,16 +860,20 @@ for setting_key in (
 
 section = st.session_state["module4_section"]
 if section == "home":
-    st.write("Select an experiment:")
-    for column, (label, destination, question) in zip(st.columns(2), (
-        ("RGB Image", "rgb", "Question 1"),
-        ("Thermal Image", "thermal", "Question 2"),
-    )):
-        with column:
-            st.button(label, key=f"module4_open_{destination}", on_click=navigate_module4, args=(destination,))
-            st.caption(question)
+    st.markdown(HOME_CSS, unsafe_allow_html=True)
+    with st.container(key="m4_home_layout"):
+        with st.container(key="m4_home_title"):
+            st.title(HOME_TITLE, anchor=False)
+        with st.container(key="m4_home_subtitle"):
+            st.header(HOME_SUBTITLE, anchor=False)
+        with st.container(key="m4_home_nav"):
+            for label, destination in (("Detect Human Boundaries in RGB Images", "rgb"),
+                                       ("Detect Human Boundaries in Thermal Images", "thermal")):
+                st.button(label, key=f"m4_open_{destination}", on_click=navigate_module4,
+                          args=(destination,), width="stretch")
 else:
-    st.button("Module 4 Home", key="module4_home", on_click=navigate_module4, args=("home",))
+    st.title("Module 4 – Human Boundary Detection")
+    st.button("Back to Module 4", key="module4_home", on_click=navigate_module4, args=("home",))
     if section == "rgb":
         render_rgb()
     elif section == "thermal":
