@@ -28,7 +28,7 @@ DISPLAY_DIR = MODULE_DIR / "display"
 CALIB_SAMPLE_IMAGE = DISPLAY_DIR / "calibration_sample_left_pair_8.jpg"   # optimized crop of left calibration photo 8
 CALIB_SAMPLE_PAIR = 8
 ACCENT = "#C9363E"
-CALIB_EXPANDER_LABEL = "**My Camera Calibration Reference**  \n:small[Click to View My Stereo Calibration Parameters]"
+CALIB_EXPANDER_LABEL = "**Click to View My Camera Calibration Parameters**"
 CALIBRATE_EXPANDER_LABEL = ("**Calibrate Your Stereo Cameras**  \n:small[Upload matching checkerboard photos from your own "
                             "stereo camera setup to calculate the calibration parameters.]")
 # st.session_state["m7_visitor_model"] is the active visitor calibration (computed here or loaded from a file); it never falls back
@@ -131,8 +131,17 @@ DOWNLOAD_CSS = f"""
 .st-key-m7_cal_download button:not(:disabled):focus-visible {{ outline: 3px solid #FFFFFF; outline-offset: 2px; box-shadow: 0 0 0 6px {DOWNLOAD_BLUE}; }}
 /* disabled: Streamlit's own grey disabled look is kept (only the corners and weight above apply) */
 """
-PART_ONE_CSS = ("<style>" + MODE_CSS + NAV_CSS + EXPANDER_CSS + EXPANDER_CSS.replace("m7_calib_ref", "m7_calibrate") + BUTTON_CSS
-                + DOWNLOAD_CSS + "</style>")
+# Calibration reference only: subtler than the shared look above (thin border, light tint, modestly larger bold label).
+CALIB_REF_CSS = f"""
+.st-key-m7_calib_ref details {{
+    border: 1px solid color-mix(in srgb, {ACCENT} 55%, transparent) !important;
+    background: color-mix(in srgb, {ACCENT} 6%, transparent);
+}}
+.st-key-m7_calib_ref details > summary {{ padding-top: 0.8rem; padding-bottom: 0.8rem; }}
+.st-key-m7_calib_ref details > summary strong {{ font-size: 1.15rem; }}
+"""
+PART_ONE_CSS = ("<style>" + MODE_CSS + NAV_CSS + EXPANDER_CSS + EXPANDER_CSS.replace("m7_calib_ref", "m7_calibrate") + CALIB_REF_CSS
+                + BUTTON_CSS + DOWNLOAD_CSS + "</style>")
 # Drawn from the existing m7_show_experiment state: pointing up while the experiment is open.
 ZOOM_BUTTON_CSS = """<style>
 .st-key-m7_zoom_accept button { background: #1b8a3a !important; border: 1px solid #14692c !important; color: #fff !important; border-radius: 10px !important; }
@@ -150,6 +159,13 @@ CALIBRATION_SUMMARY_CSS = """<style>
 .st-key-m7_calibration_summary [data-testid="stMetricLabel"] * {
     white-space: normal !important; overflow: visible !important; text-overflow: clip !important; overflow-wrap: anywhere; }
 .st-key-m7_calibration_summary [data-testid="stMetricValue"] { font-size: 1.6rem; line-height: 1.25; }
+</style>"""
+# Selected-pair results panel: Streamlit follows prefers-color-scheme (no custom theme is configured), so the media query matches its theme.
+SELECTED_PAIR_CSS = """<style>
+.st-key-m7_selected_pair_results { background: #F3F4F6; border: 1px solid #D9DDE3; border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+@media (prefers-color-scheme: dark) {
+    .st-key-m7_selected_pair_results { background: #253240; border-color: #405466; }
+}
 </style>"""
 LEFT_CAMERA, RIGHT_CAMERA = "iPhone Air", "iPhone 17 Pro Max"
 MEASURED_BASELINE_MM = 225
@@ -222,6 +238,7 @@ def init_state():
     ss.setdefault("m7_cal_npz_gen", 0)
     ss.setdefault("m7_cal_form_gen", 0)         # suffix of the checkerboard / pair-count widget keys; bumped by Reset All
     ss.setdefault("m7_measurement_enabled", False)
+    ss.setdefault("m7_saved_inputs", {})        # widget values kept across navigation (see save_inputs)
 
 
 def reset_selection():
@@ -246,7 +263,45 @@ def invalidate_confirmation(side=None):
     ss["m7_calculated"] = False
 
 
+# Widget-owned values that Streamlit drops while their widget is not rendered. Navigation keeps a copy in m7_saved_inputs and puts it back
+# (only if the key is missing) before the widget is created. The corner-click and zoom components (m7_coarse_*, m7_zoom_*) are deliberately
+# not restored: replaying a stored click could be consumed twice, and the refined corner already lives in m7_pending / m7_refined.
+SAVED_INPUT_KEYS = ("m7_exp_pair", "m7_cal_details")
+SAVED_INPUT_PREFIXES = ("m7_gt_w_", "m7_gt_h_")
+
+
+def _is_saved_input(key):
+    key = str(key)
+    if key in SAVED_INPUT_KEYS:
+        return True
+    return key.startswith(SAVED_INPUT_PREFIXES) and key.endswith(f"_{st.session_state['m7_upload_gen']}")
+
+
+def save_inputs():
+    ss = st.session_state
+    saved = ss.setdefault("m7_saved_inputs", {})
+    for key in list(ss.keys()):
+        if _is_saved_input(key):
+            saved[key] = ss[key]
+
+
+def restore_inputs(*, experiment, measurement):
+    """Called before the widgets of the view are created; never overwrites a value that is already present."""
+    ss = st.session_state
+    for key, value in ss.get("m7_saved_inputs", {}).items():
+        wanted = experiment if key == "m7_exp_pair" else measurement
+        if wanted and key not in ss and _is_saved_input(key):
+            ss[key] = value
+
+
+def forget_saved_inputs(prefixes=SAVED_INPUT_PREFIXES):
+    saved = st.session_state.get("m7_saved_inputs", {})
+    for key in [k for k in saved if str(k).startswith(prefixes)]:
+        del saved[key]
+
+
 def select_part(part):
+    save_inputs()
     st.session_state["module7_part"] = part
 
 
@@ -259,6 +314,7 @@ def remove_uploads():
     ss = st.session_state
     ss["m7_upload_gen"] += 1                    # fresh uploader and actual-size widgets: the browser cannot restore old values
     ss["m7_file_left"] = ss["m7_file_right"] = None
+    forget_saved_inputs()
     reset_selection()
 
 
@@ -381,6 +437,7 @@ def reset_all():
     ss["m7_cal_form_gen"] += 1
     ss["m7_gen"] += 1
     ss["m7_measurement_enabled"] = False
+    ss["m7_saved_inputs"] = {}
     for key in list(ss.keys()):
         if key in RESET_WIDGET_KEYS or str(key).startswith(OLD_FORM_PREFIXES) or (str(key).startswith(RESET_WIDGET_PREFIXES) and not str(key).endswith("_gen")):
             del ss[key]
@@ -1225,7 +1282,8 @@ def show_results(result, images, truth):
 
 def part_one():
     ss = st.session_state
-    st.header("Part 1 – Object Size Estimation Using Calibrated Stereo")
+    restore_inputs(experiment=ss["m7_show_experiment"], measurement=True)
+    st.header("Object Size Estimation Using Calibrated Stereo")
     st.write(
         "Estimate the distance (Z-depth) of an object and calculate its real-world width and height "
         "using calibrated stereo camera geometry."
@@ -1305,15 +1363,17 @@ def experiment_overlay(pair_id, side, selection):
     return sel.draw_points(image, pts, close=True, radius=9, font_scale=0.9, names=True)
 
 
-def show_experiment():
+def show_experiment(standalone=False):
+    """standalone=True is the "experiment" view: the page's single Back button replaces every Close experiment button."""
     st.header("My Experiment & Results", anchor="m7-experiment-heading")
-    if st.session_state.pop("m7_scroll_to_experiment", False):
+    if not standalone and st.session_state.pop("m7_scroll_to_experiment", False):
         st.html(SCROLL_TO_EXPERIMENT_JS, unsafe_allow_javascript=True)
     try:
         saved = load_saved_results()
     except (OSError, ValueError, KeyError) as error:
         st.error(f"Saved experiment results are unavailable: {error}")
-        st.button("Close experiment", on_click=toggle_experiment)
+        if not standalone:
+            st.button("Close experiment", on_click=toggle_experiment)
         return
     truth = saved["summary"]["ground_truth_mm"]
     st.write(
@@ -1339,45 +1399,48 @@ def show_experiment():
         assert selection["confirmed"] is True and selection["corner_order"] == list(CORNER_NAMES)
     except (OSError, ValueError, AssertionError, KeyError) as error:
         st.error(f"Final corner selection for pair {pair_id} is unavailable: {error}")
-        st.button("Close experiment", on_click=toggle_experiment)
+        if not standalone:
+            st.button("Close experiment", on_click=toggle_experiment)
         return
 
-    st.subheader(f"Pair {pair_id}: photographs with the final approved corners")
-    for column, side in zip(st.columns(2), SIDES):
-        with column:
-            overlay = experiment_overlay(pair_id, side, selection)
-            if overlay is None:
-                st.warning(f"Display image for pair {pair_id} ({side}) is unavailable.")
-            else:
-                st.image(overlay, caption=f"{SIDE_LABEL[side]} photograph ({LEFT_CAMERA if side == 'left' else RIGHT_CAMERA})",
-                         width="stretch")
-    st.caption("Numbered markers (1 TL, 2 TR, 3 BR, 4 BL) with the boundary connecting the corners, drawn from the final "
-               "approved selection on an optimized display copy of each original photograph.")
+    st.markdown(SELECTED_PAIR_CSS, unsafe_allow_html=True)
+    with st.container(key="m7_selected_pair_results"):
+        st.subheader(f"Pair {pair_id}: photographs with the final approved corners")
+        for column, side in zip(st.columns(2), SIDES):
+            with column:
+                overlay = experiment_overlay(pair_id, side, selection)
+                if overlay is None:
+                    st.warning(f"Display image for pair {pair_id} ({side}) is unavailable.")
+                else:
+                    st.image(overlay, caption=f"{SIDE_LABEL[side]} photograph ({LEFT_CAMERA if side == 'left' else RIGHT_CAMERA})",
+                             width="stretch")
+        st.caption("Numbered markers (1 TL, 2 TR, 3 BR, 4 BL) with the boundary connecting the corners, drawn from the final "
+                   "approved selection on an optimized display copy of each original photograph.")
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Mean Z-depth", f"{row['mean_Z_depth_mm']:.2f} mm")
-    c2.metric("Width", f"{row['width_mm']:.2f} mm")
-    c3.metric("Height", f"{row['height_mm']:.2f} mm")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Mean Z-depth", f"{row['mean_Z_depth_mm']:.2f} mm")
+        c2.metric("Width", f"{row['width_mm']:.2f} mm")
+        c3.metric("Height", f"{row['height_mm']:.2f} mm")
 
-    st.write("**Reconstructed corners** (left-camera frame, mm)")
-    pc = corners[corners["pair"] == pair_id]
-    kv_table("Corner", [[r.corner, f"{r.X_mm:.2f}", f"{r.Y_mm:.2f}", f"{r.Z_depth_mm:.2f}", f"{r.dist_from_left_camera_mm:.2f}"]
-                        for r in pc.itertuples()], ["X (mm)", "Y (mm)", "Z-depth (mm)", "Distance from camera centre (mm)"])
-    st.write("**Edge lengths** (3D Euclidean)")
-    pe = edges[edges["pair"] == pair_id]
-    kv_table("Edge", [[f"{r.edge.replace('_', ' ').title()} ({r.endpoints})", f"{r.length_3D_mm:.2f}", f"{r.truth_mm:.0f}"]
-                      for r in pe.itertuples()], ["Length (mm)", "Ground truth (mm)"])
-    st.write("**Final dimensions versus ground truth**")
-    kv_table("Dimension", [
-        ["Width", f"{truth['width']:g}", f"{row['width_mm']:.2f}", f"{row['width_err_mm']:+.2f}", f"{abs(row['width_err_mm']):.2f}",
-         f"{row['width_err_pct']:+.2f}%"],
-        ["Height", f"{truth['height']:g}", f"{row['height_mm']:.2f}", f"{row['height_err_mm']:+.2f}", f"{abs(row['height_err_mm']):.2f}",
-         f"{row['height_err_pct']:+.2f}%"],
-    ], ["Ground truth (mm)", "Measured (mm)", "Error (mm, measured - truth)", "Absolute error (mm)", "Percentage error"])
+        st.write("**Reconstructed corners** (left-camera frame, mm)")
+        pc = corners[corners["pair"] == pair_id]
+        kv_table("Corner", [[r.corner, f"{r.X_mm:.2f}", f"{r.Y_mm:.2f}", f"{r.Z_depth_mm:.2f}", f"{r.dist_from_left_camera_mm:.2f}"]
+                            for r in pc.itertuples()], ["X (mm)", "Y (mm)", "Z-depth (mm)", "Distance from camera centre (mm)"])
+        st.write("**Edge lengths** (3D Euclidean)")
+        pe = edges[edges["pair"] == pair_id]
+        kv_table("Edge", [[f"{r.edge.replace('_', ' ').title()} ({r.endpoints})", f"{r.length_3D_mm:.2f}", f"{r.truth_mm:.0f}"]
+                          for r in pe.itertuples()], ["Length (mm)", "Ground truth (mm)"])
+        st.write("**Final dimensions versus ground truth**")
+        kv_table("Dimension", [
+            ["Width", f"{truth['width']:g}", f"{row['width_mm']:.2f}", f"{row['width_err_mm']:+.2f}", f"{abs(row['width_err_mm']):.2f}",
+             f"{row['width_err_pct']:+.2f}%"],
+            ["Height", f"{truth['height']:g}", f"{row['height_mm']:.2f}", f"{row['height_err_mm']:+.2f}", f"{abs(row['height_err_mm']):.2f}",
+             f"{row['height_err_pct']:+.2f}%"],
+        ], ["Ground truth (mm)", "Measured (mm)", "Error (mm, measured - truth)", "Absolute error (mm)", "Percentage error"])
 
-    figure = OUTPUT_DIR / "visualizations" / f"pair_{pair_id}_measurement.jpg"
-    if figure.is_file():
-        st.image(str(figure), caption=f"Pair {pair_id}: final annotated stereo pair (corner correspondences linked)", width="stretch")
+        figure = OUTPUT_DIR / "visualizations" / f"pair_{pair_id}_measurement.jpg"
+        if figure.is_file():
+            st.image(str(figure), caption=f"Pair {pair_id}: final annotated stereo pair (corner correspondences linked)", width="stretch")
 
     st.subheader("Summary of all three pairs")
     kv_table("Pair", [[f"Pair {int(r.pair)}", f"{r.mean_Z_depth_mm:.4f}", f"{r.width_mm:.4f}", f"{r.height_mm:.4f}",
@@ -1412,35 +1475,134 @@ def show_experiment():
         "- **No correction applied:** nothing was rescaled or adjusted to match the known size; the ground truth is used only "
         "to report errors."
     )
-    st.button("Close experiment", on_click=toggle_experiment)
+    if not standalone:
+        st.button("Close experiment", on_click=toggle_experiment)
 
 
 # ---------------------------------------------------------------- Part 3 placeholder
 
 def part_three():
-    st.header("Part 3 – Room Measurement from Video")
-    st.info("**Placeholder - not implemented yet.** The room measurement application for Part 3 has not been built, "
-            "and no Part 3 results are shown here.")
+    # same heading markup and CSS as the Calibrated Stereo landing page (60px maximum)
+    st.markdown(HOME_CSS + Q1_TITLE_CSS + Q3_BODY_CSS, unsafe_allow_html=True)
+    with st.container(key="m7_home_layout"):
+        with st.container(key="m7_home_title"):
+            st.title(Q3_BUTTON, anchor=False)
+        with st.container(key="m7_q3_body"):
+            st.info("**Placeholder - not implemented yet.** The room measurement application for Part 3 has not been built, "
+                    "and no Part 3 results are shown here.")
 
 
 # ---------------------------------------------------------------- page
 
+HOME_TITLE = "Module 7"
+HOME_SUBTITLE = "Stereo Vision"
+Q1_TITLE = "Calibrated Stereo Object Measurement"
+Q3_BUTTON = "Room Measurement Using Stereo Videos"
+HOME_BUTTON_KEYS = ("m7_open_q1", "m7_open_q3", "m7_open_measure", "m7_open_experiment")
+
+
+def _buttons(suffix=""):
+    return ", ".join(f".st-key-{key}{suffix}" for key in HOME_BUTTON_KEYS)
+
+
+HOME_CSS = f"""
+<style>
+.st-key-m7_home_layout {{ gap: 0; padding-top: 4vh; }}
+.st-key-m7_home_title, .st-key-m7_home_subtitle {{ gap: 0; flex-shrink: 0; }}
+.st-key-m7_home_nav {{ flex-shrink: 0; }}
+.st-key-m7_home_title [data-testid="stMarkdownContainer"],
+.st-key-m7_home_subtitle [data-testid="stMarkdownContainer"] {{ margin-bottom: 0; }}
+.st-key-m7_home_subtitle {{ padding-top: 44px; }}
+.st-key-m7_home_nav {{ padding-top: 64px; }}
+.st-key-m7_home_title h1 {{
+    font-size: clamp(2.5rem, 13vw, 80px); font-weight: 800; color: inherit; line-height: 1.1; text-align: center;
+    padding: 0; margin: 0; overflow-wrap: anywhere;
+}}
+.st-key-m7_home_subtitle h2 {{
+    font-size: clamp(1.1rem, 4.6vw, 32px); font-weight: 600; color: inherit; opacity: 0.85; line-height: 1.2;
+    text-align: center; padding: 0; margin: 0;
+}}
+@media (min-width: 801px) {{ .st-key-m7_home_subtitle h2 {{ white-space: nowrap; }} }}
+.st-key-m7_home_nav {{ flex-direction: row; flex-wrap: wrap; gap: 24px; }}
+{_buttons()} {{ flex: 1 1 280px; width: auto; min-width: 0; max-width: 100%; }}
+{_buttons(" button")} {{
+    width: 100%; height: 110px; min-height: 110px; padding: 0.75rem 1.25rem; border-radius: 12px;
+    background-color: {ACCENT}; border: 2px solid {ACCENT}; color: #FFFFFF;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+}}
+{_buttons(" button p")} {{
+    font-size: 21px; font-weight: 700; color: #FFFFFF; line-height: 1.3; text-align: center; text-wrap: balance;
+}}
+{_buttons(" button:hover")} {{ background-color: #A62A31; border-color: #A62A31; color: #FFFFFF; }}
+{_buttons(" button:focus-visible")} {{
+    outline: 3px solid #FFFFFF; outline-offset: 2px; box-shadow: 0 0 0 6px {ACCENT};
+}}
+{_buttons(" button:active")} {{ background-color: #8E2229; border-color: #8E2229; }}
+@media (max-width: 640px) {{
+    .st-key-m7_home_nav {{ flex-direction: column; flex-wrap: nowrap; gap: 16px; }}
+    {_buttons()} {{ flex: 0 0 auto; width: 100%; }}
+}}
+</style>
+"""
+
+
+# the Calibrated Stereo landing page only: smaller heading, wraps instead of overflowing
+Q1_TITLE_CSS = """
+<style>
+.st-key-m7_home_title h1 {
+    font-size: clamp(2.5rem, 8vw, 60px); font-weight: 800; text-align: center; color: inherit;
+    overflow-wrap: anywhere; max-width: 100%;
+}
+</style>
+"""
+
+
+# Room Measurement page only: spacing between the heading and the placeholder box (same gap as the landing buttons)
+Q3_BODY_CSS = """
+<style>
+.st-key-m7_q3_body { padding-top: 64px; }
+</style>
+"""
+
+
+def landing(title, subtitle, buttons):
+    """Centered title, optional subtitle and red navigation buttons; the Module 7 and Question 1 pages share the markup and CSS."""
+    st.markdown(HOME_CSS, unsafe_allow_html=True)
+    if subtitle is None:
+        st.markdown(Q1_TITLE_CSS, unsafe_allow_html=True)
+    with st.container(key="m7_home_layout"):
+        with st.container(key="m7_home_title"):
+            st.title(title, anchor=False)
+        if subtitle is not None:
+            with st.container(key="m7_home_subtitle"):
+                st.header(subtitle, anchor=False)
+        with st.container(key="m7_home_nav"):
+            for target, key, label in buttons:
+                st.button(label, key=key, on_click=select_part, args=(target,), width="stretch")
+
+
+# (back-button label, destination) for every view except the Module 7 homepage
+BACK_TARGET = {"q1_home": ("Back", "home"), "1": ("Back", "q1_home"),
+               "experiment": ("Back", "q1_home")}
+
 init_state()
-st.title("Module 7")
-if st.session_state["module7_part"] == "home":
-    st.subheader("Stereo Vision")
-    for column, part, label, description in zip(
-        st.columns(2), ("1", "3"),
-        ("Part 1 – Calibrated Stereo Object Measurement", "Part 3 – Room Measurement from Video"),
-        ("Measure an object's Z-depth, width and height from two calibrated stereo photographs.",
-         "Placeholder: not implemented yet."),
-    ):
-        with column:
-            st.button(label, key=f"module7_open_{part}", on_click=select_part, args=(part,))
-            st.caption(description)
+view = st.session_state["module7_part"]
+if view == "home":
+    landing(HOME_TITLE, HOME_SUBTITLE, (("q1_home", "m7_open_q1", Q1_TITLE),
+                                        ("3", "m7_open_q3", Q3_BUTTON)))
 else:
-    st.button("Module 7 Home", on_click=select_part, args=("home",))
-    if st.session_state["module7_part"] == "1":
+    label, target = BACK_TARGET.get(view, ("Back", "home"))
+    st.button(label, key="m7_back", on_click=select_part, args=(target,))
+    if view == "q1_home":
+        landing(Q1_TITLE, None, (("1", "m7_open_measure", "Measure Objects with Your Own Stereo Cameras"),
+                                        ("experiment", "m7_open_experiment", "View My Experiment & Results")))
+    elif view == "1":
         part_one()
+    elif view == "experiment":
+        restore_inputs(experiment=True, measurement=False)
+        show_experiment(standalone=True)
+        st.write("")
+        st.button("Back", key="m7_back_bottom", on_click=select_part, args=("q1_home",))
     else:
-        part_three()
+        part_three()    # Question 3 placeholder
+    save_inputs()

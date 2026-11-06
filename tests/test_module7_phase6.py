@@ -128,7 +128,7 @@ class DownloadButtonTests(unittest.TestCase):
         self.assertTrue(download_proto(at).disabled)               # saved Model B exists, yet nothing is downloadable
 
     def test_blue_css_is_scoped_to_the_enabled_download_button(self):
-        css = SOURCE.split("DOWNLOAD_CSS = ")[1].split("PART_ONE_CSS")[0].replace("{DOWNLOAD_BLUE}", "#2563EB").replace("{{", "{").replace("}}", "}")
+        css = SOURCE.split("DOWNLOAD_CSS = ")[1].split("CALIB_REF_CSS")[0].replace("{DOWNLOAD_BLUE}", "#2563EB").replace("{{", "{").replace("}}", "}")
         selectors = [m.group(1) for m in re.finditer(r"([^{}]+)\{[^{}]*\}", css) if m.group(1).strip()]
         self.assertTrue(selectors)
         for selector in selectors:

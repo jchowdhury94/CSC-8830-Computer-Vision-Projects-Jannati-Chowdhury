@@ -215,11 +215,11 @@ class PageStateTests(unittest.TestCase):
         at.session_state["m7_measurement_enabled"] = True       # the Phase 5 gate is off by default
         return at
 
-    def test_home_has_only_parts_1_and_3(self):
+    def test_home_has_only_the_two_question_buttons(self):
         at = AppTest.from_file(str(PAGE), default_timeout=60).run()
         self.assertFalse(at.exception)
         labels = [b.label for b in at.button]
-        self.assertEqual(labels, ["Part 1 – Calibrated Stereo Object Measurement", "Part 3 – Room Measurement from Video"])
+        self.assertEqual(labels, ["Calibrated Stereo Object Measurement", "Room Measurement Using Stereo Videos"])
 
     def test_part3_placeholder(self):
         at = AppTest.from_file(str(PAGE), default_timeout=60)
@@ -246,9 +246,9 @@ class PageStateTests(unittest.TestCase):
         [b for b in at.button if b.label == "View My Experiment & Results"][0].click().run()
         self.assertFalse(at.exception)
         blocks = [b for b in at.main if getattr(b, "type", "") in ("expander", "status")]
-        ref = [b for b in blocks if "My Camera Calibration Reference" in b.label]
+        ref = [b for b in blocks if "Click to View My Camera Calibration Parameters" in b.label]
         self.assertEqual(len(ref), 1)
-        self.assertIn("Click to View My Stereo Calibration Parameters", ref[0].label)
+        self.assertNotIn("Stereo Calibration Parameters", ref[0].label)
         self.assertFalse(ref[0].proto.expanded)
         text = " ".join(m.value for m in at.markdown)
         self.assertIn("iPhone Air", text)
