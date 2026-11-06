@@ -76,15 +76,44 @@ class Module3HomepageTests(unittest.TestCase):
             click(app, key)
             self.assertEqual([t.value for t in app.title], ["Module 3"])
 
-    def test_experiment_page_is_minimal_placeholder(self):
+    def test_experiment_page_steps_images_and_values(self):
         app = new_app()
         click(app, "m3_open_experiment")
         self.assertEqual([h.value for h in app.header], ["My Experiment & Results"])
-        self.assertEqual([m.value for m in app.markdown if "not been added" in m.value],
-                         ["Experiment results have not been added yet."])
-        self.assertEqual(len(app.image) + len(app.dataframe) + len(app.metric) + len(app.table), 0)
-        click(app, "m3_back_experiment")
-        self.assertEqual([t.value for t in app.title], ["Module 3"])
+        self.assertEqual([s.value for s in app.subheader],
+                         ["Step 1 \u2014 Original Image & Parameters", "Step 2 \u2014 Gaussian Kernel",
+                          "Step 3 \u2014 Spatial Gaussian Blur", "Step 4 \u2014 Frequency-Domain Blur",
+                          "Step 5 \u2014 Compare & Validate Results", "Conclusion"])
+        self.assertEqual(len(app.image), 5)
+        self.assertEqual(len(app.expander), 0)
+        self.assertEqual(len(app.file_uploader) + len(app.slider) + len(app.selectbox), 0)
+        text = " ".join(m.value for m in app.markdown)
+        self.assertNotIn("were not re-run", text)
+        self.assertNotIn("original CSC 8830", text)
+        metrics = {m.label: m.value for m in app.metric}
+        self.assertEqual(metrics["Kernel size"], "9 \u00d7 9")
+        self.assertEqual(metrics["Sigma"], "2.0")
+        self.assertEqual(metrics["Kernel sum"], "1.000000000000")
+        self.assertEqual(metrics["Maximum Absolute Difference"], "5.115908 \u00d7 10\u207b\u00b9\u00b3")
+        self.assertEqual(metrics["Mean Absolute Difference"], "8.668103 \u00d7 10\u207b\u00b9\u2074")
+        self.assertEqual(len(app.dataframe), 1)
+        self.assertEqual(app.dataframe[0].value.shape, (9, 9))
+        self.assertAlmostEqual(app.dataframe[0].value.to_numpy().sum(), 1.0, places=12)
+
+    def test_experiment_page_has_exactly_two_back_buttons(self):
+        app = new_app()
+        click(app, "m3_open_experiment")
+        self.assertEqual([(b.key, b.label) for b in app.button],
+                         [("m3_back_experiment_top", "Back"), ("m3_back_experiment_bottom", "Back")])
+        for key in ("m3_back_experiment_top", "m3_back_experiment_bottom"):
+            app = new_app()
+            click(app, "m3_open_experiment")
+            click(app, key)
+            self.assertEqual([t.value for t in app.title], ["Module 3"])
+
+    def test_experiment_figures_exist(self):
+        for name in ("step_original", "step_spatial_blur", "step_fft_blur"):
+            self.assertTrue((ROOT / "Modules" / "Module_3" / "display" / f"{name}.png").is_file())
 
 
 class Module3AlgorithmTests(unittest.TestCase):

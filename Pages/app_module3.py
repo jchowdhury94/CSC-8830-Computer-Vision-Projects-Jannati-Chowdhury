@@ -23,6 +23,10 @@ from Modules.Module_3.image_filtering import (
 
 st.set_page_config(page_title="Module 3 - Image Filtering", layout="centered")
 
+DISPLAY_DIR = REPOSITORY_ROOT / "Modules" / "Module_3" / "display"
+
+EXPERIMENT_KERNEL_SIZE = 9
+EXPERIMENT_SIGMA = 2.0
 HOME_TITLE = "Module 3"
 HOME_SUBTITLE = "Gaussian Blur \u2014 Spatial & Frequency Domain"
 ACCENT = "#C9363E"
@@ -100,9 +104,67 @@ def home_page():
 
 
 def experiment_page():
+    # Values below are the ones documented in my original Module 3 report.
+    kernel = create_gaussian_kernel(EXPERIMENT_KERNEL_SIZE, EXPERIMENT_SIGMA)
+
+    st.button("Back", key="m3_back_experiment_top", on_click=go_to, args=("home",))
     st.header("My Experiment & Results", anchor=False)
-    st.button("Back to Module 3", key="m3_back_experiment", on_click=go_to, args=("home",))
-    st.write("Experiment results have not been added yet.")
+
+    st.subheader("Step 1 \u2014 Original Image & Parameters", anchor=False)
+    image_column, text_column = st.columns([3, 2], vertical_alignment="center")
+    with image_column:
+        st.image(str(DISPLAY_DIR / "step_original.png"), caption="Original flower image", width="stretch")
+    with text_column:
+        st.metric("Kernel size", f"{EXPERIMENT_KERNEL_SIZE} \u00d7 {EXPERIMENT_KERNEL_SIZE}")
+        st.metric("Sigma", f"{EXPERIMENT_SIGMA:.1f}")
+
+    st.subheader("Step 2 \u2014 Gaussian Kernel", anchor=False)
+    st.dataframe(kernel, width="stretch")
+    st.metric("Kernel sum", f"{kernel.sum():.12f}")
+
+    st.subheader("Step 3 \u2014 Spatial Gaussian Blur", anchor=False)
+    image_column, text_column = st.columns([3, 2], vertical_alignment="center")
+    with image_column:
+        st.image(str(DISPLAY_DIR / "step_spatial_blur.png"), caption="Spatially blurred image", width="stretch")
+    with text_column:
+        st.write(
+            "I slid the kernel across the image one pixel at a time, multiplying the neighboring pixels "
+            "by the kernel weights and summing them, one color channel at a time."
+        )
+
+    st.subheader("Step 4 \u2014 Frequency-Domain Blur", anchor=False)
+    image_column, text_column = st.columns([3, 2], vertical_alignment="center")
+    with image_column:
+        st.image(str(DISPLAY_DIR / "step_fft_blur.png"), caption="Frequency-domain result", width="stretch")
+    with text_column:
+        st.write(
+            "I transformed the image and the kernel with the FFT, multiplied their spectra, "
+            "and applied the inverse FFT to return the blurred image."
+        )
+
+    st.subheader("Step 5 \u2014 Compare & Validate Results", anchor=False)
+    spatial_column, frequency_column = st.columns(2)
+    with spatial_column:
+        st.image(str(DISPLAY_DIR / "step_spatial_blur.png"), caption="Spatial Domain Result", width="stretch")
+    with frequency_column:
+        st.image(str(DISPLAY_DIR / "step_fft_blur.png"), caption="Frequency Domain Result", width="stretch")
+    maximum_column, mean_column = st.columns(2)
+    with maximum_column:
+        st.metric("Maximum Absolute Difference", "5.115908 \u00d7 10\u207b\u00b9\u00b3")
+    with mean_column:
+        st.metric("Mean Absolute Difference", "8.668103 \u00d7 10\u207b\u00b9\u2074")
+    st.write(
+        "The two results are visually identical and differ only at floating-point precision, "
+        "so the methods are numerically equivalent."
+    )
+
+    st.subheader("Conclusion", anchor=False)
+    st.write(
+        "Blurring with the same 9 \u00d7 9 Gaussian kernel (sigma = 2.0) in the spatial and frequency "
+        "domains gave visually identical images, with a maximum absolute difference of "
+        "5.115908 \u00d7 10\u207b\u00b9\u00b3. This confirms the convolution theorem for this filter."
+    )
+    st.button("Back", key="m3_back_experiment_bottom", on_click=go_to, args=("home",))
 
 
 def visitor_page():
