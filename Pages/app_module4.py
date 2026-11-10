@@ -805,6 +805,17 @@ ACCENT = "#C9363E"
 HOME_TITLE = "Module 4"
 HOME_SUBTITLE = "Human Boundary Detection"
 
+# Buttons on the homepage and on the RGB and thermal selection pages share one style.
+NAV_BUTTON_KEYS = (
+    "m4_open_rgb", "m4_open_thermal", "m4_rgb_visitor", "m4_rgb_results",
+    "m4_thermal_visitor", "m4_thermal_results",
+)
+
+
+def nav_selector(suffix):
+    return ", ".join(f".st-key-{key}{suffix}" for key in NAV_BUTTON_KEYS)
+
+
 HOME_CSS = f"""
 <style>
 .st-key-m4_home_layout {{ gap: 0; padding-top: 4vh; }}
@@ -824,23 +835,23 @@ HOME_CSS = f"""
 }}
 @media (min-width: 641px) {{ .st-key-m4_home_subtitle h2 {{ white-space: nowrap; }} }}
 .st-key-m4_home_nav {{ flex-direction: row; flex-wrap: wrap; gap: 24px; }}
-.st-key-m4_open_rgb, .st-key-m4_open_thermal {{ flex: 1 1 280px; width: auto; min-width: 0; max-width: 100%; }}
-.st-key-m4_open_rgb button, .st-key-m4_open_thermal button {{
+{nav_selector("")} {{ flex: 1 1 280px; width: auto; min-width: 0; max-width: 100%; }}
+{nav_selector(" button")} {{
     width: 100%; height: 110px; min-height: 110px; padding: 0.75rem 1.25rem; border-radius: 12px;
     background-color: {ACCENT}; border: 2px solid {ACCENT}; color: #FFFFFF;
     display: flex; align-items: center; justify-content: center; text-align: center;
 }}
-.st-key-m4_open_rgb button p, .st-key-m4_open_thermal button p {{
+{nav_selector(" button p")} {{
     font-size: 21px; font-weight: 700; color: #FFFFFF; line-height: 1.3; text-align: center; text-wrap: balance;
 }}
-.st-key-m4_open_rgb button:hover, .st-key-m4_open_thermal button:hover {{ background-color: #A62A31; border-color: #A62A31; color: #FFFFFF; }}
-.st-key-m4_open_rgb button:focus-visible, .st-key-m4_open_thermal button:focus-visible {{
+{nav_selector(" button:hover")} {{ background-color: #A62A31; border-color: #A62A31; color: #FFFFFF; }}
+{nav_selector(" button:focus-visible")} {{
     outline: 3px solid #FFFFFF; outline-offset: 2px; box-shadow: 0 0 0 6px {ACCENT};
 }}
-.st-key-m4_open_rgb button:active, .st-key-m4_open_thermal button:active {{ background-color: #8E2229; border-color: #8E2229; }}
+{nav_selector(" button:active")} {{ background-color: #8E2229; border-color: #8E2229; }}
 @media (max-width: 640px) {{
     .st-key-m4_home_nav {{ flex-direction: column; flex-wrap: nowrap; gap: 16px; }}
-    .st-key-m4_open_rgb, .st-key-m4_open_thermal {{ flex: 0 0 auto; width: 100%; }}
+    {nav_selector("")} {{ flex: 0 0 auto; width: 100%; }}
 }}
 </style>
 """
@@ -934,15 +945,117 @@ def rgb_results_page():
     st.button("Back", key="m4_rgb_results_back_bottom", on_click=navigate_module4, args=("rgb_select",))
 
 
+def svg_icon(path):
+    return ("url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' "
+            f"fill='white'%3E%3Cpath d='{path}'/%3E%3C/svg%3E\")")
+
+
+ICON_IMAGE = svg_icon("M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z")
+ICON_CHART = svg_icon("M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z")
+ICON_CHEVRON = svg_icon("M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z")
+ICON_THERMAL = svg_icon("M15 13V5c0-1.66-1.34-3-3-3S9 3.34 9 5v8c-1.21.91-2 2.37-2 4 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.63-.79-3.09-2-4zm-4-8c0-.55.45-1 1-1s1 .45 1 1h-1v1h1v2h-1v1h1v2h-2V5z")
+PANEL_KEYS = {"m4_rgb_visitor": ICON_IMAGE, "m4_rgb_results": ICON_CHART,
+              "m4_thermal_visitor": ICON_THERMAL, "m4_thermal_results": ICON_CHART}
+
+SELECT_CSS = """
+<style>
+.st-key-m4_sel_layout {
+    max-width: 500px; width: 100%; margin: 0 auto; gap: 0; min-height: calc(100vh - 14rem);
+    justify-content: center; align-items: stretch;
+}
+@media (min-width: 641px) {
+    .st-key-m4_sel_layout { box-sizing: border-box; padding-bottom: 270px; }  /* centers the group ~135px above the middle */
+}
+.st-key-m4_sel_label { margin-bottom: 24px; }  /* spacing lives on the wrappers, not on the text elements */
+.st-key-m4_sel_heading { margin-bottom: 44px; }
+.st-key-m4_sel_heading [data-testid="stHeading"] > div { margin: 0; }  /* Streamlit's default -16px bottom margin */
+.st-key-m4_sel_label [data-testid="stMarkdownContainer"] { margin: 0; }
+.st-key-m4_sel_label p {
+    margin: 0; text-align: center; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.18em; opacity: 0.55;
+}
+.st-key-m4_sel_heading h2 {
+    font-size: clamp(1.5rem, 6.5vw, 2.25rem); font-weight: 800; line-height: 1.15; text-align: center;
+    padding: 0; margin: 0; color: inherit; overflow-wrap: anywhere;
+}
+@media (min-width: 801px) {
+    .st-key-m4_sel_heading, .st-key-m4_sel_heading [data-testid="stHeading"] { display: block; width: 100%; }
+    .st-key-m4_sel_heading h2 {  /* one line, centered on the panels' axis even when wider than the 500px column */
+        position: relative; left: 50%; transform: translateX(-50%); width: max-content; max-width: 94vw; white-space: nowrap;
+    }
+}
+.st-key-m4_sel_panels { gap: 14px; }
+__PANEL_SELECTOR__ { width: 100%; }
+__PANEL_BUTTON__ {
+    width: 100%; height: auto; min-height: 84px; padding: 14px 16px; border-radius: 14px;
+    background-color: #262A33; border: 1px solid #3A3F4B; color: #F2F3F5;
+    display: flex; align-items: center; justify-content: flex-start; gap: 16px; text-align: left;
+    transition: border-color 0.15s, background-color 0.15s, transform 0.15s;
+}
+__PANEL_BUTTON__::before {
+    content: ""; flex: 0 0 48px; height: 48px; border-radius: 12px; background-color: __ACCENT__;
+    background-repeat: no-repeat; background-position: center; background-size: 26px;
+}
+__PANEL_BUTTON__::after {
+    content: ""; flex: 0 0 28px; height: 28px; margin-left: auto; opacity: 0.7;
+    background-image: __CHEVRON__; background-repeat: no-repeat; background-position: center; background-size: 28px;
+}
+__PANEL_BUTTON__ > div { flex: 1 1 auto; min-width: 0; justify-content: flex-start; }
+__PANEL_BUTTON_SPAN__ { justify-content: flex-start; width: 100%; }
+__PANEL_BUTTON__ p {
+    margin: 0; text-align: left; font-size: 0.85rem; font-weight: 400; line-height: 1.45; color: #B4B9C4;
+}
+__PANEL_BUTTON__ p strong { display: block; font-size: 1.05rem; font-weight: 700; color: #FFFFFF; }
+__PANEL_BUTTON_BR__ { display: none; }  /* the title is a block, so the label's line break would add a blank line */
+__PANEL_BUTTON_HOVER__ { background-color: #2F343F; border-color: __ACCENT__; color: #F2F3F5; transform: translateY(-1px); }
+__PANEL_BUTTON_FOCUS__ { outline: 3px solid #FFFFFF; outline-offset: 2px; box-shadow: 0 0 0 6px __ACCENT__; }
+__PANEL_ICONS__
+@media (max-width: 640px) {
+    .st-key-m4_sel_layout { min-height: calc(100vh - 12rem); }
+    __PANEL_BUTTON__ { padding: 12px; gap: 12px; min-height: 76px; }
+    __PANEL_BUTTON__::before { flex-basis: 42px; height: 42px; background-size: 22px; }
+    __PANEL_BUTTON__ p strong { font-size: 0.98rem; }
+}
+</style>
+"""
+
+
+def select_css():
+    def selector(suffix):
+        return ", ".join(f".st-key-{key} button{suffix}" for key in PANEL_KEYS)
+
+    icons = "\n".join(f".st-key-{key} button::before {{ background-image: {icon}; }}" for key, icon in PANEL_KEYS.items())
+    css = SELECT_CSS
+    for token, value in (("__PANEL_SELECTOR__", ", ".join(f".st-key-{key}" for key in PANEL_KEYS)),
+                         ("__PANEL_BUTTON_HOVER__", selector(":hover")),
+                         ("__PANEL_BUTTON_FOCUS__", selector(":focus-visible")),
+                         ("__PANEL_BUTTON__::before", selector("::before")),
+                         ("__PANEL_BUTTON__::after", selector("::after")),
+                         ("__PANEL_BUTTON_SPAN__", selector(" > div > span")),
+                         ("__PANEL_BUTTON__ > div", selector(" > div")),
+                         ("__PANEL_BUTTON__ p strong", selector(" p strong")),
+                         ("__PANEL_BUTTON_BR__", selector(" p br")),
+                         ("__PANEL_BUTTON__ p", selector(" p")),
+                         ("__PANEL_BUTTON__", selector("")),
+                         ("__PANEL_ICONS__", icons), ("__CHEVRON__", ICON_CHEVRON), ("__ACCENT__", ACCENT)):
+        css = css.replace(token, value)
+    return css
+
+
 def panel_label(title, subtitle):
     return f"**{title}**  \n{subtitle}"
 
 
 def module4_selection_page(back_key, heading, panels):
+    st.markdown(select_css(), unsafe_allow_html=True)
     st.button("Back", key=back_key, on_click=navigate_module4, args=("home",))
-    st.header(heading, anchor=False)
-    for key, title, subtitle, destination in panels:
-        st.button(panel_label(title, subtitle), key=key, on_click=navigate_module4, args=(destination,))
+    with st.container(key="m4_sel_layout"):
+        with st.container(key="m4_sel_label"):
+            st.markdown("MODULE 4")
+        with st.container(key="m4_sel_heading"):
+            st.header(heading, anchor=False)
+        with st.container(key="m4_sel_panels"):
+            for key, title, subtitle, destination in panels:
+                st.button(panel_label(title, subtitle), key=key, on_click=navigate_module4, args=(destination,), width="stretch")
 
 
 def rgb_select_page():

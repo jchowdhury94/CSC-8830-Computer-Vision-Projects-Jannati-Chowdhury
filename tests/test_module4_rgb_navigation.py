@@ -46,6 +46,7 @@ class Module4RgbNavigationTests(unittest.TestCase):
         app = new_app()
         open_select(app)
         self.assertEqual(len(app.title), 0)
+        self.assertIn("MODULE 4", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["RGB Image Boundary Detection"])
         labels = [b.label for b in app.button]
         self.assertEqual([l for l in labels if l != "Back"],

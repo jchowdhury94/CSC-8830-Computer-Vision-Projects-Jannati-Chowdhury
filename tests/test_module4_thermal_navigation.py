@@ -46,12 +46,15 @@ class Module4ThermalNavigationTests(unittest.TestCase):
         app = new_app()
         open_select(app)
         self.assertEqual(len(app.title), 0)
+        self.assertIn("MODULE 4", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["Thermal Image Boundary Detection"])
         labels = [b.label for b in app.button]
         self.assertEqual(labels, ["Back", "**Detect Human Boundaries in Your Own Thermal Image**  \nUpload and analyze your own thermal image",
                                   "**View My Experiment & Results**  \nExplore my thermal boundary detection results"])
         self.assertEqual(back_keys(app), ["m4_thermal_select_back_top"])
-        self.assertEqual(app.main[0].type, "button")
+        # After the injected <style> block, Back is the first element, above the heading.
+        self.assertIn("<style>", app.main[0].value)
+        self.assertEqual(app.main[1].type, "button")
 
     def test_selection_matches_rgb_selection_structure(self):
         rgb = new_app()
