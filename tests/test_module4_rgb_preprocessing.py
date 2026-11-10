@@ -188,7 +188,7 @@ class RGBPreparationTests(unittest.TestCase):
                     self.assertEqual(action_keys(), [lower])
                     reset_key = 'module4_reset_classical' if first == 'classical' else 'module4_reset_sam2'
                     self.assertIn(reset_key, [b.key for b in app.button])
-                    self.assertEqual(app.button[-1].key, 'module4_reset_rgb_bottom')
+                    self.assertEqual([b.key for b in app.button[-2:]], ['module4_reset_rgb_bottom', 'm4_rgb_visitor_back_bottom'])
                     title = 'Results' if first == 'classical' else 'SAM2 Results'
                     self.assertTrue(any(h.value == title for h in app.subheader))
                     self.assertFalse(any(b.label == 'Compare Results' for b in app.button))
@@ -277,7 +277,7 @@ class RGBPreparationTests(unittest.TestCase):
                         self.assertFalse(app.button(key='module4_compare_after_results').disabled)
                         app.button(key='module4_compare_after_results').click().run()
                         self.assertTrue(any(h.value == 'Compare Results' for h in app.subheader))
-                        self.assertEqual(app.button[-1].key, 'module4_reset_rgb_bottom')
+                        self.assertEqual([b.key for b in app.button[-2:]], ['module4_reset_rgb_bottom', 'm4_rgb_visitor_back_bottom'])
                     app.session_state['module4_points'] = [(15, 15), (85, 85)]
                     app.run()
                     self.assertFalse(app.exception)

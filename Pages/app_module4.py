@@ -846,6 +846,194 @@ HOME_CSS = f"""
 """
 
 
+DISPLAY_DIR = REPOSITORY_ROOT / "Modules" / "Module_4" / "display"
+
+# Values below are the ones documented in my original Module 4 report.
+RGB_EXPERIMENT = {
+    "kernel": 3, "sigma": "0.80", "canny": "50 / 150", "iterations": 5, "cleanup": "Disabled",
+    "rectangle": "1766 \u00d7 5620 pixels", "contour_area": "6,574,847.0 pixels\u00b2",
+    "sam2_score": "0.989319", "sam2_device": "MPS",
+}
+
+
+def rgb_results_page():
+    r = RGB_EXPERIMENT
+    st.button("Back", key="m4_rgb_results_back_top", on_click=navigate_module4, args=("rgb_select",))
+    st.header("My RGB Experiment & Results", anchor=False)
+
+    def with_text(image, caption, *text):
+        image_column, text_column = st.columns([3, 2], vertical_alignment="center")
+        image_column.image(str(DISPLAY_DIR / image), caption=caption, width="stretch")
+        with text_column:
+            for line in text:
+                st.write(line)
+
+    st.subheader("Step 1 \u2014 Original RGB Image & Parameters", anchor=False)
+    image_column, text_column = st.columns([3, 2], vertical_alignment="center")
+    image_column.image(str(DISPLAY_DIR / "step1_original.jpg"), caption="Original RGB image", width="stretch")
+    with text_column:
+        st.metric("Gaussian kernel size", r["kernel"])
+        st.metric("Sigma", r["sigma"])
+        st.metric("Canny thresholds (lower / upper)", r["canny"])
+        st.metric("GrabCut iterations", r["iterations"])
+        st.metric("Morphological cleanup", r["cleanup"])
+        st.metric("GrabCut rectangle (width \u00d7 height)", r["rectangle"])
+    st.caption("The rectangle's position was not recorded in the report, so it is not drawn on the image.")
+
+    st.subheader("Step 2 \u2014 Gaussian Smoothing", anchor=False)
+    with_text(
+        "step2_gaussian_reproduced.jpg",
+        "Gaussian-smoothed image \u2014 reproduced using the documented settings (kernel 3, sigma 0.80)",
+        "Smoothing reduces small variations and noise before edge detection. "
+        "The visual change is subtle by design.",
+    )
+
+    st.subheader("Step 3 \u2014 Canny Edge Detection", anchor=False)
+    with_text(
+        "step3_canny.jpg", "Canny edge map (thresholds 50 / 150)",
+        "Canny found strong intensity changes along the body, clothing, hair and face.",
+        "It also marks internal and background edges and does not know which edges form the outer "
+        "boundary, so edges alone cannot give a single human boundary.",
+    )
+
+    st.subheader("Step 4 \u2014 GrabCut Segmentation", anchor=False)
+    with_text(
+        "step4_grabcut_mask.png", "GrabCut binary mask (white = foreground)",
+        "GrabCut separated foreground from background using the rectangle (5 iterations).",
+        "Morphological cleanup was disabled, so the final foreground mask is the raw GrabCut mask.",
+    )
+
+    st.subheader("Step 5 \u2014 Classical Human Boundary", anchor=False)
+    with_text(
+        "step5_classical_boundary.png", "Classical boundary (largest external contour)",
+        "The contour follows much of the visible person, but a large cast shadow near the lower right "
+        "was included in the foreground. Because the shadow stays connected to the person's mask, "
+        "the external contour follows both.",
+    )
+    st.metric("Classical contour area", r["contour_area"])
+    st.caption("Geometric area enclosed by the contour, not a count of foreground pixels.")
+
+    st.subheader("Step 6 \u2014 SAM2 Segmentation", anchor=False)
+    st.write("SAM 2.1 Hiera Tiny, with a box-only prompt around the person on the same RGB image.")
+    mask_column, boundary_column = st.columns(2)
+    mask_column.image(str(DISPLAY_DIR / "step6_sam2_mask.png"), caption="SAM2 binary mask (from report Figure 6)", width="stretch")
+    boundary_column.image(str(DISPLAY_DIR / "step6_sam2_boundary.png"), caption="SAM2 boundary (from report Figure 7)", width="stretch")
+    score_column, device_column = st.columns(2)
+    score_column.metric("Predicted mask-quality score", r["sam2_score"])
+    device_column.metric("Device", r["sam2_device"])
+    st.caption("The score is SAM2's own estimate of its mask, not measured accuracy; no ground-truth mask was used.")
+
+    st.subheader("Step 7 \u2014 Classical vs. SAM2 Comparison", anchor=False)
+    st.image(str(DISPLAY_DIR / "step7_mask_comparison.png"), caption="GrabCut mask vs. SAM2 mask", width="stretch")
+    st.image(str(DISPLAY_DIR / "step7_boundary_comparison.png"), caption="Classical boundary vs. SAM2 boundary", width="stretch")
+    st.write(
+        "The classical mask and contour include a large part of the connected cast shadow. SAM2 follows "
+        "the visible person more closely, especially around the lower body, and isolates the person "
+        "without the shadow."
+    )
+    st.button("Back", key="m4_rgb_results_back_bottom", on_click=navigate_module4, args=("rgb_select",))
+
+
+def panel_label(title, subtitle):
+    return f"**{title}**  \n{subtitle}"
+
+
+def module4_selection_page(back_key, heading, panels):
+    st.button("Back", key=back_key, on_click=navigate_module4, args=("home",))
+    st.header(heading, anchor=False)
+    for key, title, subtitle, destination in panels:
+        st.button(panel_label(title, subtitle), key=key, on_click=navigate_module4, args=(destination,))
+
+
+def rgb_select_page():
+    module4_selection_page("m4_rgb_select_back_top", "RGB Image Boundary Detection", (
+        ("m4_rgb_visitor", "Detect Human Boundaries in Your Own RGB Image", "Upload and analyze your own RGB image", "rgb"),
+        ("m4_rgb_results", "View My Experiment & Results", "Explore my RGB boundary detection results", "rgb_results")))
+
+
+# Values below are the ones documented in my original Module 4 report (thermal experiment).
+THERMAL_EXPERIMENT = {
+    "size": "1080 × 1440 pixels", "closing": "3 × 3 elliptical", "connectivity": "8-connectivity",
+    "components": "20", "foreground": "392,206 pixels", "occupancy": "25.22%",
+    "sam2_box": "(263, 57, 574, 1380) pixels", "sam2_score": "0.977383", "sam2_device": "MPS",
+    "iou": "0.9813",
+}
+
+
+def thermal_results_page():
+    r = THERMAL_EXPERIMENT
+    st.button("Back", key="m4_thermal_results_back_top", on_click=navigate_module4, args=("thermal_select",))
+    st.header("My Thermal Experiment & Results", anchor=False)
+
+    st.subheader("Step 1 — Original Thermal Image & Settings", anchor=False)
+    image_column, text_column = st.columns([3, 2], vertical_alignment="center")
+    image_column.image(str(DISPLAY_DIR / "thermal_step1_original.jpg"),
+                       caption="Original thermal pseudocolor image", width="stretch")
+    with text_column:
+        st.metric("Image size (width × height)", r["size"])
+        st.metric("Morphological closing", r["closing"])
+        st.metric("Connected components", r["connectivity"])
+    st.write(
+        "The input is a colorized thermal image, not raw temperature data, so the classical method "
+        "works on the displayed colors."
+    )
+    st.caption("The HSV threshold values were not recorded in the report, so they are not listed.")
+
+    st.subheader("Step 2 — Classical Thermal Segmentation", anchor=False)
+    st.write(
+        "The image was converted to HSV and the warm colors of the person were thresholded away from the "
+        "cooler background. A 3 × 3 elliptical closing connected small gaps, and connected-component "
+        "analysis kept the largest warm region as the person."
+    )
+    components_column, foreground_column, occupancy_column = st.columns(3)
+    components_column.metric("Foreground components found", r["components"])
+    foreground_column.metric("Selected foreground size", r["foreground"])
+    occupancy_column.metric("Image occupancy", r["occupancy"])
+    st.caption("Occupancy is the share of all image pixels in the selected component, not segmentation accuracy.")
+
+    st.subheader("Step 3 — SAM2 Thermal Segmentation", anchor=False)
+    st.write("SAM2 was applied to the same thermal image with a box prompt around the person.")
+    box_column, score_column, device_column = st.columns([2, 1, 1])
+    box_column.metric("SAM2 box (x, y, width, height)", r["sam2_box"])
+    score_column.metric("Predicted mask quality", r["sam2_score"])
+    device_column.metric("Device", r["sam2_device"])
+    st.caption(
+        "The box only prompts SAM2; the classical method does not use it. The score is SAM2's own estimate "
+        "of its mask, not measured accuracy."
+    )
+
+    st.subheader("Step 4 — Mask Comparison", anchor=False)
+    st.image(str(DISPLAY_DIR / "thermal_step4_mask_comparison.png"),
+             caption="Classical thermal mask vs. SAM2 mask (from report Figure 9)", width="stretch")
+    st.write(
+        "The two masks are visually very similar. Small differences appear around the head, hands, "
+        "waist and lower body."
+    )
+
+    st.subheader("Step 5 — Boundary Comparison", anchor=False)
+    st.image(str(DISPLAY_DIR / "thermal_step5_boundary_comparison.png"),
+             caption="Classical thermal boundary vs. SAM2 boundary (from report Figure 10)", width="stretch")
+    st.write(
+        "Both boundaries closely follow the same person. The warm body is strongly separated from much of "
+        "the cooler background, which makes the HSV-based classical method effective here."
+    )
+
+    st.subheader("Step 6 — Quantitative Comparison", anchor=False)
+    st.metric("IoU with SAM2", r["iou"])
+    st.write(
+        "An IoU of 1.0 would mean the masks overlap perfectly, so 0.9813 indicates very high agreement "
+        "between the classical thermal segmentation and SAM2."
+    )
+    st.caption("This is not 98.13% accuracy: SAM2 is a comparison segmentation, not manually labeled ground truth.")
+    st.button("Back", key="m4_thermal_results_back_bottom", on_click=navigate_module4, args=("thermal_select",))
+
+
+def thermal_select_page():
+    module4_selection_page("m4_thermal_select_back_top", "Thermal Image Boundary Detection", (
+        ("m4_thermal_visitor", "Detect Human Boundaries in Your Own Thermal Image", "Upload and analyze your own thermal image", "thermal"),
+        ("m4_thermal_results", "View My Experiment & Results", "Explore my thermal boundary detection results", "thermal_results")))
+
+
 st.set_page_config(page_title="Module 4 - Human Boundary Detection", layout="centered")
 st.session_state.setdefault("module4_section", "home")
 
@@ -870,11 +1058,22 @@ if section == "home":
             for label, destination in (("Detect Human Boundaries in RGB Images", "rgb"),
                                        ("Detect Human Boundaries in Thermal Images", "thermal")):
                 st.button(label, key=f"m4_open_{destination}", on_click=navigate_module4,
-                          args=(destination,), width="stretch")
-else:
+                          args=("rgb_select" if destination == "rgb" else "thermal_select",), width="stretch")
+elif section == "rgb_select":
+    rgb_select_page()
+elif section == "rgb_results":
+    rgb_results_page()
+elif section == "rgb":
+    st.button("Back", key="m4_rgb_visitor_back_top", on_click=navigate_module4, args=("rgb_select",))
     st.title("Module 4 – Human Boundary Detection")
-    st.button("Back to Module 4", key="module4_home", on_click=navigate_module4, args=("home",))
-    if section == "rgb":
-        render_rgb()
-    elif section == "thermal":
-        render_thermal()
+    render_rgb()
+    st.button("Back", key="m4_rgb_visitor_back_bottom", on_click=navigate_module4, args=("rgb_select",))
+elif section == "thermal_select":
+    thermal_select_page()
+elif section == "thermal_results":
+    thermal_results_page()
+elif section == "thermal":
+    st.button("Back", key="m4_thermal_visitor_back_top", on_click=navigate_module4, args=("thermal_select",))
+    st.title("Module 4 – Human Boundary Detection")
+    render_thermal()
+    st.button("Back", key="m4_thermal_visitor_back_bottom", on_click=navigate_module4, args=("thermal_select",))
