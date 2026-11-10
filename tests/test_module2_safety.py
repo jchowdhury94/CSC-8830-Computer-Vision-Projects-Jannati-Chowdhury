@@ -144,7 +144,7 @@ class HomePageTests(unittest.TestCase):
         at = run_page()
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state["m2_page"], "home")
-        self.assertEqual(labels(at), ["Calibrate Your Camera & Measure an Object", "View My Experiment & Results"])
+        self.assertEqual(labels(at), ["Home", "Calibrate Your Camera & Measure an Object", "View My Experiment & Results"])
         self.assertEqual([t.value for t in at.title], ["Module 2"])
         self.assertEqual(header_texts(at), ["Camera Calibration & 2D Object Measurement"])
 
@@ -155,7 +155,7 @@ class HomePageTests(unittest.TestCase):
         self.assertEqual(len(at.text_input) + len(at.number_input) + len(at.get("file_uploader")) + len(at.expander), 0)
         self.assertEqual(len(at.info), 0)
         self.assertEqual(header_texts(at), ["Camera Calibration & 2D Object Measurement"])
-        self.assertNotIn("← Back", labels(at))
+        self.assertNotIn("Back", labels(at))
 
     def test_experiment_content_is_hidden_initially(self):
         at = run_page()
@@ -170,13 +170,13 @@ class VisitorWorkflowTests(unittest.TestCase):
         self.assertEqual(at.session_state["m2_page"], "visitor")
         self.assertEqual([t.value for t in at.title], ["Calibrate Your Camera & Measure an Object"])
         self.assertNotIn("My Experiment & Results", header_texts(at))
-        for label in ("Load Saved Calibration", "Calibrate New Camera", "Reset All", "← Back"):
+        for label in ("Load Saved Calibration", "Calibrate New Camera", "Reset All", "Back"):
             self.assertIn(label, labels(at))
         self.assertNotIn("View My Experiment & Results", labels(at))
         self.assertEqual(len(at.table), 0)
         self.assertIsNone(at.session_state["m2_visitor_calibration"])
         self.assertNotIn("m2_scroll_to_experiment", at.session_state)
-        self.assertNotIn("m2_scroll_to", at.session_state)                 # one-shot scroll was consumed
+        self.assertNotIn("m2_scroll_to", at.session_state)                 # heading scroll was removed (it hid Back / Home)
 
     def test_valid_measurement_requirements_are_a_compact_expander(self):
         at = visitor_run()
@@ -230,8 +230,9 @@ class VisitorWorkflowTests(unittest.TestCase):
 
     def test_single_back_button_and_headings_at_top(self):
         at = visitor_run()
-        self.assertEqual(labels(at).count("← Back"), 1)
-        self.assertEqual(labels(at)[0], "← Back")
+        self.assertEqual(labels(at).count("Back"), 1)
+        self.assertEqual(labels(at)[:2], ["Back", "Home"])  # one nav row: Back left, Home right
+        self.assertNotIn("← Back", labels(at))
         self.assertNotIn("Back to Module 2", labels(at))
         self.assertEqual([t.value for t in at.title], ["Calibrate Your Camera & Measure an Object"])
         self.assertNotIn("Calibrate Your Camera & Measure an Object", header_texts(at))
@@ -246,7 +247,7 @@ class VisitorWorkflowTests(unittest.TestCase):
             at.button(key=key).click()
             at.run()
             self.assertEqual(at.session_state["m2_page"], "home")
-            self.assertEqual(len(labels(at)), 2)
+            self.assertEqual(len(labels(at)), 3)
 
 
 class ExperimentViewTests(unittest.TestCase):
@@ -259,7 +260,7 @@ class ExperimentViewTests(unittest.TestCase):
         self.assertNotIn("Load Saved Calibration", labels(at))
         self.assertNotIn("Reset All", labels(at))
         self.assertEqual(len(at.text_input) + len(at.number_input) + len(at.get("file_uploader")), 0)   # no duplicate controls
-        self.assertNotIn("m2_scroll_to", at.session_state)                                             # one-shot scroll was consumed
+        self.assertNotIn("m2_scroll_to", at.session_state)                                             # heading scroll was removed
 
     def test_back_buttons_return_home(self):
         for key in ("m2_back_top", "m2_back_bottom"):
@@ -267,7 +268,7 @@ class ExperimentViewTests(unittest.TestCase):
             at.button(key=key).click()
             at.run()
             self.assertEqual(at.session_state["m2_page"], "home")
-            self.assertEqual(labels(at), ["Calibrate Your Camera & Measure an Object", "View My Experiment & Results"])
+            self.assertEqual(labels(at), ["Home", "Calibrate Your Camera & Measure an Object", "View My Experiment & Results"])
             self.assertNotIn("My Experiment & Results", header_texts(at))
 
     def test_visitor_state_survives_navigation(self):

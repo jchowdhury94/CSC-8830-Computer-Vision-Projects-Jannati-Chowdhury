@@ -30,7 +30,7 @@ class Module3HomepageTests(unittest.TestCase):
         self.assertEqual([t.value for t in app.title], ["Module 3"])
         self.assertEqual([h.value for h in app.header], ["Gaussian Blur — Spatial & Frequency Domain"])
         self.assertEqual([b.label for b in app.button],
-                         ["Apply Gaussian Blur to Your Own Image", "View My Experiment & Results"])
+                         ["Home", "Apply Gaussian Blur to Your Own Image", "View My Experiment & Results"])
         self.assertEqual(len(app.slider) + len(app.selectbox) + len(app.dataframe), 0)
 
     def test_first_button_opens_existing_interface(self):
@@ -41,8 +41,8 @@ class Module3HomepageTests(unittest.TestCase):
                          ["Spatial Gaussian Blurring", "Fourier / Frequency Domain Gaussian Blurring"])
         self.assertEqual(app.selectbox(key="gaussian_kernel_size").value, 5)
         self.assertEqual(app.slider(key="gaussian_sigma").value, 1.5)
-        labels = [b.label for b in app.button]
-        for label in ("Reset", "Apply Fourier Filter", "Reset All", "Back to Module 3"):
+        labels = [b.label for b in app.button if b.key != "nav_home_button"]
+        for label in ("Reset", "Apply Fourier Filter", "Reset All", "Back"):
             self.assertIn(label, labels)
         self.assertTrue(next(b for b in app.button if b.label == "Apply Fourier Filter").disabled)
         self.assertEqual(len(app.dataframe), 1)
@@ -103,7 +103,7 @@ class Module3HomepageTests(unittest.TestCase):
     def test_experiment_page_has_exactly_two_back_buttons(self):
         app = new_app()
         click(app, "m3_open_experiment")
-        self.assertEqual([(b.key, b.label) for b in app.button],
+        self.assertEqual([(b.key, b.label) for b in app.button if b.key != "nav_home_button"],
                          [("m3_back_experiment_top", "Back"), ("m3_back_experiment_bottom", "Back")])
         for key in ("m3_back_experiment_top", "m3_back_experiment_bottom"):
             app = new_app()

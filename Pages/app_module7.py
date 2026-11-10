@@ -15,6 +15,11 @@ MODULE_DIR = Path(__file__).resolve().parents[1] / "Modules" / "Module_7"
 if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 
+ROOT_DIR = str(Path(__file__).resolve().parents[1])
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+from home_navigation import back_button, nav_row  # noqa: E402
 from stereo_measure import calibration_wizard as wiz  # noqa: E402
 from stereo_measure import load_model_b, load_selection  # noqa: E402
 from stereo_measure import selection as sel  # noqa: E402
@@ -1507,7 +1512,7 @@ def _buttons(suffix=""):
 
 HOME_CSS = f"""
 <style>
-.st-key-m7_home_layout {{ gap: 0; padding-top: 4vh; }}
+.st-key-m7_home_layout {{ gap: 0; padding-top: 0; }}  /* the nav row above already supplies the top space */
 .st-key-m7_home_title, .st-key-m7_home_subtitle {{ gap: 0; flex-shrink: 0; }}
 .st-key-m7_home_nav {{ flex-shrink: 0; }}
 .st-key-m7_home_title [data-testid="stMarkdownContainer"],
@@ -1692,18 +1697,16 @@ def landing(title, subtitle, buttons):
                 st.button(label, key=key, on_click=select_part, args=(target,), width="stretch")
 
 
-# (back-button label, destination) for every view except the Module 7 homepage
-BACK_TARGET = {"q1_home": ("Back", "home"), "1": ("Back", "q1_home"),
-               "experiment": ("Back", "q1_home")}
+# parent view of every view except the Module 7 homepage; its Back is the nav row's "m7_back" button
+BACK_TARGET = {"q1_home": "home", "1": "q1_home", "experiment": "q1_home"}
 
 init_state()
 view = st.session_state["module7_part"]
+nav_row(None if view == "home" else ("m7_back", select_part, (BACK_TARGET.get(view, "home"),)), view=f"m7:{view}")
 if view == "home":
     landing(HOME_TITLE, HOME_SUBTITLE, (("q1_home", "m7_open_q1", Q1_TITLE),
                                         ("3", "m7_open_q3", Q3_BUTTON)))
 else:
-    label, target = BACK_TARGET.get(view, ("Back", "home"))
-    st.button(label, key="m7_back", on_click=select_part, args=(target,))
     if view == "q1_home":
         selection_page(Q1_TITLE, (
             ("m7_open_measure", "Measure Objects with Your Own Stereo Cameras", "Calibrate your cameras and measure objects", "1"),
@@ -1714,7 +1717,7 @@ else:
         restore_inputs(experiment=True, measurement=False)
         show_experiment(standalone=True)
         st.write("")
-        st.button("Back", key="m7_back_bottom", on_click=select_part, args=("q1_home",))
+        back_button("m7_back_bottom", select_part, ("q1_home",))
     else:
         part_three()    # Question 3 placeholder
     save_inputs()

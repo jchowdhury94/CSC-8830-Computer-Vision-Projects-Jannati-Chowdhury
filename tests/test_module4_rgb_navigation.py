@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "Pages" / "app_module4.py"
 DISPLAY = ROOT / "Modules" / "Module_4" / "display"
 
-HOME_BUTTONS = ["Detect Human Boundaries in RGB Images", "Detect Human Boundaries in Thermal Images"]
+HOME_BUTTONS = ["Home", "Detect Human Boundaries in RGB Images", "Detect Human Boundaries in Thermal Images"]
 
 
 def new_app():
@@ -48,7 +48,7 @@ class Module4RgbNavigationTests(unittest.TestCase):
         self.assertEqual(len(app.title), 0)
         self.assertIn("MODULE 4", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["RGB Image Boundary Detection"])
-        labels = [b.label for b in app.button]
+        labels = [b.label for b in app.button if b.key != "nav_home_button"]
         self.assertEqual([l for l in labels if l != "Back"],
                          ["**Detect Human Boundaries in Your Own RGB Image**  \nUpload and analyze your own RGB image",
                           "**View My Experiment & Results**  \nExplore my RGB boundary detection results"])
@@ -66,14 +66,14 @@ class Module4RgbNavigationTests(unittest.TestCase):
         app = new_app()
         open_select(app)
         click(app, "m4_rgb_visitor")
-        labels = [b.label for b in app.button]
+        labels = [b.label for b in app.button if b.key != "nav_home_button"]
         self.assertEqual(labels[0], "Back")
         self.assertEqual(labels[-1], "Back")
         self.assertEqual(len(back_keys(app)), 2)
         self.assertEqual(app.subheader[0].value, "Question 1 – Human Boundary Detection in an RGB Image")
         self.assertIn("Reset RGB Experiment", labels)
         # Back is above the heading: the first element rendered is the button, not the title.
-        self.assertEqual(app.main[0].type, "button")
+        self.assertEqual([e for e in app.main if e.type in ("button", "title", "header") and getattr(e, "key", None) != "nav_home_button"][0].type, "button")
 
     def test_visitor_back_returns_to_selection_not_home(self):
         for key in ("m4_rgb_visitor_back_top", "m4_rgb_visitor_back_bottom"):
@@ -88,7 +88,7 @@ class Module4RgbNavigationTests(unittest.TestCase):
         app = new_app()
         open_select(app)
         click(app, "m4_rgb_results")
-        self.assertEqual(app.main[0].type, "button")
+        self.assertEqual([e for e in app.main if e.type in ("button", "title", "header") and getattr(e, "key", None) != "nav_home_button"][0].type, "button")
         self.assertEqual([h.value for h in app.header], ["My RGB Experiment & Results"])
         self.assertEqual([s.value for s in app.subheader], [
             "Step 1 — Original RGB Image & Parameters", "Step 2 — Gaussian Smoothing",
@@ -109,7 +109,7 @@ class Module4RgbNavigationTests(unittest.TestCase):
         self.assertIn("cast shadow", text)
         self.assertIn("SAM2 follows", text)
         self.assertEqual(len(app.get("image")), 9)
-        self.assertEqual([b.label for b in app.button], ["Back", "Back"])
+        self.assertEqual([b.label for b in app.button if b.key != "nav_home_button"], ["Back", "Back"])
 
     def test_results_back_returns_to_selection(self):
         for key in ("m4_rgb_results_back_top", "m4_rgb_results_back_bottom"):

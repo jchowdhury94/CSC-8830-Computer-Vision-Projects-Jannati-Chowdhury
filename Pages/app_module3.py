@@ -14,6 +14,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
+from home_navigation import back_button, nav_row  # noqa: E402
 from Modules.Module_3.image_filtering import (
     create_gaussian_kernel,
     gaussian_blur,
@@ -35,7 +36,7 @@ VISITOR_INPUT_KEYS = ("gaussian_kernel_size", "gaussian_sigma")
 
 PAGE_CSS = f"""
 <style>
-.st-key-m3_home_layout {{ gap: 0; padding-top: 4vh; }}
+.st-key-m3_home_layout {{ gap: 0; padding-top: 1rem; }}  /* the nav row above already supplies the top space */
 .st-key-m3_home_title, .st-key-m3_home_subtitle {{ gap: 0; flex-shrink: 0; }}
 .st-key-m3_home_nav {{ flex-shrink: 0; }}
 .st-key-m3_home_title [data-testid="stMarkdownContainer"],
@@ -107,7 +108,6 @@ def experiment_page():
     # Values below are the ones documented in my original Module 3 report.
     kernel = create_gaussian_kernel(EXPERIMENT_KERNEL_SIZE, EXPERIMENT_SIGMA)
 
-    st.button("Back", key="m3_back_experiment_top", on_click=go_to, args=("home",))
     st.header("My Experiment & Results", anchor=False)
 
     st.subheader("Step 1 \u2014 Original Image & Parameters", anchor=False)
@@ -164,14 +164,13 @@ def experiment_page():
         "domains gave visually identical images, with a maximum absolute difference of "
         "5.115908 \u00d7 10\u207b\u00b9\u00b3. This confirms the convolution theorem for this filter."
     )
-    st.button("Back", key="m3_back_experiment_bottom", on_click=go_to, args=("home",))
+    back_button("m3_back_experiment_bottom", go_to, ("home",))
 
 
 def visitor_page():
     # Seed the controls through session state only; passing value=/index= as well triggers Streamlit's duplicate-default warning.
     st.session_state.setdefault("gaussian_kernel_size", 5)
     st.session_state.setdefault("gaussian_sigma", 1.5)
-    st.button("Back to Module 3", key="m3_back_top", on_click=go_to, args=("home",))
     st.title("Module 3 - Image Filtering")
     st.subheader("Spatial Gaussian Blurring")
 
@@ -311,12 +310,13 @@ def visitor_page():
         )
 
     st.button("Reset All", on_click=reset_all)
-    st.button("Back to Module 3", key="m3_back_bottom", on_click=go_to, args=("home",))
+    back_button("m3_back_bottom", go_to, ("home",))
 
 
 init_state()
-st.markdown(PAGE_CSS, unsafe_allow_html=True)
 page = st.session_state["m3_page"]
+BACK_KEY = {"visitor": "m3_back_top", "experiment": "m3_back_experiment_top"}  # top Back widget key per nested view
+nav_row((BACK_KEY[page], go_to, ("home",)) if page in BACK_KEY else None, PAGE_CSS, view=f"m3:{page}")
 if page == "visitor":
     visitor_page()
 elif page == "experiment":

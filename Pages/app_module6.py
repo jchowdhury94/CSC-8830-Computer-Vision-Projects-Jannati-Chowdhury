@@ -4,6 +4,7 @@ import dataclasses
 import hashlib
 import importlib
 import logging
+import sys
 from pathlib import Path
 
 import cv2
@@ -12,6 +13,11 @@ import pandas as pd
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
 
+ROOT_DIR = str(Path(__file__).resolve().parents[1])
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+from home_navigation import back_button, nav_row  # noqa: E402
 
 OUTPUT = Path(__file__).resolve().parents[1] / "Modules" / "Module_6" / "Part_A" / "output"
 
@@ -227,7 +233,7 @@ PART_B_SUBTITLE = "Structure from Motion Reconstruction"
 
 HOME_CSS = f"""
 <style>
-.st-key-m6_home_layout {{ gap: 0; padding-top: 4vh; }}
+.st-key-m6_home_layout {{ gap: 0; padding-top: 0; }}  /* the nav row above already supplies the top space */
 .st-key-m6_home_title, .st-key-m6_home_subtitle {{ gap: 0; flex-shrink: 0; }}
 .st-key-m6_home_nav {{ flex-shrink: 0; }}
 .st-key-m6_home_title [data-testid="stMarkdownContainer"],
@@ -365,9 +371,8 @@ def panel_label(title, subtitle):
     return f"**{title}**  \n{subtitle}"
 
 
-def selection_page(back_key, heading, panels):
+def selection_page(heading, panels):
     st.markdown(select_css(), unsafe_allow_html=True)
-    st.button("Back", key=back_key, on_click=select_part, args=("home",))
     with st.container(key="m6_sel_layout"):
         with st.container(key="m6_sel_label"):
             st.markdown("MODULE 6")
@@ -379,13 +384,13 @@ def selection_page(back_key, heading, panels):
 
 
 def part_a_select_page():
-    selection_page("m6_a_select_back_top", PART_A_SUBTITLE, (
+    selection_page(PART_A_SUBTITLE, (
         ("m6_a_visitor", "Track Motion in Your Own Video", "Use your own recording", "a_visitor"),
         ("m6_a_results", "View My Experiment & Results", "Explore the completed experiment", "a_results")))
 
 
 def part_b_select_page():
-    selection_page("m6_b_select_back_top", PART_B_SUBTITLE, (
+    selection_page(PART_B_SUBTITLE, (
         ("m6_b_visitor", "Reconstruct an Object from Your Own Images", "Upload images to reconstruct an object", "b_visitor"),
         ("m6_b_results", "View My Experiment & Results", "Explore the completed reconstruction", "b_results")))
 
@@ -905,7 +910,6 @@ def b_results(vr, result):
 def part_b_visitor_page():
     from Modules.Module_6.Part_B import visitor_reconstruction as vr
 
-    st.button("Back", key="m6_b_visitor_back_top", on_click=select_part, args=("b_select",))
     st.session_state.setdefault("m6b_upload_generation", 0)
     st.session_state.setdefault("m6b_gen", 0)
     st.session_state.setdefault("m6b_scale", None)
@@ -940,7 +944,7 @@ def part_b_visitor_page():
                             back.button("Back to Scale", key="m6b_results_back_scale", on_click=b_scroll_to,
                                         args=(3,), width="stretch")
                             start.button("Start Over", key="m6b_start_over", on_click=b_start_over, width="stretch")
-        st.button("Back", key="m6_b_visitor_back_bottom", on_click=select_part, args=("b_select",))
+        back_button("m6_b_visitor_back_bottom", select_part, ("b_select",))
     b_scroll_script()
 
 
@@ -1412,7 +1416,6 @@ def visitor_start_over():
 def part_a_visitor_page():
     from Modules.Module_6.Part_A import visitor_tracking as vt
 
-    st.button("Back", key="m6_a_visitor_back_top", on_click=select_part, args=("a_select",))
     st.session_state.setdefault("m6v_upload_generation", 0)
     st.session_state.setdefault("m6v_points", [])
     st.session_state.setdefault("m6v_results", None)
@@ -1444,13 +1447,19 @@ def part_a_visitor_page():
                         start.button("Start Over", key="m6v_start_over", on_click=visitor_start_over,
                                      width="stretch")
     if analysis is not None:  # no bottom Back (and no spacing) until a valid video has been analyzed
-        st.button("Back", key="m6_a_visitor_back_bottom", on_click=select_part, args=("a_select",))
+        back_button("m6_a_visitor_back_bottom", select_part, ("a_select",))
     visitor_scroll_script()
 
 
 st.set_page_config(page_title="Module 6", layout="centered")
 st.session_state.setdefault("module6_section", "home")
 section = st.session_state["module6_section"]
+# (top Back widget key, parent section) for every nested view; the homepage has no Back
+BACK = {"a_select": ("m6_a_select_back_top", "home"), "b_select": ("m6_b_select_back_top", "home"),
+        "a_visitor": ("m6_a_visitor_back_top", "a_select"), "a_results": ("m6_a_results_back_top", "a_select"),
+        "b_visitor": ("m6_b_visitor_back_top", "b_select"), "b_results": ("m6_b_results_back_top", "b_select")}
+nav_row((BACK[section][0], select_part, (BACK[section][1],)) if section in BACK else None,
+        view=f"m6:{section}")
 if section == "home":
     st.markdown(HOME_CSS, unsafe_allow_html=True)
     with st.container(key="m6_home_layout"):
@@ -1467,14 +1476,12 @@ elif section == "a_select":
 elif section == "a_visitor":
     part_a_visitor_page()
 elif section == "a_results":
-    st.button("Back", key="m6_a_results_back_top", on_click=select_part, args=("a_select",))
     show_part_a()
-    st.button("Back", key="m6_a_results_back_bottom", on_click=select_part, args=("a_select",))
+    back_button("m6_a_results_back_bottom", select_part, ("a_select",))
 elif section == "b_select":
     part_b_select_page()
 elif section == "b_visitor":
     part_b_visitor_page()
 else:
-    st.button("Back", key="m6_b_results_back_top", on_click=select_part, args=("b_select",))
     show_part_b()
-    st.button("Back", key="m6_b_results_back_bottom", on_click=select_part, args=("b_select",))
+    back_button("m6_b_results_back_bottom", select_part, ("b_select",))

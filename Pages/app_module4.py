@@ -16,6 +16,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
+from home_navigation import back_button, nav_row  # noqa: E402
 from Modules.Module_4.human_boundary import (
     find_human_boundary,
     normalize_image,
@@ -818,7 +819,7 @@ def nav_selector(suffix):
 
 HOME_CSS = f"""
 <style>
-.st-key-m4_home_layout {{ gap: 0; padding-top: 4vh; }}
+.st-key-m4_home_layout {{ gap: 0; padding-top: 0; }}  /* the nav row above already supplies the top space */
 .st-key-m4_home_title, .st-key-m4_home_subtitle {{ gap: 0; flex-shrink: 0; }}
 .st-key-m4_home_nav {{ flex-shrink: 0; }}
 .st-key-m4_home_title [data-testid="stMarkdownContainer"],
@@ -869,7 +870,6 @@ RGB_EXPERIMENT = {
 
 def rgb_results_page():
     r = RGB_EXPERIMENT
-    st.button("Back", key="m4_rgb_results_back_top", on_click=navigate_module4, args=("rgb_select",))
     st.header("My RGB Experiment & Results", anchor=False)
 
     def with_text(image, caption, *text):
@@ -942,7 +942,7 @@ def rgb_results_page():
         "the visible person more closely, especially around the lower body, and isolates the person "
         "without the shadow."
     )
-    st.button("Back", key="m4_rgb_results_back_bottom", on_click=navigate_module4, args=("rgb_select",))
+    back_button("m4_rgb_results_back_bottom", navigate_module4, ("rgb_select",))
 
 
 def svg_icon(path):
@@ -1045,9 +1045,8 @@ def panel_label(title, subtitle):
     return f"**{title}**  \n{subtitle}"
 
 
-def module4_selection_page(back_key, heading, panels):
+def module4_selection_page(heading, panels):
     st.markdown(select_css(), unsafe_allow_html=True)
-    st.button("Back", key=back_key, on_click=navigate_module4, args=("home",))
     with st.container(key="m4_sel_layout"):
         with st.container(key="m4_sel_label"):
             st.markdown("MODULE 4")
@@ -1059,7 +1058,7 @@ def module4_selection_page(back_key, heading, panels):
 
 
 def rgb_select_page():
-    module4_selection_page("m4_rgb_select_back_top", "RGB Image Boundary Detection", (
+    module4_selection_page("RGB Image Boundary Detection", (
         ("m4_rgb_visitor", "Detect Human Boundaries in Your Own RGB Image", "Upload and analyze your own RGB image", "rgb"),
         ("m4_rgb_results", "View My Experiment & Results", "Explore my RGB boundary detection results", "rgb_results")))
 
@@ -1075,7 +1074,6 @@ THERMAL_EXPERIMENT = {
 
 def thermal_results_page():
     r = THERMAL_EXPERIMENT
-    st.button("Back", key="m4_thermal_results_back_top", on_click=navigate_module4, args=("thermal_select",))
     st.header("My Thermal Experiment & Results", anchor=False)
 
     st.subheader("Step 1 — Original Thermal Image & Settings", anchor=False)
@@ -1138,11 +1136,11 @@ def thermal_results_page():
         "between the classical thermal segmentation and SAM2."
     )
     st.caption("This is not 98.13% accuracy: SAM2 is a comparison segmentation, not manually labeled ground truth.")
-    st.button("Back", key="m4_thermal_results_back_bottom", on_click=navigate_module4, args=("thermal_select",))
+    back_button("m4_thermal_results_back_bottom", navigate_module4, ("thermal_select",))
 
 
 def thermal_select_page():
-    module4_selection_page("m4_thermal_select_back_top", "Thermal Image Boundary Detection", (
+    module4_selection_page("Thermal Image Boundary Detection", (
         ("m4_thermal_visitor", "Detect Human Boundaries in Your Own Thermal Image", "Upload and analyze your own thermal image", "thermal"),
         ("m4_thermal_results", "View My Experiment & Results", "Explore my thermal boundary detection results", "thermal_results")))
 
@@ -1160,6 +1158,13 @@ for setting_key in (
         st.session_state[setting_key] = st.session_state[setting_key]
 
 section = st.session_state["module4_section"]
+# (top Back widget key, parent section) for every nested view; the homepage has no Back
+BACK = {"rgb_select": ("m4_rgb_select_back_top", "home"), "thermal_select": ("m4_thermal_select_back_top", "home"),
+        "rgb_results": ("m4_rgb_results_back_top", "rgb_select"), "rgb": ("m4_rgb_visitor_back_top", "rgb_select"),
+        "thermal_results": ("m4_thermal_results_back_top", "thermal_select"),
+        "thermal": ("m4_thermal_visitor_back_top", "thermal_select")}
+nav_row((BACK[section][0], navigate_module4, (BACK[section][1],)) if section in BACK else None,
+        view=f"m4:{section}")
 if section == "home":
     st.markdown(HOME_CSS, unsafe_allow_html=True)
     with st.container(key="m4_home_layout"):
@@ -1177,16 +1182,14 @@ elif section == "rgb_select":
 elif section == "rgb_results":
     rgb_results_page()
 elif section == "rgb":
-    st.button("Back", key="m4_rgb_visitor_back_top", on_click=navigate_module4, args=("rgb_select",))
     st.title("Module 4 – Human Boundary Detection")
     render_rgb()
-    st.button("Back", key="m4_rgb_visitor_back_bottom", on_click=navigate_module4, args=("rgb_select",))
+    back_button("m4_rgb_visitor_back_bottom", navigate_module4, ("rgb_select",))
 elif section == "thermal_select":
     thermal_select_page()
 elif section == "thermal_results":
     thermal_results_page()
 elif section == "thermal":
-    st.button("Back", key="m4_thermal_visitor_back_top", on_click=navigate_module4, args=("thermal_select",))
     st.title("Module 4 – Human Boundary Detection")
     render_thermal()
-    st.button("Back", key="m4_thermal_visitor_back_bottom", on_click=navigate_module4, args=("thermal_select",))
+    back_button("m4_thermal_visitor_back_bottom", navigate_module4, ("thermal_select",))

@@ -219,7 +219,7 @@ class PageStateTests(unittest.TestCase):
         at = AppTest.from_file(str(PAGE), default_timeout=60).run()
         self.assertFalse(at.exception)
         labels = [b.label for b in at.button]
-        self.assertEqual(labels, ["Calibrated Stereo Object Measurement", "Room Measurement Using Stereo Videos"])
+        self.assertEqual(labels, ["Home", "Calibrated Stereo Object Measurement", "Room Measurement Using Stereo Videos"])
 
     def test_part3_placeholder(self):
         at = AppTest.from_file(str(PAGE), default_timeout=60)

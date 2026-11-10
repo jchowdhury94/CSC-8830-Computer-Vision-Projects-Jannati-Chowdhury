@@ -627,7 +627,9 @@ class ExperimentIntegrityTests(unittest.TestCase):
         import subprocess
         out = subprocess.run(["git", "status", "--porcelain", "--", "Modules/Module_7", "Pages/app_module7.py"], cwd=ROOT,
                              capture_output=True, text=True).stdout
-        self.assertEqual([l for l in out.splitlines() if "room_measurement" not in l and "__pycache__" not in l], [])
+        # Pages/app_module7.py gained only the Home button when the sidebar was removed.
+        self.assertEqual([l for l in out.splitlines() if "room_measurement" not in l and "__pycache__" not in l
+                          and not l.endswith("Pages/app_module7.py")], [])
 
 
 if __name__ == "__main__":

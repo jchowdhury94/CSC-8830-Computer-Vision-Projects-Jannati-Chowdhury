@@ -94,7 +94,7 @@ class VisitorPageTests(unittest.TestCase):
     def test_empty_page_shows_only_step_one(self):
         app = empty_app()
         self.assertEqual(headers(app), [TITLE, STEP[1]])
-        self.assertEqual([b.label for b in app.button], ["Back"])
+        self.assertEqual([b.label for b in app.button if b.key != "nav_home_button"], ["Back"])
         self.assertEqual(len(app.get("file_uploader")), 1)
         for step in (2, 3, 4, 5):
             self.assertNotIn(f"m6b_step_{step}", keys(app))
@@ -140,7 +140,7 @@ class VisitorPageTests(unittest.TestCase):
         self.assertEqual(headers(app), [TITLE, STEP[1]])
         self.assertEqual(len(app.get("image")), 2)
         self.assertIn("add at least 3", " ".join(c.value for c in app.caption))
-        self.assertEqual([b.key for b in app.button], ["m6_b_visitor_back_top"])  # no bottom Back yet
+        self.assertEqual([b.key for b in app.button if b.key != "nav_home_button"], ["m6_b_visitor_back_top"])  # no bottom Back yet
         self.assertEqual(len(app.error), 0)
 
     def test_three_photos_are_accepted(self):
@@ -201,7 +201,7 @@ class VisitorPageTests(unittest.TestCase):
         app.get("file_uploader")[0].set_value(None)
         run(app)
         self.assertEqual(headers(app), [TITLE, STEP[1]])
-        self.assertEqual([b.key for b in app.button], ["m6_b_visitor_back_top"])
+        self.assertEqual([b.key for b in app.button if b.key != "nav_home_button"], ["m6_b_visitor_back_top"])
         self.assertEqual(len(app.get("image")), 0)
 
     def test_leaving_and_returning_drops_stale_upload(self):
@@ -613,7 +613,7 @@ class VisitorPageTests(unittest.TestCase):
         self.assertEqual(headers(app), [TITLE, STEP[1]])
         self.assertEqual(app.session_state["m6b_upload_generation"], generation + 1)
         self.assertEqual(scroll_targets(app), [1])
-        self.assertEqual([b.key for b in app.button], ["m6_b_visitor_back_top"])
+        self.assertEqual([b.key for b in app.button if b.key != "nav_home_button"], ["m6_b_visitor_back_top"])
         self.assertEqual(len(app.get("image")), 0)
         for key in ("m6b_match", "m6b_result", "m6b_files", "m6b_infos"):
             self.assertNotIn(key, app.session_state)

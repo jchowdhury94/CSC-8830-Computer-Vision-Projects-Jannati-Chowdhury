@@ -32,7 +32,7 @@ def titles(at):
 
 
 def labels(at):
-    return [b.label for b in at.button]
+    return [b.label for b in at.button if b.key != "nav_home_button"]   # Home is covered by the Home navigation tests
 
 
 @unittest.skipIf(AppTest is None, "streamlit testing is unavailable")
@@ -42,7 +42,7 @@ class HomepageTests(unittest.TestCase):
         self.assertFalse(at.exception)
         self.assertEqual(titles(at), ["Module 7"])
         self.assertEqual([h.value for h in at.header], ["Stereo Vision"])
-        self.assertEqual(labels(at), [Q1, Q3])
+        self.assertEqual([b.label for b in at.button], ["Home", Q1, Q3])
         self.assertEqual(len(at.caption), 0)
         self.assertEqual(len(at.subheader), 0)
 
@@ -168,7 +168,7 @@ class HomepageTests(unittest.TestCase):
 
     def test_top_and_bottom_experiment_back_have_unique_keys_and_both_work(self):
         at = fresh("experiment")
-        keys = [b.key for b in at.button]
+        keys = [b.key for b in at.button if b.key != "nav_home_button"]
         self.assertEqual(keys, ["m7_back", "m7_back_bottom"])
         self.assertEqual(len(set(keys)), 2)
         for key in keys:
@@ -190,7 +190,7 @@ class HomepageTests(unittest.TestCase):
         at = fresh("experiment")
         self.assertFalse(at.exception)
         self.assertEqual(labels(at), [BACK_CAL, BACK_CAL])
-        self.assertEqual([b.key for b in at.button], ["m7_back", "m7_back_bottom"])
+        self.assertEqual([b.key for b in at.button if b.key != "nav_home_button"], ["m7_back", "m7_back_bottom"])
         self.assertEqual(len(at.radio), 1)
         self.assertGreaterEqual(len(at.metric), 3)
         self.assertGreaterEqual(len(at.table), 4)

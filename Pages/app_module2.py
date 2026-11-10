@@ -27,6 +27,11 @@ DISPLAY_DIR = MODULE_DIR / "display"
 if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 
+ROOT_DIR = str(Path(__file__).resolve().parents[1])
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+from home_navigation import back_button, nav_row  # noqa: E402
 import calibration_file as cf  # noqa: E402  (visitor calibration files; never touches camera_calibration.npz)
 import visitor_calibration as vc  # noqa: E402  (visitor monocular calibration; independent of my saved calibration)
 
@@ -99,7 +104,7 @@ HEADING_CSS = """
 .st-key-m2_headings { gap: 0.25rem; }
 /* Home page: mirrors Module 3's homepage. Title, subtitle and nav are separate containers; the layout's own gap is
    zeroed so the explicit padding-top below is the only space between them (44px title -> subtitle, 64px subtitle -> buttons). */
-.st-key-m2_home_layout { gap: 0; padding-top: 4vh; }
+.st-key-m2_home_layout { gap: 0; padding-top: 1rem; }  /* the nav row above already supplies the top space */
 .st-key-m2_home_title, .st-key-m2_home_subtitle { gap: 0; }
 .st-key-m2_home_title, .st-key-m2_home_subtitle, .st-key-m2_home_nav { flex-shrink: 0; }
 /* Streamlit's markdown wrapper carries a -16px bottom margin that would eat into the explicit gaps. */
@@ -252,7 +257,6 @@ def init_state():
     ss.setdefault("m2_visitor_calibration", None)   # active visitor calibration (never my saved calibration)
     ss.setdefault("m2_cal_workflow", None)          # selected calibration workflow: None / "load" / "run" (UI only)
     ss.setdefault("m2_page", "home")                # "home" / "visitor" / "experiment"
-    ss.setdefault("m2_scroll_to", None)             # one-shot: page whose heading to scroll to after a view switch
     ss.setdefault("m2_saved_inputs", {})            # visitor inputs kept while the visitor widgets are not rendered
     ss.setdefault("m2_cal", vc.new_state())         # Calibrate New Camera: board settings, photo slots, current photo
     ss.setdefault("m2_computed", None)              # calibration computed from the visitor's photos (not necessarily active)
@@ -310,7 +314,7 @@ def reset_all():
     """
     ss = st.session_state
     for key in list(ss.keys()):
-        if str(key).startswith("m2_") and key not in ("m2_page", "m2_scroll_to", "m2_reset_count"):
+        if str(key).startswith("m2_") and key not in ("m2_page", "m2_reset_count"):
             del ss[key]
     init_state()
     ss["m2_reset_count"] += 1    # new widget keys: the browser would otherwise send back the old checkerboard values and files
@@ -326,25 +330,6 @@ def go_to(page):
         for key, value in ss["m2_saved_inputs"].items():
             ss[key] = value
     ss["m2_page"] = page
-    ss["m2_scroll_to"] = None if page == "home" else page   # one-shot: only when opening a view
-
-
-# Runs once, on the render right after a view opens, and brings its heading into view (same approach as Module 7).
-SCROLL_TO_HEADING_JS = """
-<script>
-setTimeout(function () {
-  var heading = document.getElementById("HEADING_ID");
-  if (!heading) { return; }
-  heading.style.scrollMarginTop = "24px";
-  heading.scrollIntoView({behavior: "smooth", block: "start"});
-}, 150);
-</script>
-"""
-
-
-def scroll_to_heading(page):
-    if st.session_state.pop("m2_scroll_to", None) == page:
-        st.html(SCROLL_TO_HEADING_JS.replace("HEADING_ID", f"m2-{page}-heading"), unsafe_allow_javascript=True)
 
 
 def matrix_table(matrix, digits):
@@ -1280,9 +1265,7 @@ def page_headings(title, subtitle=None, anchor=None, variant=None):
 
 
 def visitor_page():
-    st.button("← Back", key="m2_back_visitor_top", on_click=go_to, args=("home",))
     page_headings(VISITOR_TITLE, anchor="m2-visitor-heading", variant="visitor")
-    scroll_to_heading("visitor")
     st.subheader("Step 1: Calibrate Your Camera")
     calibrate_workflow()
 
@@ -1352,15 +1335,13 @@ def image_row(items, per_row=3):
 
 def show_experiment():
     st.header("My Experiment & Results", anchor="m2-experiment-heading")
-    scroll_to_heading("experiment")
-    st.button("Back to Module 2", key="m2_back_top", on_click=go_to, args=("home",))
     st.caption("Read-only. These results come from my saved calibration and validation files; nothing on this page can change them.")
 
     try:
         rows = read_validation_rows()
     except (OSError, ValueError, csv.Error, TypeError) as error:
         st.error(f"Validation results could not be loaded: {error}")
-        st.button("Back to Module 2", key="m2_back_bottom", on_click=go_to, args=("home",))
+        back_button("m2_back_bottom", go_to, ("home",))
         return
     trial_count = len(rows)
     distances = sorted({float(row["Distance_cm"]) for row in rows})
@@ -1505,7 +1486,7 @@ def show_experiment():
         f"- **Scope of validity:** five objects and distances from {min(distances):g} to {max(distances):g} cm are too few to "
         "claim accuracy outside this range."
     )
-    st.button("Back to Module 2", key="m2_back_bottom", on_click=go_to, args=("home",))
+    back_button("m2_back_bottom", go_to, ("home",))
 
 
 # ---------------------------------------------------------------- page
@@ -1518,8 +1499,9 @@ st.set_page_config(
 )
 
 init_state()
-st.markdown(PAGE_CSS, unsafe_allow_html=True)
 page = st.session_state["m2_page"]
+BACK_KEY = {"visitor": "m2_back_visitor_top", "experiment": "m2_back_top"}  # top Back widget key per nested view
+nav_row((BACK_KEY[page], go_to, ("home",)) if page in BACK_KEY else None, PAGE_CSS, view=f"m2:{page}")
 if page == "visitor":
     visitor_page()
 elif page == "experiment":

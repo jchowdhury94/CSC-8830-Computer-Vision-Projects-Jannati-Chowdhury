@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "Pages" / "app_module6.py"
 OUTPUT = ROOT / "Modules" / "Module_6" / "Part_A" / "output"
 
-HOME_BUTTONS = ["View Optical Flow and Motion Tracking", "View Structure from Motion Reconstruction"]
+HOME_BUTTONS = ["Home", "View Optical Flow and Motion Tracking", "View Structure from Motion Reconstruction"]
 PART_B_SELECT_BUTTONS = ["**Reconstruct an Object from Your Own Images**  \nUpload images to reconstruct an object",
                          "**View My Experiment & Results**  \nExplore the completed reconstruction"]
 SELECT_BUTTONS = ["**Track Motion in Your Own Video**  \nUse your own recording",
@@ -55,13 +55,13 @@ class Module6NavigationTests(unittest.TestCase):
         self.assertEqual(len(app.title), 0)
         self.assertIn("MODULE 6", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["Optical Flow and Motion Tracking"])
-        self.assertEqual([b.label for b in app.button if b.label != "Back"], SELECT_BUTTONS)
-        self.assertEqual([b.key for b in app.button if b.label != "Back"], ["m6_a_visitor", "m6_a_results"])
+        self.assertEqual([b.label for b in app.button if b.label not in ("Back", "Home")], SELECT_BUTTONS)
+        self.assertEqual([b.key for b in app.button if b.label not in ("Back", "Home")], ["m6_a_visitor", "m6_a_results"])
 
     def test_selection_has_exactly_one_back_at_top(self):
         app = new_app()
         open_select(app)
-        labels = [b.label for b in app.button]
+        labels = [b.label for b in app.button if b.key != "nav_home_button"]
         self.assertEqual(labels[0], "Back")
         self.assertEqual(labels.count("Back"), 1)
         self.assertEqual(back_keys(app), ["m6_a_select_back_top"])
@@ -81,7 +81,7 @@ class Module6NavigationTests(unittest.TestCase):
                          [m.value for m in app.markdown])
         click(app, "m6_a_visitor_back_top")
         self.assertEqual(app.session_state["module6_section"], "a_select")
-        self.assertEqual([b.label for b in app.button if b.label != "Back"], SELECT_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.label not in ("Back", "Home")], SELECT_BUTTONS)
 
 
     def test_results_page_content_preserved(self):
@@ -111,7 +111,7 @@ class Module6NavigationTests(unittest.TestCase):
             open_select(app)
             click(app, "m6_a_results")
             self.assertEqual(back_keys(app), ["m6_a_results_back_top", "m6_a_results_back_bottom"])
-            self.assertEqual([b.label for b in app.button], ["Back", "Back"])
+            self.assertEqual([b.label for b in app.button if b.key != "nav_home_button"], ["Back", "Back"])
             click(app, key)
             self.assertEqual(app.session_state["module6_section"], "a_select")
 
@@ -119,7 +119,7 @@ class Module6NavigationTests(unittest.TestCase):
         app = new_app()
         click(app, "m6_open_B")
         self.assertEqual(app.session_state["module6_section"], "b_select")
-        self.assertEqual([b.label for b in app.button], ["Back"] + PART_B_SELECT_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.key != "nav_home_button"], ["Back"] + PART_B_SELECT_BUTTONS)
         click(app, "m6_b_select_back_top")
         self.assertEqual(app.session_state["module6_section"], "home")
         self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
