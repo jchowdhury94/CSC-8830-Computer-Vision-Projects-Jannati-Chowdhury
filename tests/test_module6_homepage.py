@@ -24,41 +24,44 @@ def click(app, key):
 class Module6HomepageTests(unittest.TestCase):
     def test_home_content(self):
         app = new_app()
-        self.assertEqual(app.session_state["module6_part"], "home")
+        self.assertEqual(app.session_state["module6_section"], "home")
         self.assertEqual([t.value for t in app.title], ["Module 6"])
         self.assertEqual([h.value for h in app.header], ["Optical Flow and Structure from Motion"])
         self.assertEqual([b.label for b in app.button], LABELS)
         self.assertEqual(len(app.caption) + len(app.subheader) + len(app.table), 0)
 
-    def test_part_a_and_back(self):
+    def test_part_a_opens_selection_and_back(self):
         app = new_app()
         click(app, "m6_open_A")
-        self.assertEqual(app.session_state["module6_part"], "A")
-        self.assertEqual([b.label for b in app.button], ["Back to Module 6"])
-        self.assertEqual(len(app.title), 0)
-        self.assertEqual([h.value for h in app.header], ["Part A — Optical Flow and Motion Tracking"])
-        self.assertIn("Bilinear Interpolation", [s.value for s in app.subheader])
-        self.assertGreaterEqual(len(app.table), 6)
-        click(app, "m6_back")
+        self.assertEqual(app.session_state["module6_section"], "a_select")
         self.assertEqual([t.value for t in app.title], ["Module 6"])
+        self.assertEqual([h.value for h in app.header], ["Optical Flow and Motion Tracking"])
+        click(app, "m6_a_select_back_top")
+        self.assertEqual(app.session_state["module6_section"], "home")
+        self.assertEqual([b.label for b in app.button], LABELS)
 
     def test_part_b_and_back(self):
         app = new_app()
         click(app, "m6_open_B")
-        self.assertEqual(app.session_state["module6_part"], "B")
-        self.assertEqual([b.label for b in app.button], ["Back to Module 6"])
+        self.assertEqual(app.session_state["module6_section"], "b_select")
+        self.assertEqual([h.value for h in app.header], ["Structure from Motion Reconstruction"])
+        click(app, "m6_b_results")
+        self.assertEqual(app.session_state["module6_section"], "b_results")
+        self.assertEqual([b.label for b in app.button], ["Back", "Back"])
         self.assertEqual(len(app.title), 0)
         self.assertEqual([h.value for h in app.header], ["Part B — Structure from Motion"])
         self.assertIn("Recovered Depth Error", [s.value for s in app.subheader])
         self.assertEqual(len(app.metric), 6)
-        click(app, "m6_back")
+        click(app, "m6_b_results_back_top")
+        self.assertEqual(app.session_state["module6_section"], "b_select")
+        click(app, "m6_b_select_back_top")
         self.assertEqual([b.label for b in app.button], LABELS)
 
     def test_a_back_b_back(self):
         app = new_app()
-        for key in ("m6_open_A", "m6_back", "m6_open_B", "m6_back"):
+        for key in ("m6_open_A", "m6_a_select_back_top", "m6_open_B", "m6_b_select_back_top"):
             click(app, key)
-        self.assertEqual(app.session_state["module6_part"], "home")
+        self.assertEqual(app.session_state["module6_section"], "home")
 
 
 if __name__ == "__main__":

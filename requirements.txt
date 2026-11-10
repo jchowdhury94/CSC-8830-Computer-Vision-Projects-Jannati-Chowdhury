@@ -9,6 +9,8 @@ pyarrow==24.0.0
 numpy==2.5.3
 pandas==3.0.5
 opencv-python-headless==5.0.0.93
+# Bundled FFmpeg (libx264) for browser-compatible visitor result videos.
+imageio-ffmpeg==0.8.1
 streamlit-image-coordinates==0.4.1
 torch==2.14.0+cpu ; sys_platform == "linux"
 torchvision==0.29.0+cpu ; sys_platform == "linux"
@@ -21,4 +23,8 @@ omegaconf==2.3.1
 iopath==0.1.10
 tqdm==4.70.1
 pillow==12.3.0
+# HEIC/HEIF decoding for Module 6 Part B visitor photos (wheels bundle libheif: macOS arm64, Linux cp312).
+pillow-heif==1.8.1
+# Interactive 3D point cloud and plots for Module 6 Part B (pure-Python wheel; pulls in narwhals + packaging).
+plotly==6.9.0
 filelock==4.0.5
