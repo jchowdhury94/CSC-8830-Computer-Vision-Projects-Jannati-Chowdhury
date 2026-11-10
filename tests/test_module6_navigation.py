@@ -9,7 +9,10 @@ PAGE = ROOT / "Pages" / "app_module6.py"
 OUTPUT = ROOT / "Modules" / "Module_6" / "Part_A" / "output"
 
 HOME_BUTTONS = ["View Optical Flow and Motion Tracking", "View Structure from Motion Reconstruction"]
-SELECT_BUTTONS = ["Track Motion in Your Own Video", "View My Experiment & Results"]
+PART_B_SELECT_BUTTONS = ["**Reconstruct an Object from Your Own Images**  \nUpload images to reconstruct an object",
+                         "**View My Experiment & Results**  \nExplore the completed reconstruction"]
+SELECT_BUTTONS = ["**Track Motion in Your Own Video**  \nUse your own recording",
+                  "**View My Experiment & Results**  \nExplore the completed experiment"]
 
 
 def new_app():
@@ -49,9 +52,11 @@ class Module6NavigationTests(unittest.TestCase):
     def test_selection_heading_subtitle_and_buttons(self):
         app = new_app()
         open_select(app)
-        self.assertEqual([t.value for t in app.title], ["Module 6"])
+        self.assertEqual(len(app.title), 0)
+        self.assertIn("MODULE 6", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["Optical Flow and Motion Tracking"])
         self.assertEqual([b.label for b in app.button if b.label != "Back"], SELECT_BUTTONS)
+        self.assertEqual([b.key for b in app.button if b.label != "Back"], ["m6_a_visitor", "m6_a_results"])
 
     def test_selection_has_exactly_one_back_at_top(self):
         app = new_app()
@@ -114,11 +119,28 @@ class Module6NavigationTests(unittest.TestCase):
         app = new_app()
         click(app, "m6_open_B")
         self.assertEqual(app.session_state["module6_section"], "b_select")
-        self.assertEqual([b.label for b in app.button], ["Back", "Reconstruct an Object from Your Own Images",
-                                                         "View My Experiment & Results"])
+        self.assertEqual([b.label for b in app.button], ["Back"] + PART_B_SELECT_BUTTONS)
         click(app, "m6_b_select_back_top")
         self.assertEqual(app.session_state["module6_section"], "home")
         self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
+
+    def test_selection_panels_styled_as_option_7_and_home_keeps_original_css(self):
+        for open_key, keys in (("m6_open_A", ("m6_a_visitor", "m6_a_results")), ("m6_open_B", ("m6_b_visitor", "m6_b_results"))):
+            app = new_app()
+            click(app, open_key)
+            css = "".join(m.value for m in app.markdown if "<style>" in m.value)
+            for key in keys:
+                self.assertIn(f".st-key-{key} button:hover", css)
+                self.assertIn(f".st-key-{key} button:focus-visible", css)
+                self.assertIn(f".st-key-{key} button::before", css)
+                self.assertIn(f".st-key-{key} button::after", css)
+            self.assertIn("max-width: 500px", css)
+            self.assertIn("@media (max-width: 640px)", css)
+            self.assertNotIn("m6_home_layout", css)
+        home = new_app()
+        home_css = "".join(m.value for m in home.markdown if "<style>" in m.value)
+        self.assertIn("m6_home_layout", home_css)
+        self.assertNotIn("m6_sel_layout", home_css)
 
 
 if __name__ == "__main__":

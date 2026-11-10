@@ -9,7 +9,8 @@ PAGE = ROOT / "Pages" / "app_module6.py"
 PART_B = ROOT / "Modules" / "Module_6" / "Part_B"
 
 HOME_BUTTONS = ["View Optical Flow and Motion Tracking", "View Structure from Motion Reconstruction"]
-SELECT_BUTTONS = ["Reconstruct an Object from Your Own Images", "View My Experiment & Results"]
+SELECT_BUTTONS = ["**Reconstruct an Object from Your Own Images**  \nUpload images to reconstruct an object",
+                  "**View My Experiment & Results**  \nExplore the completed reconstruction"]
 
 
 def new_app():
@@ -46,7 +47,8 @@ class PartBNavigationTests(unittest.TestCase):
     def test_selection_page(self):
         app = open_select()
         self.assertEqual(app.session_state["module6_section"], "b_select")
-        self.assertEqual([t.value for t in app.title], ["Module 6"])
+        self.assertEqual(len(app.title), 0)
+        self.assertIn("MODULE 6", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["Structure from Motion Reconstruction"])
         labels = [b.label for b in app.button]
         self.assertEqual(labels[0], "Back")
