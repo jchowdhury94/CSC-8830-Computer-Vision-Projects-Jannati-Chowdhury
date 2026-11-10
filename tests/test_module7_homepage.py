@@ -11,8 +11,8 @@ from test_module7_calibration_wizard import AppTest, PAGE, button, filled_state,
 SOURCE = Path(PAGE).read_text(encoding="utf-8")
 Q1 = "Calibrated Stereo Object Measurement"
 Q3 = "Room Measurement Using Stereo Videos"
-MEASURE = "Measure Objects with Your Own Stereo Cameras"
-EXPERIMENT = "View My Experiment & Results"
+MEASURE = "**Measure Objects with Your Own Stereo Cameras**  \nCalibrate your cameras and measure objects"
+EXPERIMENT = "**View My Experiment & Results**  \nExplore my stereo measurement results"
 BACK = "Back"
 BACK_Q1 = "Back"
 BACK_CAL = "Back"
@@ -54,29 +54,40 @@ class HomepageTests(unittest.TestCase):
         self.assertNotIn("Question 2", SOURCE)
 
     def test_css_matches_approved_specification(self):
-        for part in (None, "q1_home"):
+        for part in (None,):
             css = next(m.value for m in fresh(part).markdown if "st-key-m7_home_layout" in m.value)
             for fragment in ("clamp(2.5rem, 13vw, 80px)", "font-weight: 800", "clamp(1.1rem, 4.6vw, 32px)", "font-weight: 600",
                              "padding-top: 44px", "padding-top: 64px", "height: 110px", "gap: 24px", "#C9363E", "#A62A31", "#8E2229",
                              "border-radius: 12px", "font-size: 21px", "@media (max-width: 640px)", "gap: 16px",
-                             "@media (min-width: 801px)", ".st-key-m7_open_q1 button", ".st-key-m7_open_q3 button",
-                             ".st-key-m7_open_measure button", ".st-key-m7_open_experiment button"):
+                             "@media (min-width: 801px)", ".st-key-m7_open_q1 button", ".st-key-m7_open_q3 button"):
                 self.assertIn(fragment, css)
+
+    def test_q1_selection_page_uses_horizontal_panel_css(self):
+        at = fresh("q1_home")
+        css = " ".join(m.value for m in at.markdown if "<style>" in m.value)
+        self.assertNotIn("m7_home_layout", css)
+        for fragment in ("max-width: 500px", "padding-bottom: 270px", "margin-bottom: 24px", "margin-bottom: 44px",
+                         "clamp(1.5rem, 6.5vw, 2.25rem)", "white-space: nowrap", "@media (max-width: 640px)",
+                         ".st-key-m7_open_measure button:hover", ".st-key-m7_open_measure button:focus-visible",
+                         ".st-key-m7_open_experiment button::before", ".st-key-m7_open_experiment button::after"):
+            self.assertIn(fragment, css)
+        self.assertIn("MODULE 7", [m.value for m in at.markdown])
+        self.assertEqual(len(at.title), 0)
+        self.assertEqual([h.value for h in at.header], [Q1])
 
     def test_heading_size_scoped_to_calibrated_stereo_landing(self):
         def css(part):
             return " ".join(m.value for m in fresh(part).markdown if "<style>" in m.value)
         self.assertIn("clamp(2.5rem, 13vw, 80px)", css(None))
         self.assertNotIn("60px", css(None))
-        self.assertIn("clamp(2.5rem, 13vw, 80px)", css("q1_home"))   # shared base rule
-        self.assertIn("clamp(2.5rem, 8vw, 60px)", css("q1_home"))
+        self.assertNotIn("60px", css("q1_home"))   # selection page has its own heading CSS
         for part in ("1", "experiment"):
             self.assertNotIn("60px", css(part), part)
         self.assertIn("clamp(2.5rem, 8vw, 60px)", css("3"))
 
     def test_home_css_only_on_landing_pages(self):
-        for part in (None, "q1_home"):
-            self.assertTrue(any("st-key-m7_home_layout" in m.value for m in fresh(part).markdown), part)
+        self.assertTrue(any("st-key-m7_home_layout" in m.value for m in fresh(None).markdown))
+        self.assertFalse(any("st-key-m7_home_layout" in m.value for m in fresh("q1_home").markdown))
         for part in ("1", "experiment"):
             self.assertFalse(any("st-key-m7_home_layout" in m.value for m in fresh(part).markdown), part)
 
@@ -85,8 +96,8 @@ class HomepageTests(unittest.TestCase):
         button(at, Q1).click().run()
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state["module7_part"], "q1_home")
-        self.assertEqual(titles(at), [Q1])
-        self.assertEqual(len(at.header), 0)
+        self.assertEqual(titles(at), [])
+        self.assertEqual([h.value for h in at.header], [Q1])
         self.assertFalse(any("Question 1" in m.value for m in at.markdown))
         self.assertEqual(labels(at), [BACK, MEASURE, EXPERIMENT])
         self.assertEqual(len(at.radio), 0)
