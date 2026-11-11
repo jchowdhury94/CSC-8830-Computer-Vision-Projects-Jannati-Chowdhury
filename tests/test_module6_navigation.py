@@ -42,7 +42,7 @@ class Module6NavigationTests(unittest.TestCase):
         self.assertEqual(app.session_state["module6_section"], "home")
         self.assertEqual([t.value for t in app.title], ["Module 6"])
         self.assertEqual([h.value for h in app.header], ["Optical Flow and Structure from Motion"])
-        self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
 
     def test_part_a_button_opens_selection(self):
         app = new_app()
@@ -65,7 +65,7 @@ class Module6NavigationTests(unittest.TestCase):
         self.assertEqual(labels.count("Back"), 0)  # navigation is the breadcrumb
         self.assertEqual(back_keys(app), [])
         click(app, "navbtn_0")
-        self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
 
     def test_visitor_page_opens_with_only_top_back(self):
         app = new_app()
@@ -121,7 +121,7 @@ class Module6NavigationTests(unittest.TestCase):
         self.assertEqual([b.label for b in app.button if not (b.key or "").startswith("nav")], PART_B_SELECT_BUTTONS)
         click(app, "navbtn_0")
         self.assertEqual(app.session_state["module6_section"], "home")
-        self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
 
     def test_selection_panels_styled_as_option_7_and_home_keeps_original_css(self):
         for open_key, keys in (("m6_open_A", ("m6_a_visitor", "m6_a_results")), ("m6_open_B", ("m6_b_visitor", "m6_b_results"))):

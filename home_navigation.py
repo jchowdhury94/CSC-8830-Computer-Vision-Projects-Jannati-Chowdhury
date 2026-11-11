@@ -146,10 +146,11 @@ def nav_row(trail=(), navigate=None, page_css="", view=None):
         ss[VIEW_COUNT_KEY] = ss.get(VIEW_COUNT_KEY, 0) + 1
     st.html(_CSS + page_css)
     with st.container(key="nav_row", horizontal=True, vertical_alignment="center"):
-        if len(trail) >= 2:  # nested view: compact arrow to the immediate parent (the previous breadcrumb), not browser history
+        if trail:  # compact arrow: nested view -> immediate parent (the previous breadcrumb); module homepage -> dashboard
+            nested = len(trail) >= 2
             with st.container(key="nav_arrow"):
                 st.button("Go back", key="nav_arrow_button", icon=":material/arrow_back:",
-                          on_click=navigate, args=(trail[-2][1],))
+                          on_click=navigate if nested else _go_home, args=(trail[-2][1],) if nested else ())
         with st.container(key="nav_home"):
             st.button("Home", key="nav_home_button", icon=":material/home:", on_click=_go_home)
         for index, (label, target) in enumerate(trail):

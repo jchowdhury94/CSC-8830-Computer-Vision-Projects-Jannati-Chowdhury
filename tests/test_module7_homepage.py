@@ -47,7 +47,7 @@ class HomepageTests(unittest.TestCase):
         self.assertFalse(at.exception)
         self.assertEqual(titles(at), ["Module 7"])
         self.assertEqual([h.value for h in at.header], ["Stereo Vision"])
-        self.assertEqual([b.label for b in at.button], ["Home", Q1, Q3])
+        self.assertEqual([b.label for b in at.button if b.key != "nav_arrow_button"], ["Home", Q1, Q3])
         self.assertEqual(len(at.caption), 0)
         self.assertEqual(len(at.subheader), 0)
 

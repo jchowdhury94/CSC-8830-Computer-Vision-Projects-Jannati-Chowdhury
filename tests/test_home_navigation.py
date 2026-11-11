@@ -91,9 +91,9 @@ class HomeButtonOnEveryViewTests(unittest.TestCase):
                     depth = DEPTH[n][view]
                     self.assertEqual(len(crumbs), depth - 1)       # every ancestor clickable, current page is not a button
                     row = next(e for e in at.main if getattr(e, "key", None) == "nav_row")
-                    self.assertEqual(len(row.button), depth + (1 if depth >= 2 else 0))  # Home + ancestors (+ the Back arrow on nested views)
+                    self.assertEqual(len(row.button), depth + 1)  # Home + ancestors + the Back arrow (on every module view)
 
-    def test_back_arrow_only_on_nested_views_and_returns_to_the_immediate_parent(self):
+    def test_back_arrow_on_every_module_view_and_returns_to_the_immediate_parent(self):
         parents = {(2, "visitor"): "home", (2, "experiment"): "home", (3, "visitor"): "home", (3, "experiment"): "home",
                    (4, "rgb_select"): "home", (4, "rgb"): "rgb_select", (4, "rgb_results"): "rgb_select",
                    (4, "thermal"): "thermal_select", (4, "thermal_results"): "thermal_select",
@@ -104,10 +104,14 @@ class HomeButtonOnEveryViewTests(unittest.TestCase):
                 with self.subTest(module=n, view=view):
                     at = run(n, view)
                     arrows = [b for b in at.button if b.key == "nav_arrow_button"]
-                    if view == "home":
-                        self.assertEqual(arrows, [])
-                        continue
                     self.assertEqual(len(arrows), 1)
+                    if view == "home":  # module homepage: the arrow leads to the main dashboard
+                        with mock.patch("home_navigation.st.switch_page") as switch:
+                            at.session_state["_home_page"] = "HOME_PAGE_SENTINEL"
+                            arrows[0].click().run()
+                        self.assertFalse(at.exception)
+                        switch.assert_called_once_with("HOME_PAGE_SENTINEL")
+                        continue
                     if (n, view) in parents:
                         arrows[0].click().run()
                         self.assertFalse(at.exception)

@@ -93,8 +93,7 @@ class HomeDashboardTests(unittest.TestCase):
                 at = AppTest.from_file(str(Path(HOME).parent / "Pages" / f"app_module{n}.py"), default_timeout=60).run()
                 self.assertFalse(at.exception)
                 self.assertEqual([b.label for b in at.button].count("Home"), 1)
-                self.assertEqual(at.button[0].label, "Home")
-                self.assertEqual(at.button[0].key, "nav_home_button")
+                self.assertEqual([b.key for b in at.button[:2]], ["nav_arrow_button", "nav_home_button"])  # arrow, then Home
 
     def test_home_page_object_is_registered_for_back_navigation(self):
         at = home()

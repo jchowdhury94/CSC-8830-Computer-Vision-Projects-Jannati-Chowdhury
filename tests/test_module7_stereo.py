@@ -218,7 +218,7 @@ class PageStateTests(unittest.TestCase):
     def test_home_has_only_the_two_question_buttons(self):
         at = AppTest.from_file(str(PAGE), default_timeout=60).run()
         self.assertFalse(at.exception)
-        labels = [b.label for b in at.button]
+        labels = [b.label for b in at.button if b.key != "nav_arrow_button"]
         self.assertEqual(labels, ["Home", "Calibrated Stereo Object Measurement", "Room Measurement Using Stereo Videos"])
 
     def test_part3_placeholder(self):

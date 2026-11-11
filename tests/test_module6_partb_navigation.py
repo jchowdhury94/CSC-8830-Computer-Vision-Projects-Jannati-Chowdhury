@@ -37,7 +37,7 @@ class PartBNavigationTests(unittest.TestCase):
         app = new_app()
         self.assertEqual([t.value for t in app.title], ["Module 6"])
         self.assertEqual([h.value for h in app.header], ["Optical Flow and Structure from Motion"])
-        self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
 
     def test_part_a_navigation_unchanged(self):
         app = new_app()
@@ -58,7 +58,7 @@ class PartBNavigationTests(unittest.TestCase):
         app = open_select()
         click(app, "navbtn_0")
         self.assertEqual(app.session_state["module6_section"], "home")
-        self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
 
     def test_visitor_page_opens_with_top_back_only(self):
         app = open_select()

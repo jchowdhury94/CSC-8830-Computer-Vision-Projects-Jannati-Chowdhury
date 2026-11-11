@@ -27,7 +27,7 @@ class Module6HomepageTests(unittest.TestCase):
         self.assertEqual(app.session_state["module6_section"], "home")
         self.assertEqual([t.value for t in app.title], ["Module 6"])
         self.assertEqual([h.value for h in app.header], ["Optical Flow and Structure from Motion"])
-        self.assertEqual([b.label for b in app.button], ["Home", *LABELS])
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], ["Home", *LABELS])
         self.assertEqual(len(app.caption) + len(app.subheader) + len(app.table), 0)
 
     def test_part_a_opens_selection_and_back(self):
@@ -39,7 +39,7 @@ class Module6HomepageTests(unittest.TestCase):
         self.assertEqual([h.value for h in app.header], ["Optical Flow and Motion Tracking"])
         click(app, "navbtn_0")
         self.assertEqual(app.session_state["module6_section"], "home")
-        self.assertEqual([b.label for b in app.button], ["Home", *LABELS])
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], ["Home", *LABELS])
 
     def test_part_b_and_back(self):
         app = new_app()
@@ -56,7 +56,7 @@ class Module6HomepageTests(unittest.TestCase):
         click(app, "navbtn_1")
         self.assertEqual(app.session_state["module6_section"], "b_select")
         click(app, "navbtn_0")
-        self.assertEqual([b.label for b in app.button], ["Home", *LABELS])
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], ["Home", *LABELS])
 
     def test_a_back_b_back(self):
         app = new_app()

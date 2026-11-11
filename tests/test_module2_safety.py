@@ -144,7 +144,7 @@ class HomePageTests(unittest.TestCase):
         at = run_page()
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state["m2_page"], "home")
-        self.assertEqual(labels(at), ["Home", "Calibrate Your Camera & Measure an Object", "View My Experiment & Results"])
+        self.assertEqual(labels(at), ["Go back", "Home", "Calibrate Your Camera & Measure an Object", "View My Experiment & Results"])
         self.assertEqual([t.value for t in at.title], ["Module 2"])
         self.assertEqual(header_texts(at), ["Camera Calibration & 2D Object Measurement"])
 
@@ -247,7 +247,7 @@ class VisitorWorkflowTests(unittest.TestCase):
             at.button(key=key).click()
             at.run()
             self.assertEqual(at.session_state["m2_page"], "home")
-            self.assertEqual(len(labels(at)), 3)
+            self.assertEqual(len(labels(at)), 4)  # arrow, Home and the two choices
 
 
 class ExperimentViewTests(unittest.TestCase):
@@ -268,7 +268,7 @@ class ExperimentViewTests(unittest.TestCase):
             at.button(key=key).click()
             at.run()
             self.assertEqual(at.session_state["m2_page"], "home")
-            self.assertEqual(labels(at), ["Home", "Calibrate Your Camera & Measure an Object", "View My Experiment & Results"])
+            self.assertEqual(labels(at), ["Go back", "Home", "Calibrate Your Camera & Measure an Object", "View My Experiment & Results"])
             self.assertNotIn("My Experiment & Results", header_texts(at))
 
     def test_visitor_state_survives_navigation(self):

@@ -29,7 +29,7 @@ class Module3HomepageTests(unittest.TestCase):
         app = new_app()
         self.assertEqual([t.value for t in app.title], ["Module 3"])
         self.assertEqual([h.value for h in app.header], ["Gaussian Blur — Spatial & Frequency Domain"])
-        self.assertEqual([b.label for b in app.button],
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"],
                          ["Home", "Apply Gaussian Blur to Your Own Image", "View My Experiment & Results"])
         self.assertEqual(len(app.slider) + len(app.selectbox) + len(app.dataframe), 0)
 

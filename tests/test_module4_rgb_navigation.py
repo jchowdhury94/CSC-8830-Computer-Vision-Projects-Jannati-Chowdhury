@@ -40,7 +40,7 @@ class Module4RgbNavigationTests(unittest.TestCase):
         app = new_app()
         self.assertEqual([t.value for t in app.title], ["Module 4"])
         self.assertEqual([h.value for h in app.header], ["Human Boundary Detection"])
-        self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
 
     def test_rgb_button_opens_selection_page(self):
         app = new_app()
@@ -59,7 +59,7 @@ class Module4RgbNavigationTests(unittest.TestCase):
         app = new_app()
         open_select(app)
         click(app, "navbtn_0")
-        self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
 
     def test_visitor_page_keeps_existing_experiment_and_two_backs(self):
         app = new_app()

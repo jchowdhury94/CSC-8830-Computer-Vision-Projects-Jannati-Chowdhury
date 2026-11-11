@@ -38,7 +38,7 @@ def back_keys(app):
 class Module4ThermalNavigationTests(unittest.TestCase):
     def test_home_unchanged_and_opens_thermal_selection(self):
         app = new_app()
-        self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
         open_select(app)
         self.assertEqual(app.session_state["module4_section"], "thermal_select")
 
@@ -72,7 +72,7 @@ class Module4ThermalNavigationTests(unittest.TestCase):
         open_select(app)
         click(app, "navbtn_0")
         self.assertEqual(app.session_state["module4_section"], "home")
-        self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
+        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
 
     def test_visitor_page_keeps_existing_thermal_experiment_and_two_backs(self):
         app = new_app()
