@@ -1669,7 +1669,7 @@ def panel_label(title, subtitle):
 
 
 def selection_page(heading, panels):
-    """Second-level selection page; the page's single Back button (m7_back) is drawn by the router above."""
+    """Second-level selection page; the breadcrumb is drawn by the router above."""
     st.markdown(select_css(), unsafe_allow_html=True)
     with st.container(key="m7_sel_layout"):
         with st.container(key="m7_sel_label"):
@@ -1697,12 +1697,15 @@ def landing(title, subtitle, buttons):
                 st.button(label, key=key, on_click=select_part, args=(target,), width="stretch")
 
 
-# parent view of every view except the Module 7 homepage; its Back is the nav row's "m7_back" button
-BACK_TARGET = {"q1_home": "home", "1": "q1_home", "experiment": "q1_home"}
+# breadcrumb levels below Home for every view: (label, view); the last is the current page
+_M7, _Q1 = ("Module 7", "home"), ("Stereo Object Measurement", "q1_home")
+CRUMBS = {"home": (_M7,), "q1_home": (_M7, _Q1), "1": (_M7, _Q1, ("Your Own Stereo Cameras", "1")),
+          "experiment": (_M7, _Q1, ("My Experiment & Results", "experiment")),
+          "3": (_M7, ("Room Measurement", "3"))}
 
 init_state()
 view = st.session_state["module7_part"]
-nav_row(None if view == "home" else ("m7_back", select_part, (BACK_TARGET.get(view, "home"),)), view=f"m7:{view}")
+nav_row(CRUMBS.get(view, CRUMBS["home"]), select_part, view=f"m7:{view}")
 if view == "home":
     landing(HOME_TITLE, HOME_SUBTITLE, (("q1_home", "m7_open_q1", Q1_TITLE),
                                         ("3", "m7_open_q3", Q3_BUTTON)))

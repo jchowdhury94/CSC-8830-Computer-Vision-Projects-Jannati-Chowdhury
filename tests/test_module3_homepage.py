@@ -41,7 +41,7 @@ class Module3HomepageTests(unittest.TestCase):
                          ["Spatial Gaussian Blurring", "Fourier / Frequency Domain Gaussian Blurring"])
         self.assertEqual(app.selectbox(key="gaussian_kernel_size").value, 5)
         self.assertEqual(app.slider(key="gaussian_sigma").value, 1.5)
-        labels = [b.label for b in app.button if b.key != "nav_home_button"]
+        labels = [b.label for b in app.button if not (b.key or "").startswith("nav")]
         for label in ("Reset", "Apply Fourier Filter", "Reset All", "Back"):
             self.assertIn(label, labels)
         self.assertTrue(next(b for b in app.button if b.label == "Apply Fourier Filter").disabled)
@@ -63,14 +63,14 @@ class Module3HomepageTests(unittest.TestCase):
         app.selectbox(key="gaussian_kernel_size").set_value(9)
         app.slider(key="gaussian_sigma").set_value(2.5)
         app.run()
-        click(app, "m3_back_top")
+        click(app, "navbtn_0")
         self.assertEqual([t.value for t in app.title], ["Module 3"])
         click(app, "m3_open_visitor")
         self.assertEqual(app.selectbox(key="gaussian_kernel_size").value, 9)
         self.assertEqual(app.slider(key="gaussian_sigma").value, 2.5)
 
     def test_back_buttons_return_home(self):
-        for key in ("m3_back_top", "m3_back_bottom"):
+        for key in ("navbtn_0", "m3_back_bottom"):
             app = new_app()
             click(app, "m3_open_visitor")
             click(app, key)
@@ -100,12 +100,12 @@ class Module3HomepageTests(unittest.TestCase):
         self.assertEqual(app.dataframe[0].value.shape, (9, 9))
         self.assertAlmostEqual(app.dataframe[0].value.to_numpy().sum(), 1.0, places=12)
 
-    def test_experiment_page_has_exactly_two_back_buttons(self):
+    def test_experiment_page_has_only_the_bottom_back_button(self):
         app = new_app()
         click(app, "m3_open_experiment")
-        self.assertEqual([(b.key, b.label) for b in app.button if b.key != "nav_home_button"],
-                         [("m3_back_experiment_top", "Back"), ("m3_back_experiment_bottom", "Back")])
-        for key in ("m3_back_experiment_top", "m3_back_experiment_bottom"):
+        self.assertEqual([(b.key, b.label) for b in app.button if not (b.key or "").startswith("nav")],
+                         [("m3_back_experiment_bottom", "Back")])
+        for key in ("navbtn_0", "m3_back_experiment_bottom"):
             app = new_app()
             click(app, "m3_open_experiment")
             click(app, key)

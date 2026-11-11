@@ -18,6 +18,11 @@ BACK_Q1 = "Back"
 BACK_CAL = "Back"
 
 
+def crumb(at, index):
+    """Breadcrumb ancestor button (0 = Module 7, 1 = the Stereo Object Measurement level)."""
+    return at.button(key=f"navbtn_{index}")
+
+
 def fresh(part=None, **state):
     at = AppTest.from_file(PAGE, default_timeout=120)
     if part is not None:
@@ -32,7 +37,7 @@ def titles(at):
 
 
 def labels(at):
-    return [b.label for b in at.button if b.key != "nav_home_button"]   # Home is covered by the Home navigation tests
+    return [b.label for b in at.button if not (b.key or "").startswith("nav")]   # Home is covered by the Home navigation tests
 
 
 @unittest.skipIf(AppTest is None, "streamlit testing is unavailable")
@@ -99,7 +104,7 @@ class HomepageTests(unittest.TestCase):
         self.assertEqual(titles(at), [])
         self.assertEqual([h.value for h in at.header], [Q1])
         self.assertFalse(any("Question 1" in m.value for m in at.markdown))
-        self.assertEqual(labels(at), [BACK, MEASURE, EXPERIMENT])
+        self.assertEqual(labels(at), [MEASURE, EXPERIMENT])
         self.assertEqual(len(at.radio), 0)
         self.assertEqual(len(at.metric), 0)
 
@@ -128,14 +133,14 @@ class HomepageTests(unittest.TestCase):
         self.assertEqual(len(at.info), 1)
         self.assertTrue(any("not implemented" in i.value.lower() for i in at.info))
 
-    def test_each_view_has_one_back_button_and_no_module_title(self):
+    def test_each_view_has_a_breadcrumb_and_no_module_title(self):
         expected = {"q1_home": BACK, "1": BACK_Q1, "3": BACK}
         for part, back in expected.items():
             at = fresh(part)
             self.assertFalse(at.exception, part)
-            self.assertEqual(labels(at).count(back), 1, part)
-            self.assertEqual(sum(l.startswith("Back") for l in labels(at)), 1, part)
-            self.assertEqual(labels(at)[0], back, part)
+            self.assertEqual(labels(at).count(back), 0, part)       # no top Back: the breadcrumb is the navigation
+            self.assertEqual(sum(l.startswith("Back") for l in labels(at)), 0, part)
+            self.assertIsNotNone(crumb(at, 0), part)
             self.assertFalse(any(h.value == "Module 7" for h in list(at.header) + list(at.subheader) + list(at.title)), part)
             if part == "3":
                 self.assertEqual(titles(at), [Q3], part)
@@ -146,31 +151,32 @@ class HomepageTests(unittest.TestCase):
         for part, back, dest in (("1", BACK_Q1, "q1_home"), ("experiment", BACK_CAL, "q1_home"),
                                  ("q1_home", BACK, "home"), ("3", BACK, "home")):
             at = fresh(part)
-            button(at, back).click().run()
+            crumb(at, 0 if part in ("q1_home", "3") else 1).click().run()
             self.assertFalse(at.exception, part)
             self.assertEqual(at.session_state["module7_part"], dest, part)
         self.assertEqual(titles(at), ["Module 7"])
 
     def test_full_navigation_loop(self):
         at = fresh()
-        for label, part in ((Q1, "q1_home"), (MEASURE, "1"), (BACK_Q1, "q1_home"), (EXPERIMENT, "experiment"),
-                            (BACK_CAL, "q1_home"), (BACK, "home"), (Q3, "3"), (BACK, "home")):
-            button(at, label).click().run()
-            self.assertFalse(at.exception, label)
-            self.assertEqual(at.session_state["module7_part"], part, label)
+        # (control, resulting view): a label is a panel button, an int is the breadcrumb ancestor at that index
+        for control, part in ((Q1, "q1_home"), (MEASURE, "1"), (1, "q1_home"), (EXPERIMENT, "experiment"),
+                              (1, "q1_home"), (0, "home"), (Q3, "3"), (0, "home")):
+            (crumb(at, control) if isinstance(control, int) else button(at, control)).click().run()
+            self.assertFalse(at.exception, control)
+            self.assertEqual(at.session_state["module7_part"], part, control)
 
     def test_bottom_back_returns_to_calibrated_stereo_landing(self):
         at = fresh("experiment")
         [b for b in at.button if b.key == "m7_back_bottom"][0].click().run()
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state["module7_part"], "q1_home")
-        self.assertEqual(labels(at).count(BACK), 1)      # the landing page's own Back (to Module 7)
+        self.assertEqual(labels(at).count(BACK), 0)      # the landing page has no Back, only the breadcrumb
 
-    def test_top_and_bottom_experiment_back_have_unique_keys_and_both_work(self):
+    def test_bottom_experiment_back_works(self):
         at = fresh("experiment")
-        keys = [b.key for b in at.button if b.key != "nav_home_button"]
-        self.assertEqual(keys, ["m7_back", "m7_back_bottom"])
-        self.assertEqual(len(set(keys)), 2)
+        keys = [b.key for b in at.button if not (b.key or "").startswith("nav")]
+        self.assertEqual(keys, ["m7_back_bottom"])
+        self.assertEqual(len(set(keys)), 1)
         for key in keys:
             at = fresh("experiment")
             [b for b in at.button if b.key == key][0].click().run()
@@ -179,18 +185,18 @@ class HomepageTests(unittest.TestCase):
 
     def test_inline_experiment_has_no_extra_back_buttons(self):
         at = fresh("1", m7_show_experiment=True)
-        self.assertEqual(labels(at).count(BACK), 1)
-        self.assertEqual(sum(l.startswith("Back") for l in labels(at)), 1)
+        self.assertEqual(labels(at).count(BACK), 0)
+        self.assertEqual(sum(l.startswith("Back") for l in labels(at)), 0)
 
-    def test_back_precedes_experiment_heading(self):
+    def test_breadcrumb_precedes_experiment_heading(self):
         source = SOURCE[SOURCE.index('view = st.session_state["module7_part"]'):]
-        self.assertLess(source.index("m7_back"), source.index("show_experiment(standalone=True)"))
+        self.assertLess(source.index("nav_row("), source.index("show_experiment(standalone=True)"))
 
     def test_standalone_experiment_has_content_and_no_close_button(self):
         at = fresh("experiment")
         self.assertFalse(at.exception)
-        self.assertEqual(labels(at), [BACK_CAL, BACK_CAL])
-        self.assertEqual([b.key for b in at.button if b.key != "nav_home_button"], ["m7_back", "m7_back_bottom"])
+        self.assertEqual(labels(at), [BACK_CAL])
+        self.assertEqual([b.key for b in at.button if not (b.key or "").startswith("nav")], ["m7_back_bottom"])
         self.assertEqual(len(at.radio), 1)
         self.assertGreaterEqual(len(at.metric), 3)
         self.assertGreaterEqual(len(at.table), 4)
@@ -239,7 +245,7 @@ class HomepageTests(unittest.TestCase):
         at = fresh("1", m7_show_experiment=True)
         self.assertFalse(at.exception)
         self.assertEqual(labels(at).count("Close experiment"), 1)
-        self.assertEqual(labels(at).count(BACK_Q1), 1)
+        self.assertEqual(labels(at).count(BACK_Q1), 0)
         self.assertEqual([h.value for h in at.header].count("My Experiment & Results"), 1)
 
     def test_legacy_routes_work(self):
@@ -260,11 +266,11 @@ class NavigationStateTests(unittest.TestCase):
                                                    "m7_left_confirmed", "m7_stage", "m7_cal_source", "m7_measurement_enabled")}
         cal_before = at.session_state["m7_visitor_model"]
         slots_before = dict(at.session_state["m7_cal"]["photos"])
-        button(at, BACK_Q1).click().run()
+        crumb(at, 1).click().run()
         button(at, EXPERIMENT).click().run()
         self.assertEqual(at.session_state["module7_part"], "experiment")
-        button(at, BACK_CAL).click().run()
-        button(at, BACK).click().run()
+        crumb(at, 1).click().run()
+        crumb(at, 0).click().run()
         button(at, Q1).click().run()
         button(at, MEASURE).click().run()
         self.assertFalse(at.exception)
@@ -276,7 +282,7 @@ class NavigationStateTests(unittest.TestCase):
     def test_experiment_pair_selection_is_preserved(self):
         at = fresh("experiment")
         at.radio[0].set_value(2).run()
-        button(at, BACK_CAL).click().run()
+        crumb(at, 1).click().run()
         self.assertNotIn("m7_exp_pair", at.session_state)
         button(at, EXPERIMENT).click().run()
         self.assertFalse(at.exception)
@@ -287,7 +293,7 @@ class NavigationStateTests(unittest.TestCase):
         at = page(filled_state(), m7_visitor_model=self.cal)
         at.session_state["m7_gt_w_0"], at.session_state["m7_gt_h_0"] = 123.5, 45.0
         at.session_state["m7_gt_w_7"] = 999.0                 # another generation: never saved
-        button(at, BACK_Q1).click().run()
+        crumb(at, 1).click().run()
         saved = at.session_state["m7_saved_inputs"]
         self.assertEqual((saved["m7_gt_w_0"], saved["m7_gt_h_0"]), (123.5, 45.0))
         self.assertNotIn("m7_gt_w_7", saved)
@@ -306,7 +312,7 @@ class NavigationStateTests(unittest.TestCase):
         if toggle is None:
             self.skipTest("details toggle is not shown in this state")
         toggle.set_value(True).run()
-        button(at, BACK_Q1).click().run()
+        crumb(at, 1).click().run()
         button(at, MEASURE).click().run()
         self.assertTrue(next(t for t in at.toggle if t.key == "m7_cal_details").value)
 

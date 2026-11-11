@@ -1158,13 +1158,13 @@ for setting_key in (
         st.session_state[setting_key] = st.session_state[setting_key]
 
 section = st.session_state["module4_section"]
-# (top Back widget key, parent section) for every nested view; the homepage has no Back
-BACK = {"rgb_select": ("m4_rgb_select_back_top", "home"), "thermal_select": ("m4_thermal_select_back_top", "home"),
-        "rgb_results": ("m4_rgb_results_back_top", "rgb_select"), "rgb": ("m4_rgb_visitor_back_top", "rgb_select"),
-        "thermal_results": ("m4_thermal_results_back_top", "thermal_select"),
-        "thermal": ("m4_thermal_visitor_back_top", "thermal_select")}
-nav_row((BACK[section][0], navigate_module4, (BACK[section][1],)) if section in BACK else None,
-        view=f"m4:{section}")
+# breadcrumb levels below Home for every view: (label, section); the last is the current page
+_M4, _RGB, _THERMAL = ("Module 4", "home"), ("RGB Images", "rgb_select"), ("Thermal Images", "thermal_select")
+CRUMBS = {"home": (_M4,), "rgb_select": (_M4, _RGB), "thermal_select": (_M4, _THERMAL),
+          "rgb": (_M4, _RGB, ("Your Own RGB Image", "rgb")), "rgb_results": (_M4, _RGB, ("My Experiment & Results", "rgb_results")),
+          "thermal": (_M4, _THERMAL, ("Your Own Thermal Image", "thermal")),
+          "thermal_results": (_M4, _THERMAL, ("My Experiment & Results", "thermal_results"))}
+nav_row(CRUMBS[section], navigate_module4, view=f"m4:{section}")
 if section == "home":
     st.markdown(HOME_CSS, unsafe_allow_html=True)
     with st.container(key="m4_home_layout"):

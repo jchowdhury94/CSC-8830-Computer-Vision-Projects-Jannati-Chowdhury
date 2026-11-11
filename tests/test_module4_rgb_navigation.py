@@ -48,35 +48,33 @@ class Module4RgbNavigationTests(unittest.TestCase):
         self.assertEqual(len(app.title), 0)
         self.assertIn("MODULE 4", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["RGB Image Boundary Detection"])
-        labels = [b.label for b in app.button if b.key != "nav_home_button"]
+        labels = [b.label for b in app.button if not (b.key or "").startswith("nav")]
         self.assertEqual([l for l in labels if l != "Back"],
                          ["**Detect Human Boundaries in Your Own RGB Image**  \nUpload and analyze your own RGB image",
                           "**View My Experiment & Results**  \nExplore my RGB boundary detection results"])
-        self.assertEqual(labels[0], "Back")
-        self.assertEqual(labels.count("Back"), 1)
-        self.assertEqual(back_keys(app), ["m4_rgb_select_back_top"])
+        self.assertEqual(labels.count("Back"), 0)
+        self.assertEqual(back_keys(app), [])
 
     def test_selection_back_returns_home(self):
         app = new_app()
         open_select(app)
-        click(app, "m4_rgb_select_back_top")
+        click(app, "navbtn_0")
         self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
 
     def test_visitor_page_keeps_existing_experiment_and_two_backs(self):
         app = new_app()
         open_select(app)
         click(app, "m4_rgb_visitor")
-        labels = [b.label for b in app.button if b.key != "nav_home_button"]
-        self.assertEqual(labels[0], "Back")
+        labels = [b.label for b in app.button if not (b.key or "").startswith("nav")]
         self.assertEqual(labels[-1], "Back")
-        self.assertEqual(len(back_keys(app)), 2)
+        self.assertEqual(len(back_keys(app)), 1)
         self.assertEqual(app.subheader[0].value, "Question 1 – Human Boundary Detection in an RGB Image")
         self.assertIn("Reset RGB Experiment", labels)
         # Back is above the heading: the first element rendered is the button, not the title.
-        self.assertEqual([e for e in app.main if e.type in ("button", "title", "header") and getattr(e, "key", None) != "nav_home_button"][0].type, "button")
+        self.assertEqual(getattr(app.main[0], "key", None), "nav_row")
 
     def test_visitor_back_returns_to_selection_not_home(self):
-        for key in ("m4_rgb_visitor_back_top", "m4_rgb_visitor_back_bottom"):
+        for key in ("navbtn_1", "m4_rgb_visitor_back_bottom"):
             app = new_app()
             open_select(app)
             click(app, "m4_rgb_visitor")
@@ -88,7 +86,7 @@ class Module4RgbNavigationTests(unittest.TestCase):
         app = new_app()
         open_select(app)
         click(app, "m4_rgb_results")
-        self.assertEqual([e for e in app.main if e.type in ("button", "title", "header") and getattr(e, "key", None) != "nav_home_button"][0].type, "button")
+        self.assertEqual(getattr(app.main[0], "key", None), "nav_row")
         self.assertEqual([h.value for h in app.header], ["My RGB Experiment & Results"])
         self.assertEqual([s.value for s in app.subheader], [
             "Step 1 — Original RGB Image & Parameters", "Step 2 — Gaussian Smoothing",
@@ -109,10 +107,10 @@ class Module4RgbNavigationTests(unittest.TestCase):
         self.assertIn("cast shadow", text)
         self.assertIn("SAM2 follows", text)
         self.assertEqual(len(app.get("image")), 9)
-        self.assertEqual([b.label for b in app.button if b.key != "nav_home_button"], ["Back", "Back"])
+        self.assertEqual([b.label for b in app.button if not (b.key or "").startswith("nav")], ["Back"])
 
     def test_results_back_returns_to_selection(self):
-        for key in ("m4_rgb_results_back_top", "m4_rgb_results_back_bottom"):
+        for key in ("navbtn_1", "m4_rgb_results_back_bottom"):
             app = new_app()
             open_select(app)
             click(app, "m4_rgb_results")
@@ -125,7 +123,7 @@ class Module4RgbNavigationTests(unittest.TestCase):
         click(app, "m4_rgb_results")
         app.run()
         self.assertEqual(app.session_state["module4_section"], "rgb_results")
-        click(app, "m4_rgb_results_back_top")
+        click(app, "navbtn_1")
         click(app, "m4_rgb_visitor")
         app.run()
         self.assertEqual(app.session_state["module4_section"], "rgb")

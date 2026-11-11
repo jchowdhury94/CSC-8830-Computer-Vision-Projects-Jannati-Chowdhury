@@ -1,5 +1,5 @@
-"""Shared top navigation row (Back left, Home right) and Back button for every module page and nested view (the sidebar
-navigation is hidden app-wide)."""
+"""Shared breadcrumb navigation (Home > Module > ... > current page) at the top of every module page and nested view, plus the
+bottom Back button (the sidebar navigation is hidden app-wide)."""
 import streamlit as st
 
 ACCENT = "#C9363E"
@@ -19,12 +19,47 @@ _BUTTON = """
 _TEXT = "font-size: 0.9rem; font-weight: 600; line-height: 1; margin: 0;"
 _CSS = f"""<style>
 [data-testid="stLayoutWrapper"]:has(> .st-key-nav_scroll_reset), .st-key-nav_scroll_reset {{ display: none; }}
-.st-key-nav_row {{ gap: 0.5rem; flex-wrap: nowrap; }}
-.st-key-nav_row > div {{ flex: 0 0 auto; width: auto; }}
-.st-key-nav_row > div:has(> .st-key-nav_home) {{ margin-left: auto; }}
-.st-key-nav_home, [class*="st-key-navback_"] {{ width: {BUTTON_WIDTH}; }}
-[class*="st-key-navback_"] button, .st-key-nav_home button {{ {_BUTTON.format(w=BUTTON_WIDTH, h=BUTTON_HEIGHT)} }}
-[class*="st-key-navback_"] button p, .st-key-nav_home button p {{ {_TEXT} }}
+.st-key-nav_row {{ gap: 0.1rem 0; flex-wrap: wrap; align-items: center; margin: 0 0 0.25rem; }}
+.st-key-nav_row > div {{ flex: 0 0 auto; width: auto; max-width: 100%; min-width: 0; }}
+.st-key-nav_row .st-key-nav_arrow {{ display: flex; align-items: center; width: auto; height: 2rem; margin-right: 0.6rem; }}
+.st-key-nav_row .st-key-nav_arrow button {{
+    box-sizing: border-box; width: 2rem; min-width: 2rem; max-width: 2rem; height: 2rem; min-height: 2rem; max-height: 2rem; padding: 0; gap: 0; line-height: 1;
+    justify-content: center; border: 1px solid rgba(154, 161, 172, 0.55); border-radius: 8px; color: var(--nav-text);
+    background: transparent; transition: background-color 0.15s ease, border-color 0.15s ease; }}
+.st-key-nav_row .st-key-nav_arrow button p {{ font-size: 0; line-height: 0; width: 0; overflow: hidden; margin: 0; }}
+.st-key-nav_row .st-key-nav_arrow button span[data-testid="stIconMaterial"] {{ font-size: 1.2rem; color: var(--nav-text); margin: 0; }}
+.st-key-nav_row .st-key-nav_arrow button:hover {{ background: rgba(154, 161, 172, 0.18); border-color: var(--nav-text); }}
+.st-key-nav_row .st-key-nav_arrow {{ position: relative; }}
+.st-key-nav_row .st-key-nav_arrow::after {{
+    content: "Back"; position: absolute; left: 0; top: calc(100% + 4px); z-index: 10; padding: 0.15rem 0.45rem;
+    border-radius: 4px; background: #14171C; color: #FFFFFF; font-size: 0.75rem; line-height: 1.2; pointer-events: none;
+    opacity: 0; transition: opacity 0.12s ease 0.3s; }}
+.st-key-nav_row .st-key-nav_arrow:hover::after, .st-key-nav_row .st-key-nav_arrow:focus-within::after {{ opacity: 1; }}
+.st-key-nav_row .st-key-nav_arrow button:focus-visible {{ outline: 2px solid {ACCENT}; outline-offset: 2px; }}
+.st-key-nav_row [class*="st-key-nav_crumb_"], .st-key-nav_row .st-key-nav_home, .st-key-nav_row .st-key-nav_current {{
+    display: flex; flex-direction: row; align-items: center; gap: 0; width: auto; }}
+.st-key-nav_row [data-testid="stElementContainer"], .st-key-nav_row [data-testid="stMarkdownContainer"] {{ width: auto; }}
+.st-key-nav_row .st-key-nav_home::after, .st-key-nav_row [class*="st-key-nav_crumb_"]::after {{
+    content: "\\203A"; color: var(--nav-muted); font-size: 1.15rem; line-height: 1; margin: 0 0.4rem; }}
+.st-key-nav_row button {{
+    width: auto; min-width: 0; min-height: 1.75rem; height: auto; padding: 0.15rem 0.1rem; gap: 0.25rem; border: 0;
+    background: transparent; box-shadow: none; border-radius: 6px; }}
+.st-key-nav_row button p, .st-key-nav_row button span {{
+    font-size: 0.85rem; font-weight: 500; line-height: 1.2; margin: 0; white-space: normal; text-align: left; }}
+.st-key-nav_row [class*="st-key-nav_crumb_"] button, .st-key-nav_row [class*="st-key-nav_crumb_"] button p {{ color: var(--nav-muted); }}
+.st-key-nav_row [class*="st-key-nav_crumb_"] button:hover p {{ color: var(--nav-text); text-decoration: underline; }}
+.st-key-nav_row .st-key-nav_home button, .st-key-nav_row .st-key-nav_home button p, .st-key-nav_row .st-key-nav_home button span {{
+    color: {ACCENT}; font-weight: 600; }}
+.st-key-nav_row .st-key-nav_home button span[data-testid="stIconMaterial"] {{ font-size: 1.05rem; }}
+.st-key-nav_row .st-key-nav_home button:hover p {{ color: {ACCENT_DARK}; text-decoration: underline; }}
+.st-key-nav_row button:focus-visible {{ outline: 2px solid {ACCENT}; outline-offset: 2px; }}
+.st-key-nav_current, .st-key-nav_current > *, .st-key-nav_current [data-testid="stMarkdownContainer"] {{ height: auto; min-height: 1.75rem; }}
+.st-key-nav_current [data-testid="stMarkdownContainer"] {{ display: flex; align-items: center; }}
+.st-key-nav_current p {{ color: var(--nav-text); font-size: 0.85rem; font-weight: 700; line-height: 1.2; margin: 0; padding: 0.15rem 0.1rem; }}
+:root {{ --nav-muted: #9AA1AC; --nav-text: #FFFFFF; }}
+[class*="st-key-navback_"] {{ width: {BUTTON_WIDTH}; }}
+[class*="st-key-navback_"] button {{ {_BUTTON.format(w=BUTTON_WIDTH, h=BUTTON_HEIGHT)} }}
+[class*="st-key-navback_"] button p {{ {_TEXT} }}
 [class*="st-key-navback_"] button {{
     background: transparent; border: 1px solid rgba(255, 255, 255, 0.45); color: #FFFFFF;
 }}
@@ -32,13 +67,11 @@ _CSS = f"""<style>
 [class*="st-key-navback_"] button:hover, [class*="st-key-navback_"] button:active {{
     background: rgba(255, 255, 255, 0.1); border-color: #FFFFFF; color: #FFFFFF;
 }}
-.st-key-nav_home button {{ border: 1px solid {ACCENT}; background: {ACCENT}; color: #FFFFFF; }}
-.st-key-nav_home button p, .st-key-nav_home button span {{ color: #FFFFFF; }}
-.st-key-nav_home button:hover, .st-key-nav_home button:active {{ background: {ACCENT_DARK}; border-color: {ACCENT_DARK}; color: #FFFFFF; }}
-[class*="st-key-navback_"] button:focus-visible, .st-key-nav_home button:focus-visible {{
+[class*="st-key-navback_"] button:focus-visible {{
     outline: 3px solid {ACCENT}; outline-offset: 2px; box-shadow: 0 0 0 2px #FFFFFF;
 }}
 @media (prefers-color-scheme: light) {{
+    :root:not([data-theme="dark"]) {{ --nav-muted: #5B6470; --nav-text: #14171C; }}
     :root:not([data-theme="dark"]) [class*="st-key-navback_"] button {{ border-color: rgba(20, 23, 28, 0.45); color: #14171C; }}
     :root:not([data-theme="dark"]) [class*="st-key-navback_"] button p {{ color: #14171C; }}
     :root:not([data-theme="dark"]) [class*="st-key-navback_"] button:hover {{ background: rgba(20, 23, 28, 0.08); border-color: #14171C; }}
@@ -94,12 +127,14 @@ def back_button(key, on_click, args=()):
         st.button("Back", key=key, on_click=on_click, args=args)
 
 
-def nav_row(back=None, page_css="", view=None):
-    """Render the single top row for the current view. Call once per run, at the top of a module's page dispatcher.
+def nav_row(trail=(), navigate=None, page_css="", view=None):
+    """Render the breadcrumb for the current view. Call once per run, at the top of a module's page dispatcher.
 
-    back is None on a module homepage (Home only) or (key, on_click, args) for a nested view. page_css is the module's own
-    page-level <style> block; it shares this call's single style element because every extra element above the row would add
-    a flow gap and push the row down.
+    trail lists the levels below Home, outermost first, as (label, target) pairs; the last pair is the current page and its
+    target is ignored (it is not clickable). Every earlier pair is a clickable ancestor that calls navigate(target), the
+    module's own page-switch function, so the module's existing session-state transitions run unchanged. Home resets module
+    navigation exactly as before. page_css is the module's own page-level <style> block; it shares this call's single style
+    element because every extra element above the row would add a flow gap and push the row down.
 
     view identifies the view being shown (for example "m2:experiment"). The page opens at the top only when it differs from
     the view of the previous run, so reruns caused by widgets, uploads or calculations never move the scroll position."""
@@ -111,11 +146,19 @@ def nav_row(back=None, page_css="", view=None):
         ss[VIEW_COUNT_KEY] = ss.get(VIEW_COUNT_KEY, 0) + 1
     st.html(_CSS + page_css)
     with st.container(key="nav_row", horizontal=True, vertical_alignment="center"):
-        if back is not None:
-            key, on_click, args = back
-            back_button(key, on_click, args)
+        if len(trail) >= 2:  # nested view: compact arrow to the immediate parent (the previous breadcrumb), not browser history
+            with st.container(key="nav_arrow"):
+                st.button("Go back", key="nav_arrow_button", icon=":material/arrow_back:",
+                          on_click=navigate, args=(trail[-2][1],))
         with st.container(key="nav_home"):
             st.button("Home", key="nav_home_button", icon=":material/home:", on_click=_go_home)
+        for index, (label, target) in enumerate(trail):
+            if index == len(trail) - 1:
+                with st.container(key="nav_current"):
+                    st.markdown(label)
+            else:
+                with st.container(key=f"nav_crumb_{index}"):
+                    st.button(label, key=f"navbtn_{index}", on_click=navigate, args=(target,))
     if new_view:
         # After the row, in a wrapper hidden by CSS: a script element would otherwise add a flow gap on this first run only.
         with st.container(key="nav_scroll_reset"):

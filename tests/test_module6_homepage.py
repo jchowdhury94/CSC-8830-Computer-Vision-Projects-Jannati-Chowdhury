@@ -37,7 +37,7 @@ class Module6HomepageTests(unittest.TestCase):
         self.assertEqual(len(app.title), 0)
         self.assertIn("MODULE 6", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["Optical Flow and Motion Tracking"])
-        click(app, "m6_a_select_back_top")
+        click(app, "navbtn_0")
         self.assertEqual(app.session_state["module6_section"], "home")
         self.assertEqual([b.label for b in app.button], ["Home", *LABELS])
 
@@ -48,19 +48,19 @@ class Module6HomepageTests(unittest.TestCase):
         self.assertEqual([h.value for h in app.header], ["Structure from Motion Reconstruction"])
         click(app, "m6_b_results")
         self.assertEqual(app.session_state["module6_section"], "b_results")
-        self.assertEqual([b.label for b in app.button if b.key != "nav_home_button"], ["Back", "Back"])
+        self.assertEqual([b.label for b in app.button if not (b.key or "").startswith("nav")], ["Back"])
         self.assertEqual(len(app.title), 0)
         self.assertEqual([h.value for h in app.header], ["Part B — Structure from Motion"])
         self.assertIn("Recovered Depth Error", [s.value for s in app.subheader])
         self.assertEqual(len(app.metric), 6)
-        click(app, "m6_b_results_back_top")
+        click(app, "navbtn_1")
         self.assertEqual(app.session_state["module6_section"], "b_select")
-        click(app, "m6_b_select_back_top")
+        click(app, "navbtn_0")
         self.assertEqual([b.label for b in app.button], ["Home", *LABELS])
 
     def test_a_back_b_back(self):
         app = new_app()
-        for key in ("m6_open_A", "m6_a_select_back_top", "m6_open_B", "m6_b_select_back_top"):
+        for key in ("m6_open_A", "navbtn_0", "m6_open_B", "navbtn_0"):
             click(app, key)
         self.assertEqual(app.session_state["module6_section"], "home")
 

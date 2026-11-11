@@ -48,13 +48,13 @@ class Module4ThermalNavigationTests(unittest.TestCase):
         self.assertEqual(len(app.title), 0)
         self.assertIn("MODULE 4", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["Thermal Image Boundary Detection"])
-        labels = [b.label for b in app.button if b.key != "nav_home_button"]
-        self.assertEqual(labels, ["Back", "**Detect Human Boundaries in Your Own Thermal Image**  \nUpload and analyze your own thermal image",
+        labels = [b.label for b in app.button if not (b.key or "").startswith("nav")]
+        self.assertEqual(labels, ["**Detect Human Boundaries in Your Own Thermal Image**  \nUpload and analyze your own thermal image",
                                   "**View My Experiment & Results**  \nExplore my thermal boundary detection results"])
-        self.assertEqual(back_keys(app), ["m4_thermal_select_back_top"])
-        # Back is in the shared nav row (left of Home), which sits above the heading.
+        self.assertEqual(back_keys(app), [])
+        # The breadcrumb row sits above the heading; selection pages have no Back button.
         self.assertEqual(getattr(app.main[0], "key", None), "nav_row")
-        self.assertEqual([b.key for b in app.main[0].button], ["m4_thermal_select_back_top", "nav_home_button"])
+        self.assertEqual([b.key for b in app.main[0].button], ["nav_arrow_button", "nav_home_button", "navbtn_0"])  # Back arrow, Home > Module 4 (ancestor)
 
     def test_selection_matches_rgb_selection_structure(self):
         rgb = new_app()
@@ -62,15 +62,15 @@ class Module4ThermalNavigationTests(unittest.TestCase):
         thermal = new_app()
         open_select(thermal)
         self.assertEqual(len(rgb.button), len(thermal.button))
-        self.assertEqual([b.label for b in rgb.button][:2], [b.label for b in thermal.button][:2])
-        self.assertTrue(all("**  \n" in b.label for page in (rgb, thermal) for b in list(page.button)[2:]))
+        self.assertEqual([b.label for b in rgb.button][:3], [b.label for b in thermal.button][:3])
+        self.assertTrue(all("**  \n" in b.label for page in (rgb, thermal) for b in list(page.button)[3:]))
         self.assertEqual([t.value for t in rgb.title], [t.value for t in thermal.title])
         self.assertEqual(len(rgb.markdown), len(thermal.markdown))
 
     def test_selection_back_returns_home(self):
         app = new_app()
         open_select(app)
-        click(app, "m4_thermal_select_back_top")
+        click(app, "navbtn_0")
         self.assertEqual(app.session_state["module4_section"], "home")
         self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
 
@@ -78,16 +78,15 @@ class Module4ThermalNavigationTests(unittest.TestCase):
         app = new_app()
         open_select(app)
         click(app, "m4_thermal_visitor")
-        labels = [b.label for b in app.button if b.key != "nav_home_button"]
-        self.assertEqual(labels[0], "Back")
+        labels = [b.label for b in app.button if not (b.key or "").startswith("nav")]
         self.assertEqual(labels[-1], "Back")
-        self.assertEqual(len(back_keys(app)), 2)
+        self.assertEqual(len(back_keys(app)), 1)
         self.assertEqual(app.subheader[0].value, "Question 2 – Thermal Image Human Boundary Detection")
-        self.assertEqual([e for e in app.main if e.type in ("button", "title", "header") and getattr(e, "key", None) != "nav_home_button"][0].type, "button")
+        self.assertEqual(getattr(app.main[0], "key", None), "nav_row")
         self.assertNotIn("Back to Module 4", labels)
 
     def test_visitor_back_returns_to_selection(self):
-        for key in ("m4_thermal_visitor_back_top", "m4_thermal_visitor_back_bottom"):
+        for key in ("navbtn_1", "m4_thermal_visitor_back_bottom"):
             app = new_app()
             open_select(app)
             click(app, "m4_thermal_visitor")
@@ -98,7 +97,7 @@ class Module4ThermalNavigationTests(unittest.TestCase):
         app = new_app()
         open_select(app)
         click(app, "m4_thermal_results")
-        self.assertEqual([e for e in app.main if e.type in ("button", "title", "header") and getattr(e, "key", None) != "nav_home_button"][0].type, "button")
+        self.assertEqual(getattr(app.main[0], "key", None), "nav_row")
         self.assertEqual([h.value for h in app.header], ["My Thermal Experiment & Results"])
         self.assertEqual([s.value for s in app.subheader], [
             "Step 1 — Original Thermal Image & Settings", "Step 2 — Classical Thermal Segmentation",
@@ -118,7 +117,7 @@ class Module4ThermalNavigationTests(unittest.TestCase):
             "IoU with SAM2": "0.9813",
         })
         self.assertEqual(len(app.get("image")), 3)
-        self.assertEqual([b.label for b in app.button if b.key != "nav_home_button"], ["Back", "Back"])
+        self.assertEqual([b.label for b in app.button if not (b.key or "").startswith("nav")], ["Back"])
 
     def test_results_page_has_no_rgb_values(self):
         app = new_app()
@@ -129,7 +128,7 @@ class Module4ThermalNavigationTests(unittest.TestCase):
             self.assertNotIn(rgb_only, shown)
 
     def test_results_back_returns_to_selection(self):
-        for key in ("m4_thermal_results_back_top", "m4_thermal_results_back_bottom"):
+        for key in ("navbtn_1", "m4_thermal_results_back_bottom"):
             app = new_app()
             open_select(app)
             click(app, "m4_thermal_results")
@@ -142,7 +141,7 @@ class Module4ThermalNavigationTests(unittest.TestCase):
         click(app, "m4_thermal_results")
         app.run()
         self.assertEqual(app.session_state["module4_section"], "thermal_results")
-        click(app, "m4_thermal_results_back_top")
+        click(app, "navbtn_1")
         click(app, "m4_thermal_visitor")
         app.run()
         self.assertEqual(app.session_state["module4_section"], "thermal")
@@ -151,11 +150,11 @@ class Module4ThermalNavigationTests(unittest.TestCase):
         app = new_app()
         click(app, "m4_open_rgb")
         self.assertEqual(app.session_state["module4_section"], "rgb_select")
-        self.assertEqual(back_keys(app), ["m4_rgb_select_back_top"])
+        self.assertEqual(back_keys(app), [])
         click(app, "m4_rgb_visitor")
         self.assertEqual(app.subheader[0].value, "Question 1 – Human Boundary Detection in an RGB Image")
-        self.assertEqual(len(back_keys(app)), 2)
-        click(app, "m4_rgb_visitor_back_top")
+        self.assertEqual(len(back_keys(app)), 1)
+        click(app, "navbtn_1")
         click(app, "m4_rgb_results")
         self.assertEqual([h.value for h in app.header], ["My RGB Experiment & Results"])
         self.assertEqual(len(app.get("image")), 9)

@@ -315,8 +315,11 @@ def visitor_page():
 
 init_state()
 page = st.session_state["m3_page"]
-BACK_KEY = {"visitor": "m3_back_top", "experiment": "m3_back_experiment_top"}  # top Back widget key per nested view
-nav_row((BACK_KEY[page], go_to, ("home",)) if page in BACK_KEY else None, PAGE_CSS, view=f"m3:{page}")
+# breadcrumb levels below Home: (label, page); the last is the current page
+CRUMBS = {"home": (("Module 3", "home"),),
+          "visitor": (("Module 3", "home"), ("Apply Gaussian Blur to Your Own Image", "visitor")),
+          "experiment": (("Module 3", "home"), ("My Experiment & Results", "experiment"))}
+nav_row(CRUMBS[page], go_to, PAGE_CSS, view=f"m3:{page}")
 if page == "visitor":
     visitor_page()
 elif page == "experiment":

@@ -129,7 +129,7 @@ class VisitorPageTests(unittest.TestCase):
     def test_render_order_is_vertical_and_complete(self):
         app = at_step(self.data, 3, self.CORNERS)
         order = keys(app)
-        marks = ["m6_a_visitor_back_top", "m6v_step_1", "m6v_step_2", "m6v_step_3", "m6_a_visitor_back_bottom"]
+        marks = ["navbtn_1", "m6v_step_1", "m6v_step_2", "m6v_step_3", "m6_a_visitor_back_bottom"]
         positions = [order.index(m) for m in marks]
         self.assertEqual(positions, sorted(positions))
         self.assertEqual(self.headers(app), ["Track Motion in Your Own Video", "Step 1 — Upload Your Video",
@@ -407,7 +407,7 @@ class VisitorPageTests(unittest.TestCase):
 
     def test_page_reopened_with_empty_uploader_drops_stale_video(self):
         app = at_step(self.data, 2)
-        button(app, "m6_a_visitor_back_top").click()
+        button(app, "navbtn_1").click()
         run(app)
         self.assertEqual(app.session_state["module6_section"], "a_select")
         app.session_state["module6_section"] = "a_visitor"
@@ -433,7 +433,7 @@ class VisitorPageTests(unittest.TestCase):
         self.assertEqual(scroll_targets(app), [])
 
     def test_top_and_bottom_back_return_to_part_a_selection(self):
-        for key in ("m6_a_visitor_back_top", "m6_a_visitor_back_bottom"):
+        for key in ("navbtn_1", "m6_a_visitor_back_bottom"):
             app = uploaded_app(self.data)
             button(app, key).click()
             run(app)
@@ -442,13 +442,13 @@ class VisitorPageTests(unittest.TestCase):
     def test_bottom_back_hidden_without_video_and_after_removal(self):
         app = visitor_app()
         self.assertNotIn("m6_a_visitor_back_bottom", keys(app))
-        self.assertIn("m6_a_visitor_back_top", keys(app))
+        self.assertIn("navbtn_1", keys(app))
         app = uploaded_app(self.data)
         self.assertIn("m6_a_visitor_back_bottom", keys(app))
         app.get("file_uploader")[0].set_value(None)  # the × on the file chip
         run(app)
         self.assertNotIn("m6_a_visitor_back_bottom", keys(app))
-        self.assertIn("m6_a_visitor_back_top", keys(app))
+        self.assertIn("navbtn_1", keys(app))
 
 
 if __name__ == "__main__":

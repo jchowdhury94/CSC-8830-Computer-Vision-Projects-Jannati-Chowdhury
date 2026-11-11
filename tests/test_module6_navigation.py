@@ -55,17 +55,16 @@ class Module6NavigationTests(unittest.TestCase):
         self.assertEqual(len(app.title), 0)
         self.assertIn("MODULE 6", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["Optical Flow and Motion Tracking"])
-        self.assertEqual([b.label for b in app.button if b.label not in ("Back", "Home")], SELECT_BUTTONS)
-        self.assertEqual([b.key for b in app.button if b.label not in ("Back", "Home")], ["m6_a_visitor", "m6_a_results"])
+        self.assertEqual([b.label for b in app.button if not (b.key or "").startswith("nav")], SELECT_BUTTONS)
+        self.assertEqual([b.key for b in app.button if not (b.key or "").startswith("nav")], ["m6_a_visitor", "m6_a_results"])
 
     def test_selection_has_exactly_one_back_at_top(self):
         app = new_app()
         open_select(app)
-        labels = [b.label for b in app.button if b.key != "nav_home_button"]
-        self.assertEqual(labels[0], "Back")
-        self.assertEqual(labels.count("Back"), 1)
-        self.assertEqual(back_keys(app), ["m6_a_select_back_top"])
-        click(app, "m6_a_select_back_top")
+        labels = [b.label for b in app.button if not (b.key or "").startswith("nav")]
+        self.assertEqual(labels.count("Back"), 0)  # navigation is the breadcrumb
+        self.assertEqual(back_keys(app), [])
+        click(app, "navbtn_0")
         self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
 
     def test_visitor_page_opens_with_only_top_back(self):
@@ -75,13 +74,13 @@ class Module6NavigationTests(unittest.TestCase):
         self.assertEqual(app.session_state["module6_section"], "a_visitor")
         self.assertEqual([h.value for h in app.header],
                          ["Track Motion in Your Own Video", "Step 1 — Upload Your Video"])
-        self.assertEqual([b.label for b in app.button if b.label == "Back"], ["Back"])
-        self.assertEqual(back_keys(app), ["m6_a_visitor_back_top"])
+        self.assertEqual([b.label for b in app.button if b.label == "Back"], [])
+        self.assertEqual(back_keys(app), [])
         self.assertNotIn("Video upload and optical-flow tracking will be available here soon.",
                          [m.value for m in app.markdown])
-        click(app, "m6_a_visitor_back_top")
+        click(app, "navbtn_1")
         self.assertEqual(app.session_state["module6_section"], "a_select")
-        self.assertEqual([b.label for b in app.button if b.label not in ("Back", "Home")], SELECT_BUTTONS)
+        self.assertEqual([b.label for b in app.button if not (b.key or "").startswith("nav")], SELECT_BUTTONS)
 
 
     def test_results_page_content_preserved(self):
@@ -106,12 +105,12 @@ class Module6NavigationTests(unittest.TestCase):
         self.assertEqual(len(app.warning), 0)
 
     def test_results_back_buttons_return_to_selection(self):
-        for key in ("m6_a_results_back_top", "m6_a_results_back_bottom"):
+        for key in ("navbtn_1", "m6_a_results_back_bottom"):
             app = new_app()
             open_select(app)
             click(app, "m6_a_results")
-            self.assertEqual(back_keys(app), ["m6_a_results_back_top", "m6_a_results_back_bottom"])
-            self.assertEqual([b.label for b in app.button if b.key != "nav_home_button"], ["Back", "Back"])
+            self.assertEqual(back_keys(app), ["m6_a_results_back_bottom"])
+            self.assertEqual([b.label for b in app.button if not (b.key or "").startswith("nav")], ["Back"])
             click(app, key)
             self.assertEqual(app.session_state["module6_section"], "a_select")
 
@@ -119,8 +118,8 @@ class Module6NavigationTests(unittest.TestCase):
         app = new_app()
         click(app, "m6_open_B")
         self.assertEqual(app.session_state["module6_section"], "b_select")
-        self.assertEqual([b.label for b in app.button if b.key != "nav_home_button"], ["Back"] + PART_B_SELECT_BUTTONS)
-        click(app, "m6_b_select_back_top")
+        self.assertEqual([b.label for b in app.button if not (b.key or "").startswith("nav")], PART_B_SELECT_BUTTONS)
+        click(app, "navbtn_0")
         self.assertEqual(app.session_state["module6_section"], "home")
         self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
 

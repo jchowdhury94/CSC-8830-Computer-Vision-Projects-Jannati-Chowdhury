@@ -1500,8 +1500,11 @@ st.set_page_config(
 
 init_state()
 page = st.session_state["m2_page"]
-BACK_KEY = {"visitor": "m2_back_visitor_top", "experiment": "m2_back_top"}  # top Back widget key per nested view
-nav_row((BACK_KEY[page], go_to, ("home",)) if page in BACK_KEY else None, PAGE_CSS, view=f"m2:{page}")
+# breadcrumb levels below Home: (label, page); the last is the current page
+CRUMBS = {"home": (("Module 2", "home"),),
+          "visitor": (("Module 2", "home"), ("Calibrate Your Camera & Measure an Object", "visitor")),
+          "experiment": (("Module 2", "home"), ("My Experiment & Results", "experiment"))}
+nav_row(CRUMBS[page], go_to, PAGE_CSS, view=f"m2:{page}")
 if page == "visitor":
     visitor_page()
 elif page == "experiment":

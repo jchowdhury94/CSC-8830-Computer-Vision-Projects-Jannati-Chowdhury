@@ -1454,12 +1454,12 @@ def part_a_visitor_page():
 st.set_page_config(page_title="Module 6", layout="centered")
 st.session_state.setdefault("module6_section", "home")
 section = st.session_state["module6_section"]
-# (top Back widget key, parent section) for every nested view; the homepage has no Back
-BACK = {"a_select": ("m6_a_select_back_top", "home"), "b_select": ("m6_b_select_back_top", "home"),
-        "a_visitor": ("m6_a_visitor_back_top", "a_select"), "a_results": ("m6_a_results_back_top", "a_select"),
-        "b_visitor": ("m6_b_visitor_back_top", "b_select"), "b_results": ("m6_b_results_back_top", "b_select")}
-nav_row((BACK[section][0], select_part, (BACK[section][1],)) if section in BACK else None,
-        view=f"m6:{section}")
+# breadcrumb levels below Home for every view: (label, section); the last is the current page
+_M6, _A, _B = ("Module 6", "home"), ("Optical Flow", "a_select"), ("Structure from Motion", "b_select")
+CRUMBS = {"home": (_M6,), "a_select": (_M6, _A), "b_select": (_M6, _B),
+          "a_visitor": (_M6, _A, ("Your Own Video", "a_visitor")), "a_results": (_M6, _A, ("My Experiment & Results", "a_results")),
+          "b_visitor": (_M6, _B, ("Your Own Images", "b_visitor")), "b_results": (_M6, _B, ("My Experiment & Results", "b_results"))}
+nav_row(CRUMBS[section], select_part, view=f"m6:{section}")
 if section == "home":
     st.markdown(HOME_CSS, unsafe_allow_html=True)
     with st.container(key="m6_home_layout"):

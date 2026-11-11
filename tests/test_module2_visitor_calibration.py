@@ -538,10 +538,10 @@ class SessionStateTests(unittest.TestCase):
     def test_active_calibration_survives_view_navigation(self):
         at = activated_page()
         token = at.session_state["m2_visitor_calibration"]["camera_matrix"].copy()
-        at = click(at, "m2_back_visitor_top")
+        at = click(at, "navbtn_0")
         self.assertEqual(at.session_state["m2_page"], "home")
         at = click(at, "m2_open_experiment")
-        at = click(at, "m2_back_top")
+        at = click(at, "navbtn_0")
         at = click(at, "m2_open_visitor")
         self.assertTrue(np.array_equal(at.session_state["m2_visitor_calibration"]["camera_matrix"], token))
         self.assertEqual(len(at.text_input), 1)

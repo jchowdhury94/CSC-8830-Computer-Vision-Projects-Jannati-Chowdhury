@@ -1,4 +1,4 @@
-"""Persistent Home button: exactly one on every reachable view of Modules 2, 3, 4, 6 and 7, always routed to the dashboard."""
+"""Breadcrumb navigation (Home > ... > current page): exactly one on every reachable view of Modules 2, 3, 4, 6 and 7, always routed to the dashboard."""
 import re
 import unittest
 from pathlib import Path
@@ -34,6 +34,13 @@ def run(n, view):
     return at.run()
 
 
+# number of breadcrumb levels below Home per view (the last one is the current page)
+DEPTH = {2: {"home": 1, "visitor": 2, "experiment": 2}, 3: {"home": 1, "visitor": 2, "experiment": 2},
+         4: {"home": 1, "rgb_select": 2, "thermal_select": 2, "rgb": 3, "rgb_results": 3, "thermal": 3, "thermal_results": 3},
+         6: {"home": 1, "a_select": 2, "b_select": 2, "a_visitor": 3, "a_results": 3, "b_visitor": 3, "b_results": 3},
+         7: {"home": 1, "q1_home": 2, "1": 3, "experiment": 3, "3": 2}}
+
+
 def home_buttons(at):
     return [b for b in at.button if b.key == "nav_home_button"]
 
@@ -52,16 +59,15 @@ class HomeButtonOnEveryViewTests(unittest.TestCase):
                     self.assertEqual([e.key for e in at.main if getattr(e, "key", None) == "nav_home"], ["nav_home"])
                     self.assertEqual(sum("Back to Home" in b.label for b in at.button), 0)
 
-    def test_home_button_has_home_icon_and_is_a_separate_control_from_back(self):
+    def test_home_crumb_has_home_icon_and_no_top_back_button_remains(self):
         for n, (_, views) in VIEWS.items():
-            for view in views[1:]:
+            for view in views:
                 with self.subTest(module=n, view=view):
                     at = run(n, view)
-                    home = home_buttons(at)[0]
-                    self.assertEqual(home.proto.icon, ":material/home:")
-                    backs = [b for b in at.button if "Back" in b.label]
-                    self.assertTrue(backs or view in ("home",), "nested view keeps its own Back")
-                    self.assertTrue(all(b.key != home.key for b in backs))
+                    self.assertEqual(home_buttons(at)[0].proto.icon, ":material/home:")
+                    row = next(e for e in at.main if getattr(e, "key", None) == "nav_row")
+                    self.assertEqual([b for b in row.button if "Back" in b.label], [])
+                    self.assertFalse([b.key for b in at.button if b.key and b.key.endswith("_top") and "back" in b.key])
 
     def test_home_always_switches_to_the_registered_dashboard_page(self):
         for n, (_, views) in VIEWS.items():
@@ -76,19 +82,51 @@ class HomeButtonOnEveryViewTests(unittest.TestCase):
                         at.run()
                     switch.assert_called_once_with("HOME_PAGE_SENTINEL")
 
-    def test_existing_back_navigation_is_unchanged(self):
-        at = run(4, "rgb_select")
-        next(b for b in at.button if b.key == "m4_rgb_select_back_top").click().run()
-        self.assertEqual(at.session_state["module4_section"], "home")
-        at = run(6, "b_results")
-        next(b for b in at.button if b.key == "m6_b_results_back_top").click().run()
-        self.assertEqual(at.session_state["module6_section"], "b_select")
-        at = run(7, "experiment")
-        next(b for b in at.button if b.key == "m7_back").click().run()
-        self.assertEqual(at.session_state["module7_part"], "q1_home")
-        at = run(3, "experiment")
-        next(b for b in at.button if b.key == "m3_back_experiment_top").click().run()
-        self.assertEqual(at.session_state["m3_page"], "home")
+    def test_breadcrumb_trails_and_clickability(self):
+        for n, (_, views) in VIEWS.items():
+            for view in views:
+                with self.subTest(module=n, view=view):
+                    at = run(n, view)
+                    crumbs = [b for b in at.button if b.key and b.key.startswith("navbtn_")]
+                    depth = DEPTH[n][view]
+                    self.assertEqual(len(crumbs), depth - 1)       # every ancestor clickable, current page is not a button
+                    row = next(e for e in at.main if getattr(e, "key", None) == "nav_row")
+                    self.assertEqual(len(row.button), depth + (1 if depth >= 2 else 0))  # Home + ancestors (+ the Back arrow on nested views)
+
+    def test_back_arrow_only_on_nested_views_and_returns_to_the_immediate_parent(self):
+        parents = {(2, "visitor"): "home", (2, "experiment"): "home", (3, "visitor"): "home", (3, "experiment"): "home",
+                   (4, "rgb_select"): "home", (4, "rgb"): "rgb_select", (4, "rgb_results"): "rgb_select",
+                   (4, "thermal"): "thermal_select", (4, "thermal_results"): "thermal_select",
+                   (6, "a_select"): "home", (6, "a_visitor"): "a_select", (6, "b_results"): "b_select",
+                   (7, "q1_home"): "home", (7, "1"): "q1_home", (7, "experiment"): "q1_home", (7, "3"): "home"}
+        for n, (key, views) in VIEWS.items():
+            for view in views:
+                with self.subTest(module=n, view=view):
+                    at = run(n, view)
+                    arrows = [b for b in at.button if b.key == "nav_arrow_button"]
+                    if view == "home":
+                        self.assertEqual(arrows, [])
+                        continue
+                    self.assertEqual(len(arrows), 1)
+                    if (n, view) in parents:
+                        arrows[0].click().run()
+                        self.assertFalse(at.exception)
+                        self.assertEqual(at.session_state[key], parents[(n, view)])
+
+    def test_breadcrumb_navigation_goes_to_the_parent_view(self):
+        expectations = [(2, "experiment", 0, "m2_page", "home"), (3, "visitor", 0, "m3_page", "home"),
+                        (4, "rgb", 0, "module4_section", "home"), (4, "rgb", 1, "module4_section", "rgb_select"),
+                        (4, "thermal_results", 1, "module4_section", "thermal_select"),
+                        (6, "b_results", 0, "module6_section", "home"), (6, "b_results", 1, "module6_section", "b_select"),
+                        (6, "a_visitor", 1, "module6_section", "a_select"),
+                        (7, "experiment", 0, "module7_part", "home"), (7, "experiment", 1, "module7_part", "q1_home"),
+                        (7, "1", 1, "module7_part", "q1_home"), (7, "3", 0, "module7_part", "home")]
+        for n, view, index, key, target in expectations:
+            with self.subTest(module=n, view=view, crumb=index):
+                at = run(n, view)
+                next(b for b in at.button if b.key == f"navbtn_{index}").click().run()
+                self.assertFalse(at.exception)
+                self.assertEqual(at.session_state[key], target)
 
 
 class HomeNavigationSourceTests(unittest.TestCase):
@@ -98,6 +136,7 @@ class HomeNavigationSourceTests(unittest.TestCase):
                 text = source(n)
                 self.assertEqual(text.count("nav_row("), 1)
                 self.assertIn("from home_navigation import back_button, nav_row", text)
+                self.assertIn("CRUMBS = {", text)
                 self.assertNotIn("back_to_home", text)
                 self.assertNotIn("nav_home", text)  # no per-module copies of the key or CSS
 
@@ -108,13 +147,13 @@ class HomeNavigationSourceTests(unittest.TestCase):
         self.assertIn("st.Page(show_home", HOME_SOURCE)
         self.assertEqual(re.findall(r'MODULE_PAGES\["(\d)"\],', HOME_SOURCE), ["2", "3", "4", "6", "7"])
 
-    def test_css_contract_red_solid_white_text_top_right_no_overlay(self):
-        for fragment in ("background: {ACCENT}", "color: #FFFFFF", "margin-left: auto", 'BUTTON_WIDTH = "110px"',
-                         'BUTTON_HEIGHT = "40px"', "button:focus-visible", "outline: 3px solid", "horizontal=True",
-                         'vertical_alignment="center"'):
+    def test_css_contract_breadcrumb_red_home_muted_ancestors_white_current_wrapping(self):
+        for fragment in ("color: {ACCENT}", "var(--nav-muted)", "var(--nav-text)", "font-weight: 700", "flex-wrap: wrap",
+                         'BUTTON_WIDTH = "110px"', 'BUTTON_HEIGHT = "40px"', "button:focus-visible", "horizontal=True",
+                         'vertical_alignment="center"', "203A", 'key="nav_arrow_button"', ":material/arrow_back:", "2rem"):
             self.assertIn(fragment, HELPER)
         self.assertNotIn("position: fixed", HELPER)
-        self.assertNotIn("position: absolute", HELPER)
+        self.assertEqual(HELPER.count("position: absolute"), 1)  # only the Back arrow tooltip; the row itself is in normal flow
         self.assertNotIn("sticky", HELPER)
         self.assertNotIn("stSidebar", HELPER)
         self.assertIn('ACCENT = "#C9363E"', HELPER)
@@ -132,7 +171,7 @@ class HomeNavigationSourceTests(unittest.TestCase):
                     labels = [b.label for b in run(n, view).button]
                     self.assertFalse([l for l in labels if l.startswith("Back") and l != "Back"])
 
-    def test_back_and_home_share_one_row_back_first(self):
+    def test_breadcrumb_row_is_above_the_content_and_ends_with_the_current_page(self):
         for n, (_, views) in VIEWS.items():
             for view in views:
                 with self.subTest(module=n, view=view):
@@ -140,9 +179,9 @@ class HomeNavigationSourceTests(unittest.TestCase):
                     row = next(e for e in at.main if getattr(e, "key", None) == "nav_row")
                     content = [e for e in at.main if e.type in ("title", "header", "subheader")]
                     self.assertLess(list(at.main).index(row), list(at.main).index(content[0]) if content else 99)
-                    keys = [b.key for b in row.button]
-                    self.assertEqual(keys[-1], "nav_home_button")
-                    self.assertEqual(len(keys), 1 if view == "home" else 2)
+                    keys = [b.key for b in row.button if b.key != "nav_arrow_button"]
+                    self.assertEqual(keys[0], "nav_home_button")
+                    self.assertEqual(len(keys), DEPTH[n][view])
 
     def test_sidebar_stays_hidden_and_home_has_no_home_button(self):
         self.assertEqual(HOME_SOURCE.count('position="hidden"'), 1)
@@ -181,15 +220,13 @@ class OpenAtTopTests(unittest.TestCase):
         for n, (key, views) in VIEWS.items():
             at = run(n, views[1])
             self.assertEqual(scroll_resets(at), 1)
-            back = [b for b in at.button if b.key and "back" in b.key and b.key.startswith("m")][0]
-            back.click()
+            at.button(key="navbtn_0").click()
             at.run()
             self.assertEqual(scroll_resets(at), 1, msg=f"module {n}")
             self.assertNotEqual(at.session_state[key], views[1])
 
     def test_nav_row_keeps_the_navigation_design(self):
-        self.assertIn('BUTTON_WIDTH = "110px"', HELPER)
-        self.assertIn('BUTTON_HEIGHT = "40px"', HELPER)
+        self.assertIn('BUTTON_WIDTH = "110px"', HELPER)  # bottom Back buttons keep the shared size
         self.assertEqual(HELPER.count("window.scrollTo(0, 0)"), 1)
 
 

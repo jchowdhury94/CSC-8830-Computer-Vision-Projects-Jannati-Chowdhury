@@ -170,7 +170,7 @@ class VisitorWorkflowTests(unittest.TestCase):
         self.assertEqual(at.session_state["m2_page"], "visitor")
         self.assertEqual([t.value for t in at.title], ["Calibrate Your Camera & Measure an Object"])
         self.assertNotIn("My Experiment & Results", header_texts(at))
-        for label in ("Load Saved Calibration", "Calibrate New Camera", "Reset All", "Back"):
+        for label in ("Load Saved Calibration", "Calibrate New Camera", "Reset All", "Module 2"):
             self.assertIn(label, labels(at))
         self.assertNotIn("View My Experiment & Results", labels(at))
         self.assertEqual(len(at.table), 0)
@@ -230,8 +230,8 @@ class VisitorWorkflowTests(unittest.TestCase):
 
     def test_single_back_button_and_headings_at_top(self):
         at = visitor_run()
-        self.assertEqual(labels(at).count("Back"), 1)
-        self.assertEqual(labels(at)[:2], ["Back", "Home"])  # one nav row: Back left, Home right
+        self.assertEqual(labels(at).count("Back"), 0)  # the top Back is replaced by the breadcrumb
+        self.assertEqual(labels(at)[:3], ["Go back", "Home", "Module 2"])  # Back arrow, then the breadcrumb
         self.assertNotIn("← Back", labels(at))
         self.assertNotIn("Back to Module 2", labels(at))
         self.assertEqual([t.value for t in at.title], ["Calibrate Your Camera & Measure an Object"])
@@ -242,7 +242,7 @@ class VisitorWorkflowTests(unittest.TestCase):
             self.assertNotIn("Choose how to set up your camera.", [c.value for c in at_.caption])
 
     def test_back_buttons_return_home(self):
-        for key in ("m2_back_visitor_top",):
+        for key in ("navbtn_0",):
             at = visitor_run()
             at.button(key=key).click()
             at.run()
@@ -263,7 +263,7 @@ class ExperimentViewTests(unittest.TestCase):
         self.assertNotIn("m2_scroll_to", at.session_state)                                             # heading scroll was removed
 
     def test_back_buttons_return_home(self):
-        for key in ("m2_back_top", "m2_back_bottom"):
+        for key in ("navbtn_0", "m2_back_bottom"):
             at = open_experiment(run_page())
             at.button(key=key).click()
             at.run()
@@ -273,7 +273,7 @@ class ExperimentViewTests(unittest.TestCase):
 
     def test_visitor_state_survives_navigation(self):
         at = visitor_run({"m2_visitor_calibration": VISITOR, "m2_object_name": "Box", "m2_actual_width": 12.5, "m2_cal_workflow": "load"})
-        at.button(key="m2_back_visitor_top").click()
+        at.button(key="navbtn_0").click()
         at.run()
         at = open_experiment(at)
         self.assertIs(at.session_state["m2_visitor_calibration"], VISITOR)
@@ -344,11 +344,11 @@ class ReadOnlyTests(unittest.TestCase):
                 self.assertFalse(at.exception)
                 at = open_visitor(at)
                 self.assertFalse(at.exception)
-                at.button(key="m2_back_visitor_top").click()
+                at.button(key="navbtn_0").click()
                 at.run()
                 at = open_experiment(at)
                 self.assertFalse(at.exception)
-                at.button(key="m2_back_top").click()
+                at.button(key="navbtn_0").click()
                 at.run()
                 self.assertFalse(at.exception)
         self.assertEqual([w for w in written if "Module_2" in w], [])

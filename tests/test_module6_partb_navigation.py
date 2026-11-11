@@ -50,14 +50,13 @@ class PartBNavigationTests(unittest.TestCase):
         self.assertEqual(len(app.title), 0)
         self.assertIn("MODULE 6", [m.value for m in app.markdown])
         self.assertEqual([h.value for h in app.header], ["Structure from Motion Reconstruction"])
-        labels = [b.label for b in app.button if b.key != "nav_home_button"]
-        self.assertEqual(labels[0], "Back")
-        self.assertEqual(labels[1:], SELECT_BUTTONS)
-        self.assertEqual([b.key for b in app.button if b.label == "Back"], ["m6_b_select_back_top"])
+        labels = [b.label for b in app.button if not (b.key or "").startswith("nav")]
+        self.assertEqual(labels, SELECT_BUTTONS)
+        self.assertEqual([b.key for b in app.button if b.label == "Back"], [])
 
     def test_selection_back_returns_home(self):
         app = open_select()
-        click(app, "m6_b_select_back_top")
+        click(app, "navbtn_0")
         self.assertEqual(app.session_state["module6_section"], "home")
         self.assertEqual([b.label for b in app.button], HOME_BUTTONS)
 
@@ -65,18 +64,18 @@ class PartBNavigationTests(unittest.TestCase):
         app = open_select()
         click(app, "m6_b_visitor")
         self.assertEqual(app.session_state["module6_section"], "b_visitor")
-        self.assertEqual([b.label for b in app.button if b.key != "nav_home_button"], ["Back"])
+        self.assertEqual([b.label for b in app.button if not (b.key or "").startswith("nav")], [])
         self.assertEqual([h.value for h in app.header],
                          ["Reconstruct an Object from Your Own Images", "Step 1 — Upload Your Images"])
-        click(app, "m6_b_visitor_back_top")
+        click(app, "navbtn_1")
         self.assertEqual(app.session_state["module6_section"], "b_select")
 
     def test_results_preserved_with_top_and_bottom_back(self):
-        for key in ("m6_b_results_back_top", "m6_b_results_back_bottom"):
+        for key in ("navbtn_1", "m6_b_results_back_bottom"):
             app = open_select()
             click(app, "m6_b_results")
             self.assertEqual(app.session_state["module6_section"], "b_results")
-            self.assertEqual([b.key for b in app.button if b.key != "nav_home_button"], ["m6_b_results_back_top", "m6_b_results_back_bottom"])
+            self.assertEqual([b.key for b in app.button if not (b.key or "").startswith("nav")], ["m6_b_results_back_bottom"])
             self.assertEqual([h.value for h in app.header], ["Part B — Structure from Motion"])
             subheaders = [s.value for s in app.subheader]
             for name in ("Four Camera Viewpoints", "Measurement Matrix and Rank Analysis", "Scaled 3D Reconstruction",

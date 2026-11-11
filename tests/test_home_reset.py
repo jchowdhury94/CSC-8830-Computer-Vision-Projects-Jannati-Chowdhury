@@ -92,10 +92,10 @@ class HomeResetTests(unittest.TestCase):
 
     def test_back_still_returns_to_parent_and_experiment_data_persists(self):
         at = module("4", module4_section="thermal_results")
-        next(b for b in at.button if b.key == "m4_thermal_results_back_top").click().run()
+        next(b for b in at.button if b.key == "navbtn_1").click().run()
         self.assertEqual(at.session_state["module4_section"], "thermal_select")
         at = module("6", module6_section="b_results")
-        next(b for b in at.button if b.key == "m6_b_results_back_top").click().run()
+        next(b for b in at.button if b.key == "navbtn_1").click().run()
         self.assertEqual(at.session_state["module6_section"], "b_select")
 
     def test_ordinary_reruns_do_not_reset_navigation(self):
