@@ -1,0 +1,110 @@
+{
+ "schema": "csc8830.module7.room_video_calibration.v1",
+ "name": "room_video_recipe_a",
+ "image_size_wh": [
+  2160,
+  3840
+ ],
+ "physical_baseline_mm": 225.0,
+ "units": {
+  "length": "mm",
+  "image": "px"
+ },
+ "left": {
+  "camera": "iPhone Air, 1x rear",
+  "K": [
+   [
+    3178.846526387882,
+    0.0,
+    1079.6721904157628
+   ],
+   [
+    0.0,
+    3178.8590505741345,
+    1908.8838908699531
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "distortion_k1_k2_p1_p2_k3": [
+   0.26830634347506854,
+   -1.5748401363060258,
+   0.0,
+   0.0,
+   3.029804166682109
+  ]
+ },
+ "right": {
+  "camera": "iPhone 17 Pro Max, 1x rear",
+  "K": [
+   [
+    2937.4898023781607,
+    0.0,
+    1085.9381259120928
+   ],
+   [
+    0.0,
+    2937.113755275267,
+    1910.5677253894314
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "distortion_k1_k2_p1_p2_k3": [
+   0.26649416816734894,
+   -0.9931516624037608,
+   0.0,
+   0.0,
+   1.2093462503304255
+  ]
+ },
+ "provenance": {
+  "recipe": "Recipe A ('radial3', intrinsics fixed, stereo extrinsics from a separate stereoCalibrate pass)",
+  "distortion_model": "OpenCV [k1, k2, p1, p2, k3] with p1 = p2 = 0 (radial3: k1,k2,k3)",
+  "source": "exploratory scratch fit (checkerboard corners from the calibration videos left_air / right_pro and their repeat recordings)",
+  "pooled_corner_sets": {
+   "mono_left": 36,
+   "mono_right": 45,
+   "stereo_pairs": 22
+  },
+  "fit_quality_px": {
+   "rms_left": 0.48254059414358014,
+   "rms_right": 0.4755615176965807,
+   "rms_stereo": 1.3080694881957158
+  },
+  "source_pickle_sha256": "6dfa7224dfb7a1360c99e74012dca6fcd7eb34a778a9e2b7f8f603ed9d293640",
+  "not_the_old_photo_calibration": "Module 7 Model B (30 photo pairs, calibration/model_b) is NOT reused for the wall videos",
+  "extrinsics_note": "legacy_extrinsics are the stereoCalibrate output of the calibration pass. They are stored for provenance ONLY: the wall-video rig pose is re-estimated (Method J) and the legacy values are never read by the pipeline."
+ },
+ "legacy_extrinsics_NOT_USED": {
+  "R": [
+   [
+    0.9938955405694924,
+    0.02346968910683273,
+    0.10779994494110448
+   ],
+   [
+    -0.027329464514463667,
+    0.9990320561739456,
+    0.034468117242038215
+   ],
+   [
+    -0.10688664465418124,
+    -0.03720382278861728,
+    0.9935749195528659
+   ]
+  ],
+  "T_mm": [
+   -225.58930043903703,
+   3.4806417127633886,
+   31.7341868224728
+  ],
+  "calibrated_baseline_mm": 227.83701620366773
+ }
+}

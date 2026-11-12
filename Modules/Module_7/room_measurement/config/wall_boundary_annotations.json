@@ -1,0 +1,33 @@
+{
+ "schema": "csc8830.module7.room_wall_annotations.v1",
+ "provenance": "MANUAL observations. Seeds were read visually from the decoded frames (and, for AR/PR corners, from a Hough-style scan of the sharpest frame) BEFORE any 3D result existed. Everything else (exact edge positions, line fits) is computed automatically from these seeds. No ground-truth dimension was used.",
+ "image_space": "frames undistorted with Recipe A intrinsics (cv2.undistort, newCameraMatrix=K), pixel coordinates (x right, y down), 2160x3840",
+ "seed_model": "vertical seeds: x = c0 + slope*(y - ref); horizontal seeds: y = c0 + slope*(x - ref); the search window is +-half px around the seed; sign = expected sign of the intensity gradient across the edge",
+ "methods": {
+  "edge_pts": "gradient-peak search (sub-pixel parabola) every 6 px along span, 9-px averaging band",
+  "track2": "two-pass tracking: half-window 10 px around the seed, refit, then half-window 5 px around the fit (25-px averaging band, gradient threshold 0.4)",
+  "track_ceilS": "tracking every 4 px, half-window 14, 5-px band, threshold 0.8"
+ },
+ "lines": {
+  "AL_corner": {"role": "wall-corner vertical (Air, view 1)", "kind": "v", "span": [400, 1600], "c0": 510, "slope": 0.0, "ref": 0, "half": 45, "sign": 1, "method": "edge_pts"},
+  "PL_corner": {"role": "wall-corner vertical (Pro, view 1)", "kind": "v", "span": [600, 1650], "c0": 660, "slope": 0.0265, "ref": 505, "half": 45, "sign": 1, "method": "edge_pts"},
+  "AR_corner": {"role": "wall-corner vertical (Air, view 2)", "kind": "v", "span": [450, 2250], "c0": 1724, "slope": -0.0125, "ref": 1000, "half": 10, "sign": -1, "method": "track2"},
+  "PR_corner": {"role": "wall-corner vertical (Pro, view 2)", "kind": "v", "span": [450, 2300], "c0": 1764, "slope": 0.0225, "ref": 1000, "half": 10, "sign": -1, "method": "track2"},
+  "PL_ceilF": {"role": "ceiling/wall edge, front wall (Pro, view 1)", "kind": "h", "span": [780, 1150], "c0": 498, "slope": -0.272, "ref": 700, "half": 30, "sign": -1, "method": "edge_pts"},
+  "PL_ceilS": {"role": "ceiling/wall edge, side wall (Pro, view 1)", "kind": "h", "span": [430, 630], "c0": 312, "slope": 0.733, "ref": 420, "half": 30, "sign": -1, "method": "edge_pts"},
+  "PR_ceilF": {"role": "ceiling/wall edge, front wall (Pro, view 2)", "kind": "h", "span": [1350, 1700], "c0": 266, "slope": 0.02, "ref": 1300, "half": 28, "sign": -1, "method": "edge_pts"},
+  "PR_ceilS": {"role": "ceiling/wall edge, side wall (Pro, view 2)", "kind": "v", "span": [75, 255], "c0": 1743, "slope": -0.45454545454545453, "ref": 275, "half": 14, "sign": -1, "method": "track_ceilS"}
+ },
+ "carpet_edge_windows": {
+  "purpose": "OPTIONAL view-2 floor-contact diagnostic (automatic carpet-edge detection inside these manually chosen windows). The diagnostic intersects rays with a floor plane at the MEASURED lens height, so it is validation-only and never feeds the estimate.",
+  "texture_threshold": 9,
+  "AR": {"camera": "left", "line": "AR_corner", "x_range": [1672, 1795], "y_range": [2380, 2520]},
+  "PR": {"camera": "right", "line": "PR_corner", "x_range": [1768, 1850], "y_range": [2480, 2600]}
+ },
+ "geometric_assumptions": [
+  "The Air cannot see the ceiling corners: top corners are inferred from the Pro camera rays only.",
+  "One bottom corner is obstructed: bottom corners come from the stereo-derived vertical line meeting the floor plane, not from a visible floor contact.",
+  "The wall-corner edge is vertical (perpendicular to the reconstructed floor plane).",
+  "Top corner = point on that vertical closest to the Pro ray through the ceiling-line intersection in the image."
+ ]
+}

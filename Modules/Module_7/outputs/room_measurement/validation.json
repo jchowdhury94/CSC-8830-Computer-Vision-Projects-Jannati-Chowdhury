@@ -1,0 +1,39 @@
+{
+ "width_mm": {
+  "estimate_mm": 2879.5660614084068,
+  "ground_truth_mm": 2900.0,
+  "error_mm": -20.433938591593233,
+  "abs_error_mm": 20.433938591593233,
+  "error_percent": -0.7046185721239046,
+  "interval_95_mm": [
+   2655.6636647651226,
+   3103.468458051691
+  ],
+  "ground_truth_inside_interval": true
+ },
+ "height_mm": {
+  "estimate_mm": 2380.2092635151857,
+  "ground_truth_mm": 2400.0,
+  "error_mm": -19.79073648481426,
+  "abs_error_mm": 19.79073648481426,
+  "error_percent": -0.8246140202005942,
+  "interval_95_mm": [
+   2187.656378103525,
+   2572.7621489268463
+  ],
+  "ground_truth_inside_interval": true
+ },
+ "lens_height_check": {
+  "measured_lens_height_mm": 640.0,
+  "estimated_floor_height_mm_view1_view2": [
+   642.6620748265157,
+   640.175587320057
+  ],
+  "difference_mm": [
+   2.6620748265156635,
+   0.1755873200570477
+  ],
+  "note": "Diagnostic only: the estimator never used the measured lens height."
+ },
+ "note": "Ground truth was applied only after the estimate was complete; it never entered any fit, selection or tuning."
+}

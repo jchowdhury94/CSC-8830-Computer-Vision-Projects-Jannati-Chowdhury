@@ -1,0 +1,113 @@
+{
+ "schema": "csc8830.module7.room_video_frame_manifest.v1",
+ "video_dir_relative_to_module7": "data/room_measurement/calibration_videos",
+ "protected_note": "These recordings are protected experimental data: never delete, rename, overwrite, compress, move or commit them.",
+ "resolution_wh": [
+  2160,
+  3840
+ ],
+ "fps": 30,
+ "lens": "1x rear",
+ "coordinate_note": "frame_indices are 0-based positions in sequential decoding (cv2.VideoCapture.read loop, grayscale via BGR2GRAY); no seeking",
+ "selection_rule": "set 0 = sharpest frame (Laplacian variance, small penalty on frame-to-frame motion); sets 1-4 = sharpest frame within +-15 frames of 20/40/60/80 % of the video. NOTE: AL frame 247 is chosen for both set 0 and set 4 (kept as validated); the sets are therefore correlated, not independent captures.",
+ "views": {
+  "V1": {
+   "left": "AL",
+   "right": "PL"
+  },
+  "V2": {
+   "left": "AR",
+   "right": "PR"
+  }
+ },
+ "videos": {
+  "AL": {
+   "file": "left_air_wall_left.MOV",
+   "stereo_side": "left",
+   "camera": "iPhone Air",
+   "view": "wall view 1 (left part of wall)",
+   "sha256": "93db768c8a5d36225c338357ad7600455b71610bd230972579151bc697fd37b9",
+   "frame_count": 328,
+   "frame_indices_per_set": [
+    247,
+    51,
+    139,
+    187,
+    247
+   ],
+   "laplacian_variance_at_frames": [
+    3164.624453157373,
+    3170.137184192564,
+    3144.6565100880566,
+    3170.285997697084,
+    3164.624453157373
+   ]
+  },
+  "PL": {
+   "file": "right_pro_wall_left.MOV",
+   "stereo_side": "right",
+   "camera": "iPhone 17 Pro Max",
+   "view": "wall view 1",
+   "sha256": "7de965665410e61a46f085a07309976caee4465266a7be059bc12894f73f5bed",
+   "frame_count": 417,
+   "frame_indices_per_set": [
+    292,
+    92,
+    180,
+    244,
+    344
+   ],
+   "laplacian_variance_at_frames": [
+    4263.671585975924,
+    4243.541504963411,
+    4170.780739353634,
+    4275.816984467423,
+    4157.242545393322
+   ]
+  },
+  "AR": {
+   "file": "left_air_wall_right.MOV",
+   "stereo_side": "left",
+   "camera": "iPhone Air",
+   "view": "wall view 2 (right part of wall)",
+   "sha256": "98df331179f69d0bb522f03ecc97b9318751ab1d772ff16e7d70c7ac464f7979",
+   "frame_count": 451,
+   "frame_indices_per_set": [
+    308,
+    92,
+    184,
+    276,
+    372
+   ],
+   "laplacian_variance_at_frames": [
+    2856.3463832456046,
+    2864.514383498873,
+    2740.8234016336537,
+    2858.1793451996505,
+    2831.8821175125286
+   ]
+  },
+  "PR": {
+   "file": "right_pro_wall_right.MOV",
+   "stereo_side": "right",
+   "camera": "iPhone 17 Pro Max",
+   "view": "wall view 2",
+   "sha256": "33584a1d8821e4c0e0064df4e170ea500aff3c67ebb40bcd16de5d034ffa7d81",
+   "frame_count": 535,
+   "frame_indices_per_set": [
+    488,
+    120,
+    220,
+    335,
+    436
+   ],
+   "laplacian_variance_at_frames": [
+    3617.43612227834,
+    3436.478526066936,
+    3578.8168709574456,
+    3377.5604764602413,
+    3304.4362856242137
+   ]
+  }
+ }
+}

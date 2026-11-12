@@ -1,0 +1,38 @@
+{
+ "schema": "csc8830.module7.method_j_experiment_reference.v1",
+ "provenance": "Regression reference ONLY: values produced by the validated exploratory scratch analysis of Method J (same frames, Recipe A, 225 mm baseline). The implementation is NOT tuned to them; tests assert agreement within the stated tolerance so that an unintended algorithm change is noticed.",
+ "per_set_width_mm": [
+  2875.922156338371,
+  2879.578148787187,
+  2882.790852318963,
+  2880.6090921524665,
+  2878.930057445046
+ ],
+ "per_set_height_mm": [
+  2376.9997910654583,
+  2380.6618078926986,
+  2382.397175441417,
+  2380.927253366607,
+  2380.060289809747
+ ],
+ "mean_width_mm": 2879.5660614084068,
+ "mean_height_mm": 2380.2092635151857,
+ "method_A_width_mm": 2840.956250672006,
+ "method_A_height_mm": 2347.792011870634,
+ "rodrigues_deg": [
+  -2.7147291362188075,
+  6.206277174009127,
+  -1.3158873252789278
+ ],
+ "yaw_deg": 6.206277174009127,
+ "T_mm": [
+  -222.8860314036401,
+  5.16173823054317,
+  30.334361103786243
+ ],
+ "tolerance": {
+  "dimension_mm": 5.0,
+  "rodrigues_deg": 0.01,
+  "note": "deliberately tight for same-input regression; the physical uncertainty is +-200 mm"
+ }
+}

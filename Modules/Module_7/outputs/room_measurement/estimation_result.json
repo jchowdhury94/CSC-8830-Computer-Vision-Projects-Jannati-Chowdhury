@@ -1,0 +1,796 @@
+{
+ "schema": "csc8830.module7.room_measurement_result.v1",
+ "ground_truth_used": false,
+ "inputs": {
+  "videos": [
+   {
+    "view": "AL",
+    "file": "left_air_wall_left.MOV",
+    "expected_sha256": "93db768c8a5d36225c338357ad7600455b71610bd230972579151bc697fd37b9",
+    "actual_sha256": "93db768c8a5d36225c338357ad7600455b71610bd230972579151bc697fd37b9",
+    "ok": true
+   },
+   {
+    "view": "PL",
+    "file": "right_pro_wall_left.MOV",
+    "expected_sha256": "7de965665410e61a46f085a07309976caee4465266a7be059bc12894f73f5bed",
+    "actual_sha256": "7de965665410e61a46f085a07309976caee4465266a7be059bc12894f73f5bed",
+    "ok": true
+   },
+   {
+    "view": "AR",
+    "file": "left_air_wall_right.MOV",
+    "expected_sha256": "98df331179f69d0bb522f03ecc97b9318751ab1d772ff16e7d70c7ac464f7979",
+    "actual_sha256": "98df331179f69d0bb522f03ecc97b9318751ab1d772ff16e7d70c7ac464f7979",
+    "ok": true
+   },
+   {
+    "view": "PR",
+    "file": "right_pro_wall_right.MOV",
+    "expected_sha256": "33584a1d8821e4c0e0064df4e170ea500aff3c67ebb40bcd16de5d034ffa7d81",
+    "actual_sha256": "33584a1d8821e4c0e0064df4e170ea500aff3c67ebb40bcd16de5d034ffa7d81",
+    "ok": true
+   }
+  ],
+  "frame_indices": [
+   {
+    "AL": 247,
+    "PL": 292,
+    "AR": 308,
+    "PR": 488
+   },
+   {
+    "AL": 51,
+    "PL": 92,
+    "AR": 92,
+    "PR": 120
+   },
+   {
+    "AL": 139,
+    "PL": 180,
+    "AR": 184,
+    "PR": 220
+   },
+   {
+    "AL": 187,
+    "PL": 244,
+    "AR": 276,
+    "PR": 335
+   },
+   {
+    "AL": 247,
+    "PL": 344,
+    "AR": 372,
+    "PR": 436
+   }
+  ],
+  "calibration": {
+   "name": "room_video_recipe_a",
+   "file": "room_video_recipe_a_calibration.json",
+   "sha256": "d6d3b4870229a62c18a5542a5d0611619e2cce4e3258914697e7c0ba91ca5d43",
+   "image_size": [
+    2160,
+    3840
+   ],
+   "physical_baseline_mm": 225.0
+  },
+  "annotations": {
+   "file": "wall_boundary_annotations.json",
+   "sha256": "4a9cdb80330360167f2008589fd9f5fe70b92eceb37dd6a6c09124ee624670b0",
+   "kind": "MANUAL seeds; fitted lines are automatic"
+  },
+  "frame_manifest_sha256": "b1a316da3c05e5a3983fc33a5b3303162048ea7b0230424455219f72de509f9c"
+ },
+ "config": {
+  "feature_matching": {
+   "detector": "SIFT",
+   "nfeatures": 12000,
+   "contrast_threshold": 0.04,
+   "ratio_air_pro": 0.75,
+   "ratio_air_air_cross_view": 0.85,
+   "mutual_check": true,
+   "rng_seed": 0
+  },
+  "pose": {
+   "method": "J: robust epipolar (Sampson) + rigid four-view track reprojection, shared pose over all frame sets",
+   "parameters": "3 rotation + 2 baseline direction (+6 rig-motion per set); |T| fixed at the physical baseline",
+   "loss": "Tukey biweight",
+   "tukey_c": 4.685,
+   "scale": "max(1.4826*MAD, floor)",
+   "scale_floor_px": 0.15,
+   "solver": "Levenberg-Marquardt on IRLS weights, forward-difference Jacobian",
+   "convergence": {
+    "epipolar": {
+     "max_param_step": 1e-09,
+     "rel_cost_change": 1e-10,
+     "max_iter": 100
+    },
+    "joint": {
+     "max_param_step": 1e-08,
+     "rel_cost_change": 1e-09,
+     "max_iter": 60
+    }
+   },
+   "weighting": {
+    "spatial_declustering_grid_px": 128,
+    "per_frame_set_equal_weight": true,
+    "track_block_weight_per_set": "equal to the epipolar block"
+   },
+   "initialization": "IRLS 8-point essential matrix (no RANSAC, no RNG) + cheirality via recoverPose",
+   "degenerate_rule": {
+    "robust_scale_px_gt": 1.0,
+    "inlier_fraction_lt": 0.85,
+    "positive_depth_fraction_lt": 0.98,
+    "not_converged": true
+   },
+   "fallback_start": "parallel cameras, baseline along -x (R = I, t = (-1, 0, 0.001))"
+  },
+  "floor": {
+   "method": "Tukey IRLS plane fit, PCA start, over triangulated points with left-image row > 2600",
+   "iterations": 30
+  },
+  "registration": {
+   "method": "seeded 3-point RANSAC rigid fit, threshold mm",
+   "threshold_mm": 40.0,
+   "iterations": 1500,
+   "rng_seed_per_set": "3 + set index"
+  },
+  "point_gates": {
+   "depth_mm": [
+    800.0,
+    20000.0
+   ],
+   "reprojection_px": 1.5,
+   "epipolar_px": 1.5
+  },
+  "top_corner_variant": 0,
+  "units": "mm",
+  "coordinate_frame": "left (Air) camera frame of each view; view 1 registered into view 2"
+ },
+ "manual_vs_automatic": {
+  "manual": [
+   "frame selection rule (documented)",
+   "boundary-line seeds and search windows",
+   "carpet-edge diagnostic windows",
+   "physical baseline 225 mm",
+   "which wall corners/edges are used"
+  ],
+  "automatic": [
+   "SIFT matches, tracks",
+   "shared stereo pose",
+   "floor planes",
+   "fitted lines",
+   "corners, registration",
+   "width/height",
+   "uncertainty"
+  ]
+ },
+ "pose": {
+  "R": [
+   [
+    0.9938770671475212,
+    0.020348030837023023,
+    0.10860171747857905
+   ],
+   [
+    -0.02547413429068769,
+    0.9986154654904401,
+    0.04602413025198336
+   ],
+   [
+    -0.10751485423131799,
+    -0.048508862328105376,
+    0.9930193585198888
+   ]
+  ],
+  "T_mm": [
+   -222.8860314036401,
+   5.16173823054317,
+   30.334361103786243
+  ],
+  "params": [
+   -0.04738096172683984,
+   0.1083199709778283,
+   -0.0229665664113789,
+   1.435565148101855,
+   -3.1647471586475167
+  ],
+  "rodrigues_deg": [
+   -2.7147291362188075,
+   6.206277174009127,
+   -1.3158873252789278
+  ],
+  "yaw_deg": 6.206277174009127,
+  "baseline_mm": 224.99999999999997,
+  "method_A_rodrigues_deg": [
+   -2.694703264157043,
+   6.250338578368673,
+   -1.3325526834945265
+  ],
+  "report": {
+   "method_A": {
+    "guard": {
+     "first_attempt": {
+      "scale_px": 0.3045139964533445,
+      "inlier_fraction": 0.9643548387096774,
+      "positive_depth_fraction": 1.0,
+      "converged": true,
+      "degenerate": false
+     },
+     "fallback_used": false,
+     "final": {
+      "scale_px": 0.3045139964533445,
+      "inlier_fraction": 0.9643548387096774,
+      "positive_depth_fraction": 1.0,
+      "converged": true,
+      "degenerate": false
+     },
+     "degenerate": false
+    },
+    "iterations": 48,
+    "robust_scale_px": 0.3045139964533445,
+    "n_inlier": 17937,
+    "n_residuals": 18600,
+    "start": "irls8pt"
+   },
+   "method_J": {
+    "flags": {
+     "converged": true,
+     "scale_px": 0.26746223020020315,
+     "inlier_fraction": 0.953594249201278,
+     "degenerate": false
+    },
+    "iterations": 22,
+    "robust_scale_px": 0.26746223020020315,
+    "n_inlier": 23878,
+    "n_residuals": 25040,
+    "n_epipolar": 18600,
+    "n_tracks": 805,
+    "rig_motion_rotvec_deg": [
+     [
+      0.2731773541792152,
+      -30.319437671966547,
+      -1.395457340296375
+     ],
+     [
+      0.27593696137426615,
+      -30.321513864349342,
+      -1.3962160968329556
+     ],
+     [
+      0.26426637607058684,
+      -30.326692038916676,
+      -1.3904819224351392
+     ],
+     [
+      0.2613794887353422,
+      -30.323308033905743,
+      -1.404361049341426
+     ],
+     [
+      0.26026544807258634,
+      -30.32481539542374,
+      -1.3903565049919016
+     ]
+    ],
+    "rig_motion_t_mm": [
+     [
+      47.23057138539324,
+      1.1084030387417014,
+      -30.291046567595775
+     ],
+     [
+      47.2047447070667,
+      1.150180607167867,
+      -30.496943190053734
+     ],
+     [
+      47.77233124762481,
+      0.3612819177627838,
+      -31.47230674820248
+     ],
+     [
+      47.378138939791256,
+      0.6293024076865449,
+      -31.029401849098782
+     ],
+     [
+      47.53211316439302,
+      0.49577945318050287,
+      -30.997397550397313
+     ]
+    ]
+   }
+  }
+ },
+ "per_set": [
+  {
+   "frame_set": 0,
+   "ok": true,
+   "width_mm": 2875.922156338371,
+   "height_mm": 2376.9997910654583,
+   "H1": 2378.5514729247493,
+   "H2": 2375.448109206168,
+   "vertical_error_deg": [
+    0.1951784460767281,
+    1.2564309457955805
+   ],
+   "floor_height_mm": [
+    642.6168041817687,
+    640.2023227566089
+   ],
+   "floor_normals": [
+    [
+     0.008208813661099119,
+     -0.999288160475871,
+     -0.03682102267763227
+    ],
+    [
+     0.003977950312595148,
+     -0.9993337335336067,
+     -0.036280365669228626
+    ]
+   ],
+   "registration": {
+    "rms_mm": 4.546348405679269,
+    "n_inliers": 143,
+    "n_pairs": 144
+   },
+   "R0": [
+    [
+     0.8627637192919305,
+     0.023033410651790927,
+     -0.5050823959190232
+    ],
+    [
+     -0.023023570762334727,
+     0.9997153091892214,
+     0.00626224896116086
+    ],
+    [
+     0.5050828445541454,
+     0.006225959078387999,
+     0.8630484097492142
+    ]
+   ],
+   "t0": [
+    46.76711079536756,
+    -7.63248072835961,
+    -26.112374209810696
+   ],
+   "bottom_corners": {
+    "V1": [
+     -615.2104343128931,
+     510.4574523673029,
+     3461.9507693422847
+    ],
+    "V2": [
+     615.5439822831727,
+     529.4680116747052,
+     3129.397379148882
+    ]
+   },
+   "skew_mm": [
+    8.099807476962411,
+    0.4088606366366054
+   ],
+   "n_points": [
+    1730,
+    1937
+   ]
+  },
+  {
+   "frame_set": 1,
+   "ok": true,
+   "width_mm": 2879.578148787187,
+   "height_mm": 2380.6618078926986,
+   "H1": 2379.2198707078796,
+   "H2": 2382.1037450775175,
+   "vertical_error_deg": [
+    0.17222622136958607,
+    1.2642086901606373
+   ],
+   "floor_height_mm": [
+    642.7563345154715,
+    640.0070893587572
+   ],
+   "floor_normals": [
+    [
+     0.007800943421860908,
+     -0.9992895873121984,
+     -0.03687093667300987
+    ],
+    [
+     0.0047954199263520545,
+     -0.9993409264893239,
+     -0.03598217046246942
+    ]
+   ],
+   "registration": {
+    "rms_mm": 3.3595873251299744,
+    "n_inliers": 144,
+    "n_pairs": 149
+   },
+   "R0": [
+    [
+     0.8626034494558885,
+     0.02173381192701847,
+     -0.5054136230909522
+    ],
+    [
+     -0.02251722933567817,
+     0.9997360560130316,
+     0.004559900278917501
+    ],
+    [
+     0.5053793262192733,
+     0.007447128750745749,
+     0.862865155689765
+    ]
+   ],
+   "t0": [
+    48.24439469677503,
+    -4.792801924478908,
+    -27.27977115379167
+   ],
+   "bottom_corners": {
+    "V1": [
+     -615.5091230794101,
+     510.62358683398213,
+     3463.2683851765973
+    ],
+    "V2": [
+     616.8905742047897,
+     530.4663493268745,
+     3136.2367598323126
+    ]
+   },
+   "skew_mm": [
+    7.105710288687814,
+    1.1845254299123762
+   ],
+   "n_points": [
+    1806,
+    1808
+   ]
+  },
+  {
+   "frame_set": 2,
+   "ok": true,
+   "width_mm": 2882.790852318963,
+   "height_mm": 2382.397175441417,
+   "H1": 2381.7396161956635,
+   "H2": 2383.054734687171,
+   "vertical_error_deg": [
+    0.28352457059122227,
+    1.2846712826591997
+   ],
+   "floor_height_mm": [
+    642.6474508321157,
+    640.1184718209117
+   ],
+   "floor_normals": [
+    [
+     0.008306199844003962,
+     -0.9992863561448451,
+     -0.03684814061672216
+    ],
+    [
+     0.005708818593505369,
+     -0.9993298188647133,
+     -0.036156915218056654
+    ]
+   ],
+   "registration": {
+    "rms_mm": 2.6735669475160955,
+    "n_inliers": 152,
+    "n_pairs": 158
+   },
+   "R0": [
+    [
+     0.8624897662794577,
+     0.019716465135152645,
+     -0.5056902847255232
+    ],
+    [
+     -0.020803379690966572,
+     0.9997774636764076,
+     0.0034989310086565384
+    ],
+    [
+     0.5056467368199267,
+     0.0075022748112937914,
+     0.8627080000881038
+    ]
+   ],
+   "t0": [
+    50.627359363657774,
+    -4.284916455700682,
+    -29.094242664648846
+   ],
+   "bottom_corners": {
+    "V1": [
+     -616.6075398980082,
+     510.0884296424859,
+     3468.3263543915764
+    ],
+    "V2": [
+     616.9487007284052,
+     530.5193682192561,
+     3138.4507003360623
+    ]
+   },
+   "skew_mm": [
+    8.463827477206198,
+    3.554123530354966
+   ],
+   "n_points": [
+    1738,
+    1717
+   ]
+  },
+  {
+   "frame_set": 3,
+   "ok": true,
+   "width_mm": 2880.6090921524665,
+   "height_mm": 2380.927253366607,
+   "H1": 2381.2098065095106,
+   "H2": 2380.6447002237032,
+   "vertical_error_deg": [
+    0.1721950525298358,
+    1.2490594232443384
+   ],
+   "floor_height_mm": [
+    642.5568254654866,
+    640.6075748693339
+   ],
+   "floor_normals": [
+    [
+     0.007893651432973698,
+     -0.9992938410990095,
+     -0.036735669432335465
+    ],
+    [
+     0.004887603568580992,
+     -0.9993264665795236,
+     -0.03636927996317923
+    ]
+   ],
+   "registration": {
+    "rms_mm": 3.1861921121633516,
+    "n_inliers": 138,
+    "n_pairs": 147
+   },
+   "R0": [
+    [
+     0.8626076959948265,
+     0.022351365189617053,
+     -0.505379440900258
+    ],
+    [
+     -0.023195289388750633,
+     0.9997202612628249,
+     0.004623610143734313
+    ],
+    [
+     0.5053414106924828,
+     0.007734060689541499,
+     0.8628848375910786
+    ]
+   ],
+   "t0": [
+    48.172248191286826,
+    -4.7748652267706575,
+    -28.42534983448195
+   ],
+   "bottom_corners": {
+    "V1": [
+     -616.1621480707855,
+     510.74454080135723,
+     3465.5468162678953
+    ],
+    "V2": [
+     616.7506151594898,
+     529.9261728685156,
+     3135.96413268758
+    ]
+   },
+   "skew_mm": [
+    7.154034850313407,
+    1.744190171280569
+   ],
+   "n_points": [
+    1782,
+    1781
+   ]
+  },
+  {
+   "frame_set": 4,
+   "ok": true,
+   "width_mm": 2878.930057445046,
+   "height_mm": 2380.060289809747,
+   "H1": 2379.3791528539314,
+   "H2": 2380.7414267655627,
+   "vertical_error_deg": [
+    0.1993646177291258,
+    1.2529312132722221
+   ],
+   "floor_height_mm": [
+    642.732959137736,
+    639.9424777946737
+   ],
+   "floor_normals": [
+    [
+     0.008283939567905836,
+     -0.9992873297211947,
+     -0.03682674305338315
+    ],
+    [
+     0.004790785629422967,
+     -0.9993385083690799,
+     -0.03604988299170074
+    ]
+   ],
+   "registration": {
+    "rms_mm": 3.0081275337462348,
+    "n_inliers": 156,
+    "n_pairs": 160
+   },
+   "R0": [
+    [
+     0.86256082491367,
+     0.02147167010218495,
+     -0.5054975674593024
+    ],
+    [
+     -0.022368818272709985,
+     0.9997405563891231,
+     0.004296030708563079
+    ],
+    [
+     0.5054586622992344,
+     0.007601795431961491,
+     0.8628173349051811
+    ]
+   ],
+   "t0": [
+    48.902243913439975,
+    -4.648178762863495,
+    -28.338954463079745
+   ],
+   "bottom_corners": {
+    "V1": [
+     -615.4423644968168,
+     510.45809645758663,
+     3463.2539579777235
+    ],
+    "V2": [
+     616.512855385881,
+     530.2191822757911,
+     3135.3114800532935
+    ]
+   },
+   "skew_mm": [
+    8.276511539235138,
+    1.4199504610054685
+   ],
+   "n_points": [
+    1739,
+    1730
+   ]
+  }
+ ],
+ "summary": {
+  "width_mm": 2879.5660614084068,
+  "height_mm": 2380.2092635151857,
+  "width_sd_across_sets_mm": 2.5084796618384018,
+  "height_sd_across_sets_mm": 1.9893573716013653,
+  "n_sets_ok": 5,
+  "n_sets": 5,
+  "method_A_width_mm": 2840.956250672006,
+  "method_A_height_mm": 2347.792011870634,
+  "note": "Spread across sets is small by construction (one shared pose); it is not the measurement uncertainty. See 'uncertainty'."
+ },
+ "uncertainty": {
+  "components_1sigma": {
+   "frame_set_and_matching": {
+    "width_sd_mm": 19.431791355789702,
+    "height_sd_mm": 17.290334953190523
+   },
+   "method_choice_A_vs_J": {
+    "width_sd_mm": 19.30490536820048,
+    "height_sd_mm": 16.208625822275962
+   },
+   "boundary_observations": {
+    "width_sd_mm": 29.928144158612362,
+    "height_sd_mm": 16.806996647944302
+   },
+   "camera_intrinsics": {
+    "width_sd_mm": 106.7889364803263,
+    "height_sd_mm": 93.84666419901257
+   }
+  },
+  "total": {
+   "width": {
+    "estimate_mm": 2879.5660614084068,
+    "sd_mm": 114.23591665473678,
+    "rel_sd": 0.039671226225962516,
+    "interval_95_mm": [
+     2655.6636647651226,
+     3103.468458051691
+    ],
+    "half_width_mm": 223.90239664328408
+   },
+   "height": {
+    "estimate_mm": 2380.2092635151857,
+    "sd_mm": 98.24126806717385,
+    "rel_sd": 0.04127421465543215,
+    "interval_95_mm": [
+     2187.656378103525,
+     2572.7621489268463
+    ],
+    "half_width_mm": 192.55288541166075
+   }
+  },
+  "detail": {
+   "match_bootstrap": {
+    "n_requested": 40,
+    "n_ok": 36,
+    "n_failed": 4,
+    "n_fallback_used": 9,
+    "width_sd_mm": 19.431791355789702,
+    "height_sd_mm": 17.290334953190523,
+    "yaw_sd_deg": 0.023638372451635605,
+    "width_p2_5_p97_5": [
+     2848.238439165284,
+     2911.9304572715737
+    ],
+    "height_p2_5_p97_5": [
+     2352.358144498294,
+     2408.989818555726
+    ]
+   },
+   "method_A": {
+    "width_mm": 2840.956250672006,
+    "height_mm": 2347.792011870634
+   },
+   "boundary": {
+    "n": 300,
+    "width_sd_mm": 29.928144158612362,
+    "height_sd_mm": 16.806996647944302
+   },
+   "intrinsics": {
+    "n_requested": 30,
+    "n_ok": 30,
+    "n_failed": 0,
+    "width_sd_mm": 106.7889364803263,
+    "height_sd_mm": 93.84666419901257,
+    "yaw_sd_deg": 0.06033076123951334,
+    "width_p2_5_p97_5": [
+     2709.2598104955914,
+     3082.802483244059
+    ],
+    "height_p2_5_p97_5": [
+     2233.550503168703,
+     2553.29595737843
+    ]
+   }
+  },
+  "assumptions": {
+   "intrinsics_fx_sd_px": {
+    "air": 10.0,
+    "pro": 5.0
+   },
+   "intrinsics_principal_point_sd_px": 4.0,
+   "boundary_line_sd_px": 2.0,
+   "top_point_sd_px": 3.0,
+   "interval": "+-1.96 sigma of the quadrature total (normal approximation)",
+   "intrinsics_note": "Assumed magnitudes inherited from the exploratory audit; Recipe B (an alternative fit) moves the width by about -9 %, so the true calibration error may be larger or smaller.",
+   "not_included": [
+    "systematic error in the manual boundary seeds shared by all frame sets",
+    "lens-model error beyond the perturbed parameters",
+    "rig motion between non-synchronised Air/Pro frames"
+   ]
+  }
+ }
+}
