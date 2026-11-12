@@ -123,13 +123,21 @@ class HomepageTests(unittest.TestCase):
         self.assertIn("My Experiment & Results", [h.value for h in at.header])
         self.assertFalse(any("Part 1" in h.value for h in at.header))
 
-    def test_question_three_button_opens_placeholder(self):
+    def test_question_three_button_opens_room_landing_with_two_buttons(self):
         at = fresh()
         button(at, Q3).click().run()
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state["module7_part"], "3")
         self.assertEqual(titles(at), [Q3])
         self.assertFalse(any("Part 3" in h.value for h in list(at.header) + list(at.title)))
+        self.assertEqual(labels(at), ["Measure a Room Using Your Own Stereo Videos", "View My Experiment & Results"])
+        self.assertEqual(len(at.info), 0)
+
+    def test_room_visitor_button_opens_the_placeholder(self):
+        at = fresh("3")
+        button(at, "Measure a Room Using Your Own Stereo Videos").click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state["module7_part"], "3_visitor")
         self.assertEqual(len(at.info), 1)
         self.assertTrue(any("not implemented" in i.value.lower() for i in at.info))
 

@@ -223,7 +223,7 @@ class PageStateTests(unittest.TestCase):
 
     def test_part3_placeholder(self):
         at = AppTest.from_file(str(PAGE), default_timeout=60)
-        at.session_state["module7_part"] = "3"
+        at.session_state["module7_part"] = "3_visitor"
         at.run()
         self.assertFalse(at.exception)
         self.assertTrue(any("not implemented" in i.value.lower() for i in at.info))

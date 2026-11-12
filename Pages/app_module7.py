@@ -28,6 +28,7 @@ from stereo_measure.calibration_io import CalibrationFileError, export_calibrati
 from stereo_measure.config import (CORNER_NAMES, IMAGE_SIZE, NOTEBOOK_PAIR_IDS, OUTPUT_DIR,  # noqa: E402
                                    PATTERN, SQUARE_MM)
 from stereo_measure.live import measure_points  # noqa: E402
+from room_measurement import display_data as room_data  # noqa: E402  (JSON/image reader only: no estimator, no ground truth)
 
 DISPLAY_DIR = MODULE_DIR / "display"
 CALIB_SAMPLE_IMAGE = DISPLAY_DIR / "calibration_sample_left_pair_8.jpg"   # optimized crop of left calibration photo 8
@@ -1484,17 +1485,253 @@ def show_experiment(standalone=False):
         st.button("Close experiment", on_click=toggle_experiment)
 
 
-# ---------------------------------------------------------------- Part 3 placeholder
+# ---------------------------------------------------------------- Part 3: Room Measurement Using Stereo Videos
 
-def part_three():
-    # same heading markup and CSS as the Calibrated Stereo landing page (60px maximum)
+ROOM_VISITOR_BUTTON = "Measure a Room Using Your Own Stereo Videos"
+ROOM_RESULTS_BUTTON = "View My Experiment & Results"
+ROOM_CSS = """
+<style>
+.st-key-m7_room_head { gap: 0; padding-bottom: 28px; }
+.st-key-m7_room_head h1 {
+    font-size: clamp(2.5rem, 8vw, 60px); font-weight: 800; line-height: 1.1; text-align: center; padding: 0; margin: 0;
+    color: inherit; overflow-wrap: anywhere;
+}
+.st-key-m7_room_head h2 {
+    font-size: clamp(1.4rem, 4.6vw, 2.4rem); font-weight: 600; line-height: 1.2; text-align: center; padding: 0; margin: 0;
+    color: inherit; opacity: 0.85; overflow-wrap: anywhere;
+}
+.st-key-m7_room_title { padding-bottom: 28px; }
+.st-key-m7_room_intro { padding: 4px 0 8px; }
+.st-key-m7_room_intro p { text-align: center; font-size: 1.1rem; margin: 0; }
+.st-key-m7_room_body h3 { text-align: center; font-size: clamp(1.4rem, 4.5vw, 1.9rem); font-weight: 700; padding-top: 1.5rem; }
+.st-key-m7_room_body h5 { text-align: center; font-weight: 700; margin: 0; padding: 0.5rem 0 0.25rem; }
+.st-key-m7_room_body [data-testid="stMetricValue"] { font-size: 2rem; }
+.st-key-m7_room_body [data-testid="stMetric"] { text-align: left; }
+.st-key-m7_room_body video { width: 100%; max-height: 72vh; object-fit: contain; background: #000; border-radius: 8px; }
+.st-key-m7_room_legend { font-size: 0.9rem; }
+/* "What the cameras saw": shaded panel + button-style tabs, scoped to this one container only */
+.st-key-m7_room_seen, .st-key-m7_room_recordings {
+    background: color-mix(in srgb, currentColor 7%, transparent); border-radius: 14px; padding: 8px 24px 24px;
+}
+.st-key-m7_room_seen [data-baseweb="tab-list"] { gap: 10px; flex-wrap: wrap; padding: 4px 0 12px; }
+.st-key-m7_room_seen [data-baseweb="tab-highlight"], .st-key-m7_room_seen [data-baseweb="tab-border"] { display: none; }
+.st-key-m7_room_seen button[data-baseweb="tab"] {
+    height: auto; padding: 10px 22px; border-radius: 10px; cursor: pointer;
+    background: color-mix(in srgb, currentColor 10%, transparent); border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    transition: background 0.15s, border-color 0.15s;
+}
+.st-key-m7_room_seen button[data-baseweb="tab"] p { font-size: 1.05rem; font-weight: 600; margin: 0; }
+.st-key-m7_room_seen button[data-baseweb="tab"]:hover { background: color-mix(in srgb, currentColor 18%, transparent); border-color: color-mix(in srgb, currentColor 35%, transparent); }
+.st-key-m7_room_seen button[data-baseweb="tab"][aria-selected="true"],
+.st-key-m7_room_seen button[data-baseweb="tab"][aria-selected="true"]:hover { background: #C9363E; border-color: #C9363E; color: #FFFFFF; }
+.st-key-m7_room_seen button[data-baseweb="tab"][aria-selected="true"] p { color: #FFFFFF; }
+.st-key-m7_room_seen button[data-baseweb="tab"]:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+@media (max-width: 640px) {
+    .st-key-m7_room_seen, .st-key-m7_room_recordings { padding: 4px 12px 16px; }
+    .st-key-m7_room_seen button[data-baseweb="tab"] { padding: 8px 14px; flex: 1 1 auto; }
+    .st-key-m7_room_seen button[data-baseweb="tab"] p { font-size: 0.95rem; }
+}
+</style>
+"""
+
+
+def room_landing():
+    """Landing page of Room Measurement: two red buttons (same markup and CSS as the other module landing pages)."""
+    landing(Q3_BUTTON, None, (("3_visitor", "m7_open_room_visitor", ROOM_VISITOR_BUTTON),
+                              ("3_results", "m7_open_room_results", ROOM_RESULTS_BUTTON)))
+
+
+def room_visitor_placeholder():
+    """Explicit placeholder: no upload, no estimator, and the saved experiment is never run on visitors' recordings."""
     st.markdown(HOME_CSS + Q1_TITLE_CSS + Q3_BODY_CSS, unsafe_allow_html=True)
     with st.container(key="m7_home_layout"):
         with st.container(key="m7_home_title"):
-            st.title(Q3_BUTTON, anchor=False)
+            st.title(ROOM_VISITOR_BUTTON, anchor=False)
         with st.container(key="m7_q3_body"):
-            st.info("**Placeholder - not implemented yet.** The room measurement application for Part 3 has not been built, "
-                    "and no Part 3 results are shown here.")
+            st.info("**Placeholder - not implemented yet.** Measuring a room from your own stereo videos has not been designed and "
+                    "validated, so nothing can be uploaded or measured here. The saved experiment is never run on visitor "
+                    "recordings. To see my own validated room experiment, open **View My Experiment & Results**.")
+
+
+def _uncertainty_rows(results):
+    labels = {"frame_set_and_matching": "Frame choice and feature matching", "method_choice_A_vs_J": "Choice of pose method",
+              "boundary_observations": "Boundary-line observations", "camera_intrinsics": "Camera intrinsics (assumed)"}
+    return [{"Source (1 sigma)": labels.get(k, k), "Width (cm)": f"{v['width_sd_mm'] / 10:.1f}", "Height (cm)": f"{v['height_sd_mm'] / 10:.1f}"}
+            for k, v in results["components"].items()]
+
+
+def _dimension_card(title, d):
+    cm, signed = room_data.cm, room_data.signed_cm
+    low, high = d["interval_95_mm"]
+    with st.container(border=True):
+        st.markdown(f"#### {title}")
+        left, right = st.columns(2)
+        left.metric("Estimated (approx.)", f"{cm(d['estimate_mm'])} cm")
+        right.metric("Actual (measured)", f"{cm(d['actual_mm'])} cm")
+        st.write(f"**Observed error:** {signed(d['error_mm'])} cm ({abs(d['abs_error_mm']) / 10:.1f} cm absolute, "
+                 f"{d['error_percent']:+.2f}%)".replace("-", "\u2212"))
+        st.write(f"**Approximate 95% uncertainty interval:** {cm(low)} to {cm(high)} cm")
+
+
+def _room_images():
+    status = room_data.image_status()
+    tabs = st.tabs(["Stereo views", "Boundaries and corners", "Overlapping views"])
+    for tab, name in zip(tabs, ("stereo", "corners", "overlap")):
+        with tab:
+            for path, group, caption, exists in status:
+                if group != name:
+                    continue
+                if exists:
+                    st.image(str(path), caption=caption, width="stretch")
+                else:
+                    st.warning(f"Visualization not available: {path.name} is missing from the committed outputs.")
+            if name == "corners":
+                with st.container(key="m7_room_legend"):
+                    st.markdown(":cyan[**Cyan dots**] directly observed edge points (found automatically near manually placed "
+                                "seeds) &nbsp;|&nbsp; :orange[**Yellow lines**] fitted wall-boundary lines &nbsp;|&nbsp; "
+                                ":red[**Red diamonds (*)**] corners inferred geometrically, never seen directly")
+                st.caption("Upper corners are inferred from the right (Pro) camera only. One floor corner is partly hidden, so "
+                           "bottom corners come from where the reconstructed vertical edge meets the floor plane.")
+
+
+ROOM_STEPS = (
+    ("Stereo video collection", "Two phones (iPhone Air left, iPhone 17 Pro Max right, 225 mm apart) recorded the same wall from two placements."),
+    ("Camera calibration", "Each phone's intrinsics and lens distortion were fitted beforehand from checkerboard videos."),
+    ("Stereo feature matching", "SIFT features are matched between the left and right frames, and between the two placements."),
+    ("Stereo camera pose estimation", "One shared left/right camera pose is jointly refined over all frame sets at once, robustly."),
+    ("Floor-plane reconstruction", "Matched points are triangulated and a robust plane is fitted to the floor."),
+    ("Wall-boundary detection", "Wall edges are located at sub-pixel precision near hand-placed seeds, then fitted with robust lines."),
+    ("Geometric corner inference", "Corners are computed where the fitted edge planes meet the floor and the ceiling line, not triangulated directly."),
+    ("Two-view registration", "Placement 1 is aligned to placement 2 using matched points on the shared floor region."),
+    ("Width and height estimation", "Width is the distance between the two registered bottom corners; height is the mean top height."),
+    ("Validation against physical measurements", "Only after the estimate was saved was it compared with tape-measured dimensions."),
+)
+
+
+def _matrix_frame(matrix):
+    return pd.DataFrame([[f"{v:.4f}" for v in row] for row in matrix], index=["row 1", "row 2", "row 3"], columns=["col 1", "col 2", "col 3"])
+
+
+def _room_calibration():
+    """Collapsed by default: what calibration is, and the stored Recipe A numbers for both phones."""
+    with st.expander("Camera Calibration"):
+        try:
+            cal = room_data.load_calibration()
+        except room_data.ResultsUnavailable as error:
+            st.error(f"Camera calibration details are unavailable. {error}")
+            return
+        st.write("Camera calibration measures each phone's internal geometry: its focal length, where the optical axis meets the "
+                 "image, and how the lens bends straight lines. Stereo measurement needs these numbers to turn image pixels into "
+                 "accurate viewing rays; without them, distances computed from the two cameras would be distorted.")
+        cols, rows = cal["pattern"]
+        st.table(pd.DataFrame({"Setting": ["Left camera", "Right camera", "Video resolution", "Camera baseline",
+                                           "Calibration checkerboard", "Checkerboard square size"],
+                               "Value": [cal["left"]["camera"].split(",")[0], cal["right"]["camera"].split(",")[0],
+                                         f"{cal['width']} \u00d7 {cal['height']} px", f"{cal['baseline_mm']:.0f} mm",
+                                         f"{cols} \u00d7 {rows} inner corners", f"{cal['square_mm']:.0f} mm"]}).set_index("Setting"))
+        st.markdown("**Intrinsic matrices** (pixels)")
+        for column, (side, title) in zip(st.columns(2), (("left", "Left camera"), ("right", "Right camera"))):
+            with column:
+                st.caption(title)
+                st.table(_matrix_frame(cal[side]["K"]))
+        st.markdown("**Lens distortion coefficients** (OpenCV order)")
+        names = ["k1", "k2", "p1", "p2", "k3"]
+        st.table(pd.DataFrame({"Coefficient": names,
+                               "Left camera": [f"{cal['left']['distortion'][n]:.5f}" for n in names],
+                               "Right camera": [f"{cal['right']['distortion'][n]:.5f}" for n in names]}).set_index("Coefficient"))
+        st.caption("Fitted from checkerboard corners in separate calibration videos (the 8 \u00d7 6 board and 20 mm squares are from my "
+                   "capture setup). The 225 mm baseline is the physical spacing of the phones; the cameras' relative rotation for "
+                   "the wall videos is estimated from the wall videos themselves.")
+
+
+def _room_videos():
+    status = room_data.video_status()
+    for group, title in room_data.VIDEO_GROUPS.items():
+        st.markdown(f"##### {title}")
+        members = [item for item in status if item[1] == group]
+        for column, (path, _, label, exists) in zip(st.columns(2), members):
+            with column:
+                st.caption(label)
+                if exists:
+                    st.video(str(path), format="video/mp4")
+                else:
+                    st.info(f"Video not available: {path.name} is not included in this deployment. "
+                            "The measurement results below do not depend on it.")
+    st.caption("Playback copies of my original recordings: every frame and the original timing are kept, resized and re-encoded "
+               "as H.264 without audio.")
+
+
+def room_results():
+    st.markdown(ROOM_CSS, unsafe_allow_html=True)
+    with st.container(key="m7_room_head"):
+        with st.container(key="m7_room_title"):
+            st.title("My Experiment & Results", anchor=False)
+        st.header(Q3_BUTTON, anchor=False)
+    with st.container(key="m7_room_body"):
+        try:
+            results = room_data.load_results()
+        except room_data.ResultsUnavailable as error:
+            st.error(f"Room measurement results are unavailable. {error} The saved results are read from "
+                     "Modules/Module_7/outputs/room_measurement/.")
+            return
+        with st.container(key="m7_room_intro"):
+            st.write("This experiment estimates wall dimensions using stereo videos captured from two different viewpoints.")
+        with st.expander("About this measurement"):
+            st.markdown("- This is a stereo-assisted geometric measurement, **not** direct triangulation of all four wall corners.\n"
+                        "- Some corners are **inferred** geometrically from fitted wall edges, the floor plane and the camera pose; "
+                        "they are not seen directly.\n"
+                        "- It is an approximate educational experiment, not a precision measurement system.\n"
+                        "- The accuracy shown is observed on this one room; it is not a guarantee for other rooms or setups.")
+        _room_calibration()
+
+        with st.container(key="m7_room_recordings"):
+            st.subheader("The Stereo Recordings", anchor=False)
+            _room_videos()
+
+        st.subheader("Results", anchor=False)
+        for column, (title, key) in zip(st.columns(2), (("Wall width", "width"), ("Wall height", "height"))):
+            with column:
+                _dimension_card(title, results[key])
+        st.info("**How to read these numbers.** The observed error is one comparison against one tape measurement. It describes this "
+                "run only and is **not** a guaranteed accuracy. The 95% intervals are approximate and rely partly on **assumed** "
+                "camera-intrinsics uncertainty, which dominates them; the true calibration error may be larger or smaller.")
+        if not (results["width"]["actual_inside_interval"] and results["height"]["actual_inside_interval"]):
+            st.warning("At least one actual dimension lies outside its saved uncertainty interval.")
+
+        with st.container(key="m7_room_seen"):
+            st.subheader("What the cameras saw", anchor=False)
+            _room_images()
+
+        with st.expander("How it works"):
+            st.markdown("\n".join(f"{i}. **{title}** - {text}" for i, (title, text) in enumerate(ROOM_STEPS, 1)))
+
+        with st.expander("Technical details: joint stereo pose refinement"):
+            pose = results["pose"]
+            st.write(f"The pose has 5 free parameters (3 rotation, 2 baseline direction); the baseline length is fixed at "
+                     f"{pose['baseline_mm']:.0f} mm. It was fitted to {pose['n_epipolar']:,} stereo matches and {pose['n_tracks']} "
+                     f"four-view tracks from {results['n_frame_sets']} frame sets ({results['n_sets_ok']} succeeded). "
+                     f"Robust residual scale {pose['robust_scale_px']:.2f} px, inlier fraction {pose['inlier_fraction']:.1%}, "
+                     f"estimated yaw between cameras {pose['yaw_deg']:.1f} deg. No measured room dimension and no camera height "
+                     "enters this fit.")
+            st.caption("The frame sets are correlated captures of one rig placement, not independent experiments.")
+        with st.expander("Technical details: how the uncertainty interval is built"):
+            st.table(pd.DataFrame(_uncertainty_rows(results)).set_index("Source (1 sigma)"))
+            a = results["assumptions"]
+            st.write(f"Components are combined in quadrature and reported at +/-1.96 sigma. Intrinsics uncertainty is **assumed**: "
+                     f"focal length +/-{a['intrinsics_fx_sd_px']['air']:.0f} px (Air) and +/-{a['intrinsics_fx_sd_px']['pro']:.0f} px "
+                     f"(Pro), principal point +/-{a['intrinsics_principal_point_sd_px']:.0f} px.")
+            st.write("**Not included:** " + "; ".join(a["not_included"]) + ".")
+        with st.expander("Technical details: what was manual and what was automatic"):
+            st.write("**Manual:** " + "; ".join(results["manual"]) + ".")
+            st.write("**Automatic:** " + "; ".join(results["automatic"]) + ".")
+            st.write("The ground-truth dimensions were applied only after the estimate was complete and never entered any fit, "
+                     "selection or tuning.")
+        with st.expander("Limitations"):
+            st.markdown("- One room, one rig, one pair of wall placements; no claim of general accuracy.\n"
+                        "- Wall-boundary seeds were placed by hand; their systematic error is not in the interval.\n"
+                        "- Left and right frames are not synchronised, and one floor corner is partly hidden.\n"
+                        "- The result is sensitive to the camera calibration.")
+            st.caption(results["assumptions"]["intrinsics_note"])
 
 
 # ---------------------------------------------------------------- page
@@ -1503,7 +1740,7 @@ HOME_TITLE = "Module 7"
 HOME_SUBTITLE = "Stereo Vision"
 Q1_TITLE = "Calibrated Stereo Object Measurement"
 Q3_BUTTON = "Room Measurement Using Stereo Videos"
-HOME_BUTTON_KEYS = ("m7_open_q1", "m7_open_q3", "m7_open_measure", "m7_open_experiment")
+HOME_BUTTON_KEYS = ("m7_open_q1", "m7_open_q3", "m7_open_measure", "m7_open_experiment", "m7_open_room_visitor", "m7_open_room_results")
 
 
 def _buttons(suffix=""):
@@ -1701,7 +1938,9 @@ def landing(title, subtitle, buttons):
 _M7, _Q1 = ("Module 7", "home"), ("Stereo Object Measurement", "q1_home")
 CRUMBS = {"home": (_M7,), "q1_home": (_M7, _Q1), "1": (_M7, _Q1, ("Your Own Stereo Cameras", "1")),
           "experiment": (_M7, _Q1, ("My Experiment & Results", "experiment")),
-          "3": (_M7, ("Room Measurement", "3"))}
+          "3": (_M7, ("Room Measurement", "3")),
+          "3_visitor": (_M7, ("Room Measurement", "3"), ("Your Own Stereo Videos", "3_visitor")),
+          "3_results": (_M7, ("Room Measurement", "3"), ("My Experiment & Results", "3_results"))}
 
 init_state()
 view = st.session_state["module7_part"]
@@ -1721,6 +1960,14 @@ else:
         show_experiment(standalone=True)
         st.write("")
         back_button("m7_back_bottom", select_part, ("q1_home",))
+    elif view == "3_visitor":
+        room_visitor_placeholder()
+        st.write("")
+        back_button("m7_back_bottom_room_visitor", select_part, ("3",))
+    elif view == "3_results":
+        room_results()
+        st.write("")
+        back_button("m7_back_bottom_room", select_part, ("3",))
     else:
-        part_three()    # Question 3 placeholder
+        room_landing()
     save_inputs()

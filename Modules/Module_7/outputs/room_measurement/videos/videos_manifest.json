@@ -1,0 +1,78 @@
+{
+ "schema": "csc8830.module7.room_display_videos.v1",
+ "codec": "H.264 (libx264) main, yuv420p, faststart",
+ "crf": 25,
+ "audio": "removed",
+ "videos": {
+  "AL": {
+   "file": "left_air_wall_left.mp4",
+   "source": "left_air_wall_left.MOV",
+   "source_sha256": "93db768c8a5d36225c338357ad7600455b71610bd230972579151bc697fd37b9",
+   "frames": 328,
+   "fps": 30.0,
+   "duration_s": 10.933,
+   "size": [
+    720,
+    1280
+   ],
+   "bytes": 590370,
+   "source_size": [
+    2160,
+    3840
+   ]
+  },
+  "PL": {
+   "file": "right_pro_wall_left.mp4",
+   "source": "right_pro_wall_left.MOV",
+   "source_sha256": "7de965665410e61a46f085a07309976caee4465266a7be059bc12894f73f5bed",
+   "frames": 417,
+   "fps": 30.0,
+   "duration_s": 13.9,
+   "size": [
+    720,
+    1280
+   ],
+   "bytes": 1225368,
+   "source_size": [
+    2160,
+    3840
+   ]
+  },
+  "AR": {
+   "file": "left_air_wall_right.mp4",
+   "source": "left_air_wall_right.MOV",
+   "source_sha256": "98df331179f69d0bb522f03ecc97b9318751ab1d772ff16e7d70c7ac464f7979",
+   "frames": 451,
+   "fps": 30.0,
+   "duration_s": 15.033,
+   "size": [
+    720,
+    1280
+   ],
+   "bytes": 819216,
+   "source_size": [
+    2160,
+    3840
+   ]
+  },
+  "PR": {
+   "file": "right_pro_wall_right.mp4",
+   "source": "right_pro_wall_right.MOV",
+   "source_sha256": "33584a1d8821e4c0e0064df4e170ea500aff3c67ebb40bcd16de5d034ffa7d81",
+   "frames": 535,
+   "fps": 30.0,
+   "duration_s": 17.833,
+   "size": [
+    720,
+    1280
+   ],
+   "bytes": 1713212,
+   "source_size": [
+    2160,
+    3840
+   ]
+  }
+ },
+ "total_bytes": 4348166,
+ "note": "Re-encoded copies of the original recordings (all frames, same timing/orientation, downscaled); originals untouched."
+}

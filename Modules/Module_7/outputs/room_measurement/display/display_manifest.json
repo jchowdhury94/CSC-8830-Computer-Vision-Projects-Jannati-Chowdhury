@@ -1,0 +1,51 @@
+{
+ "schema": "csc8830.module7.room_display_images.v1",
+ "frame_set": 0,
+ "frame_indices": {
+  "AL": 247,
+  "PL": 292,
+  "AR": 308,
+  "PR": 488
+ },
+ "ground_truth_used": false,
+ "reproduces_committed_estimate": true,
+ "bytes": {
+  "view1_stereo_pair.jpg": 154851,
+  "view1_boundaries_corners.jpg": 160941,
+  "view2_stereo_pair.jpg": 149316,
+  "view2_boundaries_corners.jpg": 154696,
+  "overlapping_views.jpg": 152024
+ },
+ "total_bytes": 771828,
+ "n_cross_view_matches_total": 1652,
+ "n_cross_view_matches_drawn": 24,
+ "corners_drawn_in_frame": {
+  "V1": {
+   "AL": {
+    "bottom": true,
+    "top": true
+   },
+   "PL": {
+    "bottom": true,
+    "top": true
+   }
+  },
+  "V2": {
+   "AR": {
+    "bottom": true,
+    "top": false
+   },
+   "PR": {
+    "bottom": true,
+    "top": true
+   }
+  }
+ },
+ "layers": {
+  "observed": "cyan dots: automatically located edge points near manually seeded boundaries",
+  "fitted": "yellow lines: robust line fits through the observed edge points",
+  "inferred": "red diamonds (labels end with *): corners computed geometrically (a corner outside a camera's frame is not drawn)",
+  "matches": "green: sample of cross-view SIFT matches between the two left-camera placements"
+ },
+ "note": "Grayscale frames undistorted with the Recipe A intrinsics, downscaled to 480 px per panel; derived from the original videos, which are not modified."
+}
