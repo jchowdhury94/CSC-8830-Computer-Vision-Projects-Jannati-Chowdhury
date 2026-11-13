@@ -1,0 +1,168 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  :root { --fg:#1f2937; --muted:#6b7280; --bg:transparent; --bar:#e5e7eb; --fill:#2563eb; --ok:#15803d; --err:#b91c1c; --btn:#f3f4f6; --bd:#d1d5db; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e5e7eb; --muted:#9ca3af; --bar:#374151; --fill:#60a5fa; --ok:#4ade80; --err:#f87171; --btn:#1f2937; --bd:#4b5563; } }
+  html, body { margin:0; padding:0; background:var(--bg); color:var(--fg); font:14px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #box { padding:4px 2px 6px; }
+  input[type=file] { font:inherit; color:var(--fg); max-width:100%; }
+  button { font:inherit; color:var(--fg); background:var(--btn); border:1px solid var(--bd); border-radius:6px; padding:3px 12px; cursor:pointer; margin-top:6px; }
+  button[hidden] { display:none; }
+  #bar { height:10px; background:var(--bar); border-radius:5px; overflow:hidden; margin:8px 0 4px; }
+  #fill { height:100%; width:0; background:var(--fill); transition:width .15s; }
+  #status { min-height:20px; } #stats { color:var(--muted); font-size:12px; }
+  .ok { color:var(--ok); } .err { color:var(--err); }
+</style></head>
+<body>
+<div id="box">
+  <input id="file" type="file" accept="video/*,.mov,.mp4,.m4v,.hevc" aria-label="Select a video file">
+  <div id="bar"><div id="fill"></div></div>
+  <div id="status">Select a video file to upload in chunks.</div>
+  <div id="stats"></div>
+  <button id="cancel" hidden>Cancel upload</button> <button id="retry" hidden>Retry</button>
+</div>
+<script>
+// ---- Streamlit component protocol v1 (no build step, no dependencies) -------------------------------------------------------------
+function send(type, data) { window.parent.postMessage(Object.assign({isStreamlitMessage: true, type}, data), "*"); }
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---- incremental SHA-256 (Web Crypto cannot hash a stream; an 800 MB file must not be held in memory) ------------------------------
+const K = new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+class Sha256 {
+  constructor() { this.h = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]); this.buf = new Uint8Array(64); this.bl = 0; this.len = 0; this.w = new Uint32Array(64); }
+  _block(b, o) {
+    const w = this.w, h = this.h;
+    for (let i = 0; i < 16; i++) { const j = o + i * 4; w[i] = (b[j] << 24) | (b[j+1] << 16) | (b[j+2] << 8) | b[j+3]; }
+    for (let i = 16; i < 64; i++) {
+      const a = w[i-15], c = w[i-2];
+      const s0 = ((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3);
+      const s1 = ((c >>> 17) | (c << 15)) ^ ((c >>> 19) | (c << 13)) ^ (c >>> 10);
+      w[i] = (w[i-16] + s0 + w[i-7] + s1) | 0;
+    }
+    let a = h[0], b2 = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+    for (let i = 0; i < 64; i++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const t1 = (hh + S1 + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const t2 = (S0 + ((a & b2) ^ (a & c) ^ (b2 & c))) | 0;
+      hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b2; b2 = a; a = (t1 + t2) | 0;
+    }
+    h[0] = (h[0] + a) | 0; h[1] = (h[1] + b2) | 0; h[2] = (h[2] + c) | 0; h[3] = (h[3] + d) | 0;
+    h[4] = (h[4] + e) | 0; h[5] = (h[5] + f) | 0; h[6] = (h[6] + g) | 0; h[7] = (h[7] + hh) | 0;
+  }
+  update(data) {
+    this.len += data.length; let i = 0;
+    if (this.bl) { while (i < data.length && this.bl < 64) this.buf[this.bl++] = data[i++]; if (this.bl === 64) { this._block(this.buf, 0); this.bl = 0; } }
+    while (i + 64 <= data.length) { this._block(data, i); i += 64; }
+    while (i < data.length) this.buf[this.bl++] = data[i++];
+    return this;
+  }
+  hex() {                                    // non-destructive: works on a copy of the state
+    const c = new Sha256(); c.h.set(this.h); c.buf.set(this.buf); c.bl = this.bl; c.len = this.len;
+    const bits = c.len * 8, hi = Math.floor(bits / 4294967296), lo = bits >>> 0;
+    const pad = new Uint8Array(((c.bl < 56 ? 56 : 120) - c.bl) + 8); pad[0] = 0x80;
+    const n = pad.length; pad[n-8] = hi >>> 24; pad[n-7] = hi >>> 16; pad[n-6] = hi >>> 8; pad[n-5] = hi; pad[n-4] = lo >>> 24; pad[n-3] = lo >>> 16; pad[n-2] = lo >>> 8; pad[n-1] = lo;
+    const keep = c.len; c.update(pad); c.len = keep;
+    return Array.from(c.h, (x) => (x >>> 0).toString(16).padStart(8, "0")).join("");
+  }
+}
+const sha256hex = (u8) => new Sha256().update(u8).hex();
+function bytesToB64(u8) { let s = ""; const step = 0x8000; for (let i = 0; i < u8.length; i += step) s += String.fromCharCode.apply(null, u8.subarray(i, i + step)); return btoa(s); }
+
+// ---- state ------------------------------------------------------------------------------------------------------------------------
+const clientId = Math.random().toString(36).slice(2, 10);
+let args = {}, lastEpoch = null, counter = 0, cancelled = false, running = false, currentFile = null, uploadId = null, abortToken = 0;
+const waiters = new Map();
+const ACK_TIMEOUT_MS = 60000, ATTEMPTS = 3, CHUNK_RETRIES = 3;
+
+window.addEventListener("message", (ev) => {
+  if (!ev.data || ev.data.type !== "streamlit:render") return;
+  args = ev.data.args || {};
+  if (args.epoch !== lastEpoch) { const first = lastEpoch === null; lastEpoch = args.epoch; if (!first) resetUI(); }
+  const ack = args.ack;
+  if (ack && ack.msg_id && waiters.has(ack.msg_id)) { const w = waiters.get(ack.msg_id); waiters.delete(ack.msg_id); w(ack); }
+});
+
+function setStatus(text, cls) { const s = $("status"); s.textContent = text; s.className = cls || ""; }
+function setProgress(f) { $("fill").style.width = Math.max(0, Math.min(1, f)) * 100 + "%"; }
+function resetUI() { abortToken++; cancelled = true; running = false; currentFile = null; uploadId = null; $("file").value = ""; setProgress(0); setStatus("Select a video file to upload in chunks."); $("stats").textContent = ""; $("cancel").hidden = true; $("retry").hidden = true; }
+
+async function rpc(msg) {                    // one message in flight; retransmits with the SAME msg_id (the server answers from its cache)
+  const id = clientId + "-" + (++counter);
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    const p = new Promise((res) => waiters.set(id, res));
+    send("streamlit:setComponentValue", {value: Object.assign({}, msg, {msg_id: id, attempt}), dataType: "json"});
+    const ack = await Promise.race([p, sleep(ACK_TIMEOUT_MS).then(() => null)]);
+    if (ack) return ack;
+  }
+  waiters.delete(id);
+  throw new Error("The server did not respond. Check the connection and press Retry.");
+}
+
+function pct(sorted, p) { return sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))] : null; }
+
+async function upload(file) {
+  const token = ++abortToken; cancelled = false; running = true; currentFile = file;
+  $("cancel").hidden = false; $("retry").hidden = true; $("file").disabled = true; setProgress(0);
+  const chunkSize = args.chunk_size, lat = [], t0 = performance.now(); let retries = 0, hashMs = 0;
+  const alive = () => token === abortToken && !cancelled;
+  try {
+    if (file.size > args.max_file_bytes) throw new Error("This file is larger than the " + Math.round(args.max_file_bytes / 1048576) + " MB limit.");
+    setStatus("Starting…");
+    const a0 = await rpc({type: "init", name: file.name, size: file.size, chunk_size: chunkSize, fingerprint: [file.name, file.size, file.lastModified].join("|")});
+    if (!a0.ok) throw new Error(a0.message || a0.error);
+    uploadId = a0.upload_id;
+    const total = a0.n_chunks, fileHash = new Sha256(); let next = a0.next_index;
+    for (let i = 0; i < next && alive(); i++) {                                 // resumed: re-read (not re-send) the chunks the server already has
+      const h0 = performance.now(); fileHash.update(new Uint8Array(await file.slice(i * chunkSize, Math.min(file.size, (i + 1) * chunkSize)).arrayBuffer())); hashMs += performance.now() - h0;
+      setProgress(i / total); setStatus("Resuming: verifying " + (i + 1) + " / " + next + " chunks already received…");
+    }
+    const tSend = performance.now();
+    for (let i = next; i < total && alive(); i++) {
+      const buf = new Uint8Array(await file.slice(i * chunkSize, Math.min(file.size, (i + 1) * chunkSize)).arrayBuffer());
+      const h0 = performance.now(); const digest = sha256hex(buf); hashMs += performance.now() - h0;
+      const data = bytesToB64(buf);
+      let ack = null;
+      for (let tries = 0; tries <= CHUNK_RETRIES; tries++) {
+        const t1 = performance.now();
+        ack = await rpc({type: "chunk", upload_id: uploadId, index: i, sha256: digest, data});
+        lat.push(performance.now() - t1);
+        if (ack.ok || ack.error !== "corrupt_chunk" || tries === CHUNK_RETRIES) break;
+        retries++;
+      }
+      if (!alive()) break;
+      if (!ack.ok) throw new Error(ack.message || ack.error);
+      const h1 = performance.now(); fileHash.update(buf); hashMs += performance.now() - h1;
+      setProgress((i + 1) / total);
+      const el = (performance.now() - tSend) / 1000, sent = (i + 1 - next) * chunkSize;
+      setStatus("Uploading… " + (i + 1) + " / " + total + " chunks (" + Math.round(100 * (i + 1) / total) + "%)");
+      $("stats").textContent = (sent / 1048576 / Math.max(el, 1e-3)).toFixed(2) + " MB/s · mean ack " + (lat.reduce((s, x) => s + x, 0) / lat.length).toFixed(0) + " ms";
+    }
+    if (!alive()) return;
+    setStatus("Verifying checksum…");
+    const sorted = lat.slice().sort((x, y) => x - y), dur = (performance.now() - tSend) / 1000;
+    const stats = {chunks_sent: lat.length, chunk_retries: retries, upload_s: +dur.toFixed(3), mb_per_s: +((file.size - next * chunkSize) / 1048576 / Math.max(dur, 1e-3)).toFixed(3),
+                   ack_ms_mean: lat.length ? +(lat.reduce((s, x) => s + x, 0) / lat.length).toFixed(1) : null, ack_ms_p50: pct(sorted, 0.5), ack_ms_p95: pct(sorted, 0.95), ack_ms_max: sorted.length ? sorted[sorted.length - 1] : null,
+                   hash_ms_total: +hashMs.toFixed(0), total_s: +((performance.now() - t0) / 1000).toFixed(3), resumed_from_chunk: next};
+    const fin = await rpc({type: "finish", upload_id: uploadId, sha256: fileHash.hex(), client_stats: stats});
+    if (!fin.ok) throw new Error(fin.message || fin.error);
+    setProgress(1); setStatus("Uploaded and verified (SHA-256 " + fin.sha256.slice(0, 12) + "…).", "ok");
+  } catch (e) {
+    if (token === abortToken) { setStatus(String(e.message || e), "err"); $("retry").hidden = false; }
+  } finally {
+    if (token === abortToken) { running = false; $("cancel").hidden = true; $("file").disabled = false; }
+  }
+}
+
+$("file").addEventListener("change", (ev) => { const f = ev.target.files && ev.target.files[0]; if (f && !running) upload(f); });
+$("retry").addEventListener("click", () => { if (currentFile && !running) upload(currentFile); });
+$("cancel").addEventListener("click", async () => {
+  cancelled = true; const id = uploadId; $("cancel").hidden = true; setStatus("Cancelling…");
+  try { if (id) await rpc({type: "cancel", upload_id: id}); } catch (e) { /* the server expires it anyway */ }
+  running = false; uploadId = null; $("file").disabled = false; $("file").value = ""; currentFile = null; setProgress(0); setStatus("Upload cancelled. The temporary file was deleted.");
+});
+
+send("streamlit:componentReady", {apiVersion: 1});
+send("streamlit:setFrameHeight", {height: 128});
+</script></body></html>

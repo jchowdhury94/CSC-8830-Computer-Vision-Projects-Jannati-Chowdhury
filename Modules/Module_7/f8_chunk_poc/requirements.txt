@@ -1,0 +1,4 @@
+# Dependencies of the ISOLATED F8 chunked-upload PoC only (Streamlit Cloud reads the file next to the entrypoint first). Same pins as the main app.
+streamlit==1.64.0
+numpy==2.5.3
+opencv-python-headless==5.0.0.93
