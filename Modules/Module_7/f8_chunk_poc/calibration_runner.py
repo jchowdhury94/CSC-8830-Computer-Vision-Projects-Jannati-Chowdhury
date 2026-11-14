@@ -59,7 +59,7 @@ class RunnerLimits:
     max_cgroup_fraction: float = 0.90          # kill if container ANONYMOUS memory (not page cache) exceeds this fraction of the cgroup limit
     result_max_bytes: int = 32 * MiB
     inspect_timeout_s: float = 60.0            # per-video sandboxed inspection
-    allow_full: bool = True                    # may a FULL calibration be started at all? (the app turns this off unless F8_ENABLE_FULL_CALIBRATION=1)
+    allow_full: bool = False                   # may a FULL calibration be started at all? Safe default OFF; from_env() enables it only with F8_ENABLE_FULL_CALIBRATION=1
     benchmark_timeout_s: float = 300.0         # wall clock for a benchmark worker
     benchmark_frames: int = 600                # frames per video the benchmark reads (every STRIDE-th gets a detection attempt)
     benchmark_frames_cap: int = 3000           # hard ceiling whatever is asked for

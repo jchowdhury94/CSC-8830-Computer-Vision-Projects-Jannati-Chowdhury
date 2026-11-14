@@ -267,3 +267,10 @@ def test_memory_guard_counts_shared_memory_but_not_page_cache(store, monkeypatch
     monkeypatch.setattr(CR, "read_cgroup", cg(anon_mb=300.0, shmem_mb=None, memory_current_mb=990.0)); assert r._guard({}) is None      # reclaimable page cache alone never trips it
     monkeypatch.setattr(CR, "read_cgroup", cg(memory_current_mb=950.0)); assert "memory guard" in r._guard({})                           # no anon breakdown: fall back to total
     monkeypatch.setattr(CR, "read_cgroup", lambda: dict(version=None, memory_max_mb=None, anon_mb=None, shmem_mb=None, memory_current_mb=None)); assert r._guard({}) is None   # no cgroup: no guess
+
+
+def test_full_calibration_is_off_by_default_even_for_a_directly_constructed_runner(store, syn):
+    assert RunnerLimits().allow_full is False and RunnerLimits.from_env({}).allow_full is False
+    put_pair(store, syn["left"], syn["right"]); snap = fingerprint(store)
+    r = CalibrationJobRunner(store, A, SETTINGS, monitor_interval=0.25, worker_cmd=lambda *a: pytest.fail("a worker was started")); r.start(); r.join(30)   # default limits, default mode
+    assert r.result["outcome"] == "rejected" and "disabled" in r.result["error"] and fingerprint(store) == snap
