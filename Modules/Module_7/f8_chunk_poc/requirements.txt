@@ -2,3 +2,5 @@
 streamlit==1.64.0
 numpy==2.5.3
 opencv-python-headless==5.0.0.93
+# Imported by stereo_measure/user_calibration.py (F7 dependency chain); pinned explicitly instead of relying on Streamlit's own pillow<13 requirement.
+pillow==12.3.0

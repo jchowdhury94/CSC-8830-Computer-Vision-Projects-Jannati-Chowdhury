@@ -46,3 +46,19 @@ Without `F8_PASSCODE` the app shows "locked" and nothing else (try it: start wit
 3. share.streamlit.io → *Create app* → main file `Modules/Module_7/f8_chunk_poc/app.py`, Python **3.12** (numpy 2.5.3 needs ≥ 3.12; the version cannot be changed later).
 4. Advanced settings → Secrets: paste `F8_PASSCODE = "<your long random passcode>"` (never in the repo). The app stays locked until this exists.
 5. Run the Cloud test plan from small to large; delete the app and the branch afterwards.
+
+## F8.7 — isolated Cloud calibration test (benchmark first)
+Pick **Dual-video calibration** after unlocking. Upload LEFT and RIGHT (each SHA-256-verified), then press **Run benchmark**. The benchmark calls the
+existing F7 `extract_detections(..., max_frames=N)` unchanged on the first N frames of each video (default 600, hard cap 3000, own 300 s timeout) and stops:
+nothing is solved. It reports frames processed, checkerboard detections, wall clock, CPU use and cgroup throttling, worker / process-tree / container
+memory, temporary-disk use (and whether `/tmp` is memory-backed), and timeout / cancel status, plus a labelled linear estimate for the full recordings.
+Unavailable measurements (no cgroup, no `/proc`, no PSS) are shown as "not measurable", never guessed.
+
+* The videos are strictly read-only to the worker: it opens them `rb`, only accepts paths inside the upload store, and compares SHA-256 against the value
+  verified at upload before and (benchmark) after reading. Uploads are **kept** after a benchmark so a full run needs no re-upload; they are still deleted
+  by *Lock this session*, by the retention sweep, or by a full run.
+* A **full calibration is OFF unless `F8_ENABLE_FULL_CALIBRATION=1`** is set, and then still needs a ticked confirmation and a click. Nothing starts it automatically.
+* Settings (environment or Streamlit secrets-to-env): `F8_CALIB_TIMEOUT_S` (full run, 60–14400, default 3600, never beyond the lease limit),
+  `F8_BENCH_TIMEOUT_S` (10–900, default 300), `F8_BENCH_FRAMES` (30–3000, default 600).
+* Dependencies: the F7 chain needs only `visitor_workflow/f7_calibration.py`, `room_measurement/{visitor_calibration,visitor_video_validation}.py` and the tracked
+  `stereo_measure` / `room_measurement` packages; `pillow` is pinned in `requirements.txt` (imported by `stereo_measure/user_calibration.py`).

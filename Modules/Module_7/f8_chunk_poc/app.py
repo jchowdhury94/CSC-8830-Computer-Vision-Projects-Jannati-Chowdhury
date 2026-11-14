@@ -75,6 +75,11 @@ if not ss.get("authed"):
     st.stop()
 
 store, baseline = get_store()
+mode = st.radio("Test", ["Single upload", "Dual-video calibration"], horizontal=True, key="f8_mode", label_visibility="collapsed")
+if mode == "Dual-video calibration":                        # F8.5: two slots, a lease, and the F7 functions in a worker process
+    import dual_page
+    dual_page.render(store, ss, store.limits)
+    st.stop()
 ss.setdefault("proto", {})                                 # last message id + ack (a few hundred bytes)
 ss.setdefault("epoch", 0)
 ss["runs"] = ss.get("runs", 0) + 1                         # script executions in this session (reruns)

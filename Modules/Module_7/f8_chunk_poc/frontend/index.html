@@ -15,6 +15,7 @@
 </style></head>
 <body>
 <div id="box">
+  <div id="label" style="font-weight:600;margin-bottom:2px" hidden></div>
   <input id="file" type="file" accept="video/*,.mov,.mp4,.m4v,.hevc" aria-label="Select a video file">
   <div id="bar"><div id="fill"></div></div>
   <div id="status">Select a video file to upload in chunks.</div>
@@ -79,6 +80,7 @@ const ACK_TIMEOUT_MS = 60000, ATTEMPTS = 3, CHUNK_RETRIES = 3;
 window.addEventListener("message", (ev) => {
   if (!ev.data || ev.data.type !== "streamlit:render") return;
   args = ev.data.args || {};
+  if (args.label) { const L = $("label"); L.textContent = args.label; L.hidden = false; }
   if (args.epoch !== lastEpoch) { const first = lastEpoch === null; lastEpoch = args.epoch; if (!first) resetUI(); }
   const ack = args.ack;
   if (ack && ack.msg_id && waiters.has(ack.msg_id)) { const w = waiters.get(ack.msg_id); waiters.delete(ack.msg_id); w(ack); }
@@ -110,7 +112,7 @@ async function upload(file) {
   try {
     if (file.size > args.max_file_bytes) throw new Error("This file is larger than the " + Math.round(args.max_file_bytes / 1048576) + " MB limit.");
     setStatus("Starting…");
-    const a0 = await rpc({type: "init", name: file.name, size: file.size, chunk_size: chunkSize, fingerprint: [file.name, file.size, file.lastModified].join("|")});
+    const a0 = await rpc({type: "init", name: file.name, size: file.size, chunk_size: chunkSize, slot: args.slot || null, fingerprint: [file.name, file.size, file.lastModified].join("|")});
     if (!a0.ok) throw new Error(a0.message || a0.error);
     uploadId = a0.upload_id;
     const total = a0.n_chunks, fileHash = new Sha256(); let next = a0.next_index;
@@ -164,5 +166,5 @@ $("cancel").addEventListener("click", async () => {
 });
 
 send("streamlit:componentReady", {apiVersion: 1});
-send("streamlit:setFrameHeight", {height: 128});
+send("streamlit:setFrameHeight", {height: 150});
 </script></body></html>

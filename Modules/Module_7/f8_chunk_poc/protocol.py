@@ -49,7 +49,7 @@ def _dispatch(store: ChunkStore, owner: str, msg: dict) -> dict:
     if kind not in MSG_TYPES:
         raise UploadError("bad_request", "Unknown message type.")
     if kind == "init":
-        return store.begin(owner, msg.get("name"), msg.get("size"), msg.get("chunk_size"), msg.get("fingerprint", ""))
+        return store.begin(owner, msg.get("name"), msg.get("size"), msg.get("chunk_size"), msg.get("fingerprint", ""), slot=msg.get("slot"))
     uid = msg.get("upload_id")
     if kind == "chunk":
         b64 = msg.get("data")
