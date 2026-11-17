@@ -87,6 +87,13 @@ def wait_for(cond, secs=20):
     return False
 
 
+def assert_retained(store, owner=A):
+    """F8.10: after a failed FULL run both uploads are kept (verified, owner-only, unprotected, with a retry deadline), the lease is released."""
+    j = store.job_status(owner)
+    assert len(files(store)) == 2 and j["lease"] is None and set(j["slots"]) == {"left", "right"} and all(v["state"] == "complete" and not v["leased"] for v in j["slots"].values()), j
+    assert all(u.retained_until is not None and u.attempts >= 1 for u in store._uploads.values() if u.owner == owner)
+
+
 def assert_clean(store, owner=A):
     assert files(store) == [] and store.job_status(owner) == dict(slots={}, lease=None)
 
@@ -138,7 +145,8 @@ def test_left_is_processed_before_right_and_progress_is_ordered(real_run):
 
 def test_both_videos_are_deleted_and_the_lease_released_after_success(real_run):
     res = real_run["runner"].result
-    assert res["cleanup"] == dict(lease_released=True, videos_deleted=True, job_dir_removed=True)
+    assert dict(res["cleanup"], kept_for_retry_s=None) == dict(lease_released=True, videos_deleted=True, job_dir_removed=True, videos_kept_for_next_step=False, kept_for_retry_s=None)
+    assert res["persistence"]["saved"]                                                                   # F8.10: the result was written before the videos were deleted
     assert real_run["files_after"] == [] and real_run["job"] == dict(slots={}, lease=None)
     assert not alive(res["env"]["pid"])                                                                  # the worker is gone
 
@@ -241,7 +249,7 @@ def test_another_session_cannot_run_this_sessions_videos(store, syn):
 def test_f7_module_not_found_is_reported_not_silenced(tmp_path, store, syn):
     put_pair(store, syn["left"], syn["right"]); r = run(store, f7_dir=tmp_path, worker_cmd=no_spawn)
     assert r.result["outcome"] == "rejected" and "F7 calibration module was not found" in r.result["error"]
-    assert_clean(store)
+    assert_retained(store)
 
 
 def test_only_one_calibration_at_a_time(store, syn):
@@ -262,9 +270,9 @@ def test_timeout_stops_the_worker_and_its_children_then_cleans_up(tmp_path, stor
     with pytest.raises(UploadError) as e: store.release_lease(A, r._lease, "x")                          # a live worker holds the files: release is refused ...
     assert e.value.code == "in_use" and len(files(store)) == 2                                           # ... and nothing was deleted
     r.join(30)
-    assert r.result["outcome"] == "timeout" and "2.5" in r.result["error"] and r.result["cleanup"]["videos_deleted"]
+    assert r.result["outcome"] == "timeout" and "2.5" in r.result["error"] and not r.result["cleanup"]["videos_deleted"] and r.result["cleanup"]["videos_kept_for_next_step"]
     for pid in map(int, pidfile.read_text().split()): assert wait_for(lambda p=pid: not alive(p), 10), pid
-    assert_clean(store)
+    assert_retained(store)
 
 
 def test_cancel_terminates_the_worker_and_cleans_up(tmp_path, store, syn):
@@ -274,7 +282,7 @@ def test_cancel_terminates_the_worker_and_cleans_up(tmp_path, store, syn):
     assert wait_for(lambda: pidfile.exists() and r.status()["state"] == "running")
     t0 = time.time(); r.cancel(); r.join(30)
     assert r.result["outcome"] == "cancelled" and time.time() - t0 < 10 and not alive(int(pidfile.read_text()))
-    assert_clean(store)
+    assert_retained(store)
 
 
 def test_cancel_during_a_real_calibration(store, syn):
@@ -283,7 +291,7 @@ def test_cancel_during_a_real_calibration(store, syn):
     assert wait_for(lambda: r.status()["stage"].startswith("detect"), 60)
     r.cancel(); r.join(60)
     assert r.result["outcome"] == "cancelled" and r._proc.poll() is not None
-    assert_clean(store)
+    assert_retained(store)
 
 
 @pytest.mark.parametrize("body,expect", [("sys.exit(3)", "exit code 3"), ("os.kill(os.getpid(), signal.SIGKILL)", "stopped unexpectedly"),
@@ -292,26 +300,26 @@ def test_cancel_during_a_real_calibration(store, syn):
 def test_worker_crash_or_garbage_result_is_reported_and_cleaned(store, syn, body, expect):
     put_pair(store, syn["left"], syn["right"])
     r = run(store, limits=RunnerLimits(allow_full=True, heartbeat_s=0.5), worker_cmd=fake("import signal\n" + body), timeout=60)
-    assert r.result["outcome"] == "worker_crashed" and expect in r.result["error"] and r.result["cleanup"]["videos_deleted"]
-    assert_clean(store)
+    assert r.result["outcome"] == "worker_crashed" and expect in r.result["error"] and not r.result["cleanup"]["videos_deleted"] and r.result["cleanup"]["videos_kept_for_next_step"]
+    assert_retained(store)
 
 
 def test_oversized_result_file_is_ignored(store, syn):
     put_pair(store, syn["left"], syn["right"])
     r = run(store, limits=RunnerLimits(allow_full=True, heartbeat_s=0.5, result_max_bytes=200), worker_cmd=fake("json.dump({'ok': True, 'pad': 'x' * 5000}, open(os.path.join(spec['out_dir'], 'result.json'), 'w'))"))
-    assert r.result["outcome"] == "worker_crashed"; assert_clean(store)
+    assert r.result["outcome"] == "worker_crashed"; assert_retained(store)
 
 
 def test_worker_reported_failure_is_failed_not_completed(store, syn):
     put_pair(store, syn["left"], syn["right"])
     r = run(store, worker_cmd=fake("json.dump({'ok': False, 'error': 'Only 2 usable board poses were visible'}, open(os.path.join(spec['out_dir'], 'result.json'), 'w'))"))
-    assert r.result["outcome"] == "failed" and "usable board poses" in r.result["error"]; assert_clean(store)
+    assert r.result["outcome"] == "failed" and "usable board poses" in r.result["error"]; assert_retained(store)
 
 
 def test_a_failed_quality_level_is_not_completed(store, syn):
     put_pair(store, syn["left"], syn["right"])
     r = run(store, worker_cmd=fake("json.dump({'ok': True, 'assessment': {'level': 'FAILED'}}, open(os.path.join(spec['out_dir'], 'result.json'), 'w'))"))
-    assert r.result["outcome"] == "failed"; assert_clean(store)
+    assert r.result["outcome"] == "failed"; assert_retained(store)
 
 
 def test_memory_guard_kills_a_runaway_worker(store, syn):
@@ -320,7 +328,7 @@ def test_memory_guard_kills_a_runaway_worker(store, syn):
     t0 = time.time(); r = run(store, limits=RunnerLimits(allow_full=True, heartbeat_s=0.5, max_tree_rss_mb=300, kill_grace_s=1.0), worker_cmd=fake(body), timeout=60)
     assert r.result["outcome"] == "memory_limit" and "memory guard" in r.result["error"] and time.time() - t0 < 40
     assert r.result["resources"]["peak"]["worker_rss_mb"] > 250 and r._proc.poll() is not None
-    assert_clean(store)
+    assert_retained(store)
 
 
 # ---------------------------------------------------------------- lease heartbeat and expiry while a job runs

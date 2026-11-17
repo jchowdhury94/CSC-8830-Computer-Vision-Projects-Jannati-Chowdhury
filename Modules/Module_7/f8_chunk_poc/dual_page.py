@@ -11,12 +11,102 @@ from pathlib import Path
 
 import streamlit as st
 
-from calibration_runner import CalibrationJobRunner, RunnerLimits
+from calibration_runner import CalibrationJobRunner, RunnerLimits, active_runner, cancel_by_code
 from chunk_store import MiB, SLOTS, UploadError
 import component
 from protocol import handle
+from result_store import ResultStore, job_id, new_code, valid_code
 
 LIMITS = RunnerLimits.from_env()                                       # F8_CALIB_TIMEOUT_S, F8_BENCH_*, F8_ENABLE_FULL_CALIBRATION
+
+
+@st.cache_resource
+def get_results():
+    """One result store per server process (server-local, ephemeral disk). A daemon thread deletes results older than their time-to-live."""
+    import threading
+    rs = ResultStore()
+
+    def sweeper():
+        while True:
+            time.sleep(300)
+            try:
+                rs.sweep()
+            except Exception:
+                pass
+    threading.Thread(target=sweeper, daemon=True, name="f8-result-sweeper").start()
+    return rs
+
+
+def _start_job(store, results, ss, owner, settings, mode, bench_n=None):
+    """Create the recovery code BEFORE the job starts, so the person can note it (and the URL keeps it) while the job runs."""
+    code = new_code()
+    store.set_recovery(owner, code)
+    ss["runner"] = CalibrationJobRunner(store, owner, settings, LIMITS, mode=mode, benchmark_frames=bench_n, results=results, job_code=code)
+    ss["runner"].start(); ss["dual_saved"] = False; ss["job_code"] = code                  # the code lives only in this session's memory and on the page; never in the URL or a log
+
+
+def _show_code(code, key):
+    """Show the recovery code to this session only (page text, not the URL) with a Copy button. The code is a secret: it is never logged or put in a query parameter."""
+    import streamlit.components.v1 as components
+    st.code(code, language=None)
+    components.html(
+        "<button id='b' style='font:14px system-ui;padding:6px 12px;border-radius:6px;border:1px solid #888;cursor:pointer'>Copy Recovery Code</button> <span id='m' style='font:13px system-ui'></span>"
+        "<script>const c=" + json.dumps(code) + ";const m=document.getElementById('m');"
+        "function ok(){m.textContent='Copied.'}function bad(){const t=document.createElement('textarea');t.value=c;document.body.appendChild(t);t.select();"
+        "try{document.execCommand('copy')?ok():m.textContent='Select the code above and copy it.'}catch(e){m.textContent='Select the code above and copy it.'}t.remove()}"
+        "document.getElementById('b').onclick=()=>{(navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(c).then(ok,bad):bad())};</script>", height=44)
+
+
+def _download(results, code, label="Download the result (JSON)"):
+    data = results.result_bytes(code)
+    if data is None:
+        st.warning("The result file is not available on the server (it may have been deleted or the server restarted).")
+        return None
+    st.download_button(label, data, file_name=f"f8_result_{job_id(code)}.json", mime="application/json", key=f"dl_{job_id(code)}")
+    return data
+
+
+def _recovery(store, results, ss, owner):
+    """Find a job from ANOTHER session (refresh, new tab, disconnect) by its recovery code: live status, the saved result, or the retained videos."""
+    if "job" in st.query_params:                                       # F8.11: an old ?job= link is ignored and removed; the code is only ever typed or pasted
+        del st.query_params["job"]
+    with st.expander("Recover a previous job (after a refresh or disconnect)"):
+        st.caption("Results are saved on the server, not in this browser session, and are found with the recovery code shown when the job started (copy it somewhere private: it is NOT stored in the page address). "
+                   "Server storage is **temporary**: an app restart, redeploy or reboot erases it, and results are deleted after about a day. Download the result to keep it.")
+        code = st.text_input("Recovery code", key="dual_rec_code", type="password").strip()
+        if not code:
+            return
+        if not valid_code(code):
+            st.warning("That does not look like a recovery code.")
+            return
+        live = active_runner(code)
+        if live is not None:
+            s = live.status()
+            st.info(f"Job still running on the server: {s['stage'].replace('_', ' ')} · {s['elapsed_s']:.0f} s · {s['fraction']:.0%}")
+            if st.button("Cancel that job", key="dual_rec_cancel"):
+                cancel_by_code(code)
+            time.sleep(2.0); st.rerun()
+            return
+        res = results.load_result(code)
+        if res is not None:
+            q = res.get("quality") or {}
+            st.success(f"Saved result found: outcome **{res.get('outcome')}** · quality **{q.get('level')}** · stereo RMS {q.get('stereo_rms_px')} px · "
+                       f"baseline {((res.get('extrinsics') or {}).get('baseline_mm'))} mm")
+            _download(results, code)
+        else:
+            stt = results.read_status(code)
+            if stt:
+                st.warning(f"No saved result. The job last reported “{stt.get('state')} / {stt.get('stage')}” {stt.get('age_s')} s ago; if it is not running now, the server was probably restarted "
+                           "or the job was interrupted.")
+            else:
+                st.info("Nothing found for that code: it expired, or the server restarted (its local disk is temporary).")
+        if st.button("Reclaim my retained videos for a retry", key="dual_rec_adopt"):
+            try:
+                n = store.adopt(code, owner)["adopted"]
+                st.success(f"{n} video(s) are now attached to this session." if n else "These videos already belong to this session.")
+                st.rerun()
+            except UploadError as e:
+                st.error(e.message)
 
 
 def _slot_line(info, slot):
@@ -28,6 +118,7 @@ def _slot_line(info, slot):
 
 
 def render(store, ss, lim):
+    results = get_results()
     owner = ss["owner"]; ss.setdefault("dual_epoch", 0); ss.setdefault("runner", None); ss.setdefault("dual_saved", False)
     st.subheader("Dual-video stereo calibration (local test)")
     st.caption("Upload the LEFT and RIGHT calibration videos one after the other. Both are kept until the calibration has finished; the camera is decided by the slot, "
@@ -49,7 +140,7 @@ def render(store, ss, lim):
         st.caption(_slot_line(job["slots"].get(slot), slot))
 
     if st.button("Lock this session (cancels any calibration, deletes uploads)"):
-        store.release_owner(owner); ss["runner"] = None; ss["dual_epoch"] += 1; ss["authed"] = False
+        store.release_owner(owner); ss["runner"] = None; ss["dual_epoch"] += 1; ss["authed"] = False; ss.pop("job_code", None)
         for slot in SLOTS:
             ss[f"dual_proto_{slot}"] = {}
         st.rerun()
@@ -68,14 +159,13 @@ def render(store, ss, lim):
     blocked = not both or running or runner is not None
     c = st.columns([1, 1, 1, 2])
     if c[0].button("Run benchmark", type="primary", disabled=blocked):
-        ss["runner"] = CalibrationJobRunner(store, owner, settings, LIMITS, mode="benchmark", benchmark_frames=int(bench_n))
-        ss["runner"].start(); ss["dual_saved"] = False
+        _start_job(store, results, ss, owner, settings, "benchmark", int(bench_n))
         st.rerun()
     if LIMITS.allow_full:
-        sure = c[3].checkbox("I understand a full calibration can take many minutes and deletes both videos afterwards", key="dual_full_ok")
+        sure = c[3].checkbox("I understand a full calibration can take up to an hour. Both videos are deleted only after the result is saved; after a failure they are kept "
+                             f"for {store.limits.retry_retention_s / 60:.0f} min so you can retry.", key="dual_full_ok")
         if c[1].button("Run full calibration", disabled=blocked or not sure):
-            ss["runner"] = CalibrationJobRunner(store, owner, settings, LIMITS, mode="calibrate")
-            ss["runner"].start(); ss["dual_saved"] = False
+            _start_job(store, results, ss, owner, settings, "calibrate")
             st.rerun()
     else:
         c[3].caption("Full calibration is disabled on this server.")
@@ -83,18 +173,22 @@ def render(store, ss, lim):
         runner.cancel()
 
     runner = ss["runner"]
+    if runner is None:
+        _recovery(store, results, ss, owner)
     if runner is not None:
         s = runner.status()
         if not runner.done:
             st.progress(min(s["fraction"], 0.99), text=f"{s['stage'].replace('_', ' ')} · {s['elapsed_s']:.0f} s")
             m = s.get("monitor") or {}
             st.caption(f"parent RSS {m.get('parent_rss_mb')} MB · worker RSS {m.get('worker_rss_mb')} MB · temp disk {m.get('temp_disk_mb')} MB")
+            st.info("Recovery code: copy it now and keep it private. If the page reloads or disconnects, paste it under “Recover a previous job”.")
+            _show_code(runner.job_code, "run")
             time.sleep(1.0); st.rerun()
         else:
-            _result(runner, ss)
+            _result(runner, ss, results)
             kept = (runner.result or {}).get("cleanup", {}).get("videos_kept_for_next_step")
             if st.button("Clear result" if kept else "Start over"):
-                ss["runner"] = None
+                ss["runner"] = None; ss.pop("job_code", None)
                 if not kept:                                            # the videos are gone: reset the uploaders too
                     ss["dual_epoch"] += 1
                     for slot in SLOTS:
@@ -125,7 +219,7 @@ def _benchmark_result(res):
     st.json(b, expanded=False)
 
 
-def _result(runner, ss):
+def _result(runner, ss, results):
     res = runner.result or {}
     out = res.get("outcome")
     if res.get("mode") == "benchmark":
@@ -144,6 +238,15 @@ def _result(runner, ss):
     else:
         st.error(f"{out}: {res.get('error') or 'The calibration did not complete.'}")
     cl = res.get("cleanup") or {}
+    ps = res.get("persistence") or {}
+    if ps.get("saved"):
+        st.success(f"Result saved on the server ({ps.get('bytes')} bytes, SHA-256 {str(ps.get('sha256'))[:12]}…). Download it now: the server's disk is temporary.")
+        _download(results, runner.job_code)
+    else:
+        st.error(f"The result could NOT be saved on the server ({ps.get('error')}). The videos were kept so you can retry.")
+    st.caption("Recovery code (private; keep it to download this result again from another session):"); _show_code(runner.job_code, "done")
+    if res.get("mode") != "benchmark" and cl.get("videos_kept_for_next_step"):
+        st.warning(f"Your videos were kept for {((cl.get('kept_for_retry_s') or 0) / 60):.0f} min so you can retry without uploading again. “Lock this session” deletes them now.")
     st.caption(f"Cleanup: videos deleted = {cl.get('videos_deleted')} · job folder removed = {cl.get('job_dir_removed')}")
     r = res.get("resources") or {}
     if r:

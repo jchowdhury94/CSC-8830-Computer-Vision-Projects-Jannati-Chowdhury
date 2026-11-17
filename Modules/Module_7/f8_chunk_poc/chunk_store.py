@@ -66,6 +66,9 @@ class Limits:
     max_active_leases: int = 1                # one calibration job at a time
     lease_heartbeat_timeout_s: float = 120.0  # a lease whose heartbeat stops this long is abandoned and expires
     lease_max_s: float = 7200.0               # hard maximum lifetime of any lease, heartbeat or not
+    retry_retention_s: float = 1800.0         # after a FAILED / timed-out / cancelled full run the videos are kept this long for a retry, then deleted
+    max_failed_attempts: int = 3              # a retained pair may be retried at most this many times in total
+    max_memory_kills: int = 2                 # one retry after a memory-guard stop is allowed; a second stop blocks further retries
     reserve_sibling: bool = True              # the first slot upload also reserves room for the other camera's video (assumed the same size)
 
 
@@ -82,7 +85,9 @@ def env_limits() -> Limits:
 
     return Limits(max_file_bytes=num("F8_MAX_FILE_MB", d.max_file_bytes, MiB), max_disk_bytes=num("F8_MAX_DISK_MB", d.max_disk_bytes, MiB),
                   max_active_uploads=num("F8_MAX_ACTIVE", d.max_active_uploads), min_free_bytes=num("F8_MIN_FREE_MB", d.min_free_bytes, MiB), idle_timeout_s=num("F8_IDLE_TIMEOUT_S", d.idle_timeout_s),
-                  max_upload_s=num("F8_MAX_UPLOAD_S", d.max_upload_s), complete_retention_s=num("F8_RETENTION_S", d.complete_retention_s))
+                  max_upload_s=num("F8_MAX_UPLOAD_S", d.max_upload_s), complete_retention_s=num("F8_RETENTION_S", d.complete_retention_s),
+                  retry_retention_s=num("F8_RETRY_RETENTION_S", d.retry_retention_s),
+                  lease_max_s=min(max(num("F8_LEASE_MAX_S", d.lease_max_s), 600.0), 14400.0))     # must stay above the full-run timeout + margin (see CalibrationJobRunner)
 
 
 def safe_display_name(name) -> str:
@@ -123,6 +128,9 @@ class Upload:
     rejected: dict = field(default_factory=dict)
     slot: str | None = None                                       # 'left' | 'right' | None (single-file mode)
     leased_by: str | None = None                                  # lease id while a calibration job protects this file
+    retained_until: float | None = None                           # set after a failed full run: kept (unprotected, owner-only) for a retry until this time, then swept
+    attempts: int = 0                                             # failed full runs that kept this file
+    memory_kills: int = 0                                         # ... of which were stopped by the memory guard
 
 
 @dataclass
@@ -149,6 +157,7 @@ class ChunkStore:
         self._lock = threading.RLock()
         self._uploads: dict[str, Upload] = {}
         self._leases: dict[str, Lease] = {}
+        self._recovery: dict[str, str] = {}                           # sha256(recovery code) -> owner token (the code itself is never stored)
         if root is None:
             if purge_orphans:
                 self._purge_stale_roots()
@@ -222,7 +231,7 @@ class ChunkStore:
         except (ProcessLookupError, PermissionError, OSError):
             pass
 
-    def _try_release(self, lease: Lease, outcome: str, delete_files: bool) -> bool:
+    def _try_release(self, lease: Lease, outcome: str, delete_files: bool, retry_keep: bool = False) -> bool:
         """Unprotect (and normally delete) the lease's files. Returns False, changing nothing, if any reader still holds a file."""
         ups = [self._uploads[i] for i in lease.upload_ids.values() if i in self._uploads]
         locks = []
@@ -238,6 +247,10 @@ class ChunkStore:
             for u in ups:
                 u.leased_by = None
                 u.t_activity = now                                    # retention restarts from the end of the job
+                if retry_keep and not delete_files:                   # a failed full run: keep for a bounded retry window and count the attempt
+                    u.retained_until = now + self.limits.retry_retention_s
+                    u.attempts += 1
+                    u.memory_kills += 1 if outcome == "memory_limit" else 0
             lease.state = "released" if outcome != "expired" else "expired"
             lease.outcome = outcome; lease.worker_pid = None
             if delete_files:
@@ -275,6 +288,8 @@ class ChunkStore:
                     continue
                 if u.state == UPLOADING and (now - u.t_activity > self.limits.idle_timeout_s or now - u.t_created > self.limits.max_upload_s):
                     expired = True
+                elif u.state == COMPLETE and u.retained_until is not None:
+                    expired = now > u.retained_until                  # kept for a retry after a failed run: a short, absolute deadline (never extended by activity)
                 elif u.state == COMPLETE:
                     if u.slot:                                        # a job keeps its files while the session is active (e.g. uploading the other video)
                         anchor = max([u.t_complete or u.t_created] + [o.t_activity for o in self._uploads.values() if o.owner == u.owner])
@@ -289,6 +304,9 @@ class ChunkStore:
                         gone.append(u.upload_id)
                     except UploadError:
                         log.info("sweep skipped an upload that is in use")
+            live = {u.owner for u in self._uploads.values()} | {l.owner for l in self._leases.values() if l.state in ("active", "expiring")}
+            for h in [h for h, o in self._recovery.items() if o not in live]:
+                del self._recovery[h]                                     # nothing left to recover: forget the code (bounded memory)
         if gone:
             log.info("swept %d expired upload(s)", len(gone))
         return gone
@@ -500,6 +518,8 @@ class ChunkStore:
                 lease.cancel_requested = True; lease.state = "expiring"
                 self._kill_worker(lease)
                 self._try_release(lease, "cancelled", True)
+            for h in [h for h, o in self._recovery.items() if o == owner]:
+                del self._recovery[h]
             mine = [u for u in self._uploads.values() if u.owner == owner]
             removed = 0
             for u in mine:
@@ -556,6 +576,10 @@ class ChunkStore:
                 raise UploadError("job_incomplete", "Both the LEFT and the RIGHT video must be uploaded and verified first (missing: " + ", ".join(m.upper() for m in missing) + ").")
             if any(u.leased_by for u in mine.values()):
                 raise UploadError("job_running", "A calibration is already running for these videos.")
+            if any(u.memory_kills >= self.limits.max_memory_kills for u in mine.values()):
+                raise UploadError("retry_blocked", "The memory guard stopped this calibration twice, so it is not retried automatically. Lock the session and start again.")
+            if any(u.attempts >= self.limits.max_failed_attempts for u in mine.values()):
+                raise UploadError("retry_blocked", f"This calibration has already failed {self.limits.max_failed_attempts} times; it is not retried again with the same upload.")
             if sum(1 for l in self._leases.values() if l.state in ("active", "expiring")) >= self.limits.max_active_leases:
                 raise UploadError("busy", "Another calibration is running. Please try again when it has finished.")
             for s, u in mine.items():                                  # stale-reference check: the file must still be exactly what was verified
@@ -571,7 +595,7 @@ class ChunkStore:
             lease = Lease(secrets.token_urlsafe(18), owner, {s: u.upload_id for s, u in mine.items()}, now, now, now + self.limits.lease_max_s)
             self._leases[lease.lease_id] = lease
             for u in mine.values():
-                u.leased_by = lease.lease_id; u.t_activity = now
+                u.leased_by = lease.lease_id; u.t_activity = now; u.retained_until = None
             info = {s: dict(path=str(u.path), sha256=u.sha256, size=u.size, upload_id=u.upload_id) for s, u in mine.items()}
             log.info("lease %s acquired", lease.lease_id[:6])
             return dict(ok=True, lease_id=lease.lease_id, left=info["left"], right=info["right"], heartbeat_timeout_s=self.limits.lease_heartbeat_timeout_s,
@@ -599,13 +623,52 @@ class ChunkStore:
             l.cancel_requested = True
             return dict(ok=True)
 
-    def release_lease(self, owner: str, lease_id: str, outcome: str = "done", delete_files: bool = True) -> dict:
+    # ------------------------------------------------------------ recovery: a new browser session may re-claim retained videos
+    @staticmethod
+    def _code_hash(code) -> str | None:
+        return hashlib.sha256(code.encode()).hexdigest() if isinstance(code, str) and re.fullmatch(r"[A-Za-z0-9_-]{16,64}", code) else None
+
+    def set_recovery(self, owner: str, code: str) -> None:
+        """Remember that whoever presents ``code`` (a long random secret shown only to this session) may take over this session's retained uploads."""
+        h = self._code_hash(code)
+        if h is None:
+            raise UploadError("bad_code", "That recovery code is not valid.")
+        with self._lock:
+            self._recovery[h] = owner
+
+    def adopt(self, code: str, new_owner: str) -> dict:
+        """Move the uploads of the session that holds ``code`` to ``new_owner`` (e.g. after a browser refresh), so a failed full run can be retried.
+        Refused while a calibration is running (ownership never changes under a live worker) and if the new session already holds slot uploads."""
+        h = self._code_hash(code)
+        with self._lock:
+            old = self._recovery.get(h) if h else None
+            if old is None:
+                raise UploadError("not_found", "No retained videos match that recovery code (they may have expired or the server restarted).")
+            if old == new_owner:
+                return dict(ok=True, adopted=0)
+            if any(l.owner == old and l.state in ("active", "expiring") for l in self._leases.values()):
+                raise UploadError("job_running", "The calibration for that code is still running. Wait for it to finish (or cancel it) first.")
+            if any(u.owner == new_owner and u.slot and u.state != FAILED for u in self._uploads.values()):
+                raise UploadError("owner_busy", "This session already has uploaded videos. Lock the session first, then recover the previous ones.")
+            moved = [u for u in self._uploads.values() if u.owner == old and u.state != FAILED]
+            for u in moved:
+                u.owner = new_owner
+            for l in self._leases.values():
+                if l.owner == old:
+                    l.owner = new_owner
+            self._recovery[h] = new_owner
+            log.info("adopted %d upload(s) by recovery code", len(moved))
+            return dict(ok=True, adopted=len(moved))
+
+    def release_lease(self, owner: str, lease_id: str, outcome: str = "done", delete_files: bool = True, retry_keep: bool = False) -> dict:
         """End a job (success, failure or cancellation) and normally delete both videos. Refuses ('in_use') while the worker still has a file open."""
         with self._lock:
             l = self._lease(owner, lease_id)
             if l.state in ("released", "expired"):
                 return dict(ok=True, already=True, outcome=l.outcome)
-            if not self._try_release(l, str(outcome)[:24], bool(delete_files)):
+            if l.state == "expiring":                                 # the STORE ended this job (abandoned heartbeat, hard deadline, session lock): no retry window
+                delete_files, retry_keep = True, False
+            if not self._try_release(l, str(outcome)[:24], bool(delete_files), bool(retry_keep)):
                 raise UploadError("in_use", "The calibration worker is still running; stop it before releasing the videos.")
             return dict(ok=True, outcome=l.outcome, deleted=bool(delete_files))
 

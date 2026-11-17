@@ -62,3 +62,16 @@ Unavailable measurements (no cgroup, no `/proc`, no PSS) are shown as "not measu
   `F8_BENCH_TIMEOUT_S` (10–900, default 300), `F8_BENCH_FRAMES` (30–3000, default 600).
 * Dependencies: the F7 chain needs only `visitor_workflow/f7_calibration.py`, `room_measurement/{visitor_calibration,visitor_video_validation}.py` and the tracked
   `stereo_measure` / `room_measurement` packages; `pillow` is pinned in `requirements.txt` (imported by `stereo_measure/user_calibration.py`).
+
+## F8.10 — reliable full Cloud calibration (results, retry, timeout)
+* **Results are saved outside the session.** Every job (any outcome) writes one structured JSON (`result_store.py`, schema `f8.calibration_result/1`: quality, stereo RMS,
+  K/distortion, R/T, baseline, selected pose frame pairs, synchronisation, runtime and memory measurements) **atomically, before any video is released**. The page offers it as a download.
+  No video content or server paths are stored. A job gets a 128-bit **recovery code** when it starts (shown on the page with a Copy button; it is **never** put in the URL or a log, and an old `?job=` link is ignored and stripped); a new browser session pastes it under
+  *Recover a previous job* to see live status, cancel, download the saved result, or re-attach the retained videos for a retry.
+* **This is not permanent storage.** The results folder (`F8_RESULTS_DIR`, default a temp dir) is local and ephemeral on Streamlit Community Cloud: an app restart, redeploy or reboot erases it
+  (and any running job), and results are deleted after ~24 h. **Download the result.**
+* **Videos after a full run:** deleted only after a *completed* run whose result was saved. After a failure, timeout, worker crash, memory-guard stop or cancel they are kept (owner-only, SHA-256-verified)
+  for `F8_RETRY_RETENTION_S` (default 1800 s) for a retry, at most 3 failed attempts per upload and 2 memory-guard stops. Session *Lock*, an abandoned lease, or the deadline delete them. Unusable videos
+  (validation failure) are still deleted at once. A retry does not start while container anonymous memory is above 60 % of the limit.
+* **Timeout:** `F8_CALIB_TIMEOUT_S=5400` is supported; the lease (`F8_LEASE_MAX_S`, default 7200) must cover timeout + `lease_margin_s` (2×inspection timeout + kill grace + 30 s); the runner clips and reports it.
+  Full calibration stays OFF unless `F8_ENABLE_FULL_CALIBRATION=1` (plus the ticked confirmation and a click). `F8_REQUIRE_MEMORY_GUARD=1` refuses a full run if no container memory limit can be read.

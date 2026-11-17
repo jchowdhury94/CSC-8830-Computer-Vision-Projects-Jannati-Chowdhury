@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from calibration_runner import DEFAULT_F7_DIR, WORKER, CalibrationJobRunner, RunnerError, RunnerLimits
+from calibration_runner import DEFAULT_F7_DIR, WORKER, CalibrationJobRunner, RunnerError, RunnerLimits, lease_margin_s
 from chunk_store import ChunkStore, Limits, MiB
 from synthetic_stereo import make_stereo_pair
 from test_runner import A, B, PRE, SETTINGS, alive, assert_clean, fake, files, put_pair, sha, wait_for  # noqa: F401  (shared helpers; also re-collects nothing)
@@ -191,7 +191,7 @@ def test_a_crashed_benchmark_worker_is_reported_and_keeps_the_uploads(store, syn
 # ---------------------------------------------------------------- full-calibration timeout and opt-in
 def test_full_timeout_is_configurable_and_cannot_outlive_the_lease(store):
     assert CalibrationJobRunner(store, A, SETTINGS, RunnerLimits(timeout_s=900.0)).timeout_s == 900.0
-    assert CalibrationJobRunner(store, A, SETTINGS, RunnerLimits(timeout_s=10 ** 6)).timeout_s == store.limits.lease_max_s - 120.0       # clamped below the store's hard lease limit
+    assert CalibrationJobRunner(store, A, SETTINGS, RunnerLimits(timeout_s=10 ** 6)).timeout_s == store.limits.lease_max_s - lease_margin_s(RunnerLimits())   # clamped below the store's hard lease limit
     assert CalibrationJobRunner(store, A, SETTINGS, RunnerLimits(timeout_s=900.0), mode="benchmark").timeout_s == 300.0                    # a benchmark has its own short one
 
 
@@ -219,9 +219,10 @@ def test_a_full_calibration_is_refused_when_not_enabled_and_starts_nothing(store
 
 def test_the_page_only_starts_a_full_run_from_an_explicit_gated_button():
     src = (HERE / "dual_page.py").read_text()
-    sites = re.findall(r"CalibrationJobRunner\([^\n]*", src)
-    assert len(sites) == 2 and sum('mode="calibrate"' in s for s in sites) == 1 and sum('mode="benchmark"' in s for s in sites) == 1
-    full = src.index('mode="calibrate"')
+    sites = re.findall(r"(?<!def )_start_job\([^\n]*", src)                                                                                          # F8.10: every start goes through one helper
+    assert len(sites) == 2 and sum('"calibrate"' in x for x in sites) == 1 and sum('"benchmark"' in x for x in sites) == 1
+    assert len(re.findall(r"CalibrationJobRunner\(", src.replace("class CalibrationJobRunner", ""))) == 1 and "mode=mode" in src
+    full = src.index('"calibrate")', src.index("def render"))
     gate = src.rindex("if LIMITS.allow_full:", 0, full); btn = src.rindex("button(", 0, full)
     assert gate < btn < full and "disabled=blocked or not sure" in src[btn:full + 120]                                                      # opt-in setting AND a ticked confirmation AND a click
     assert "Run full calibration" not in src[:gate]                                                                                       # no other full-run trigger

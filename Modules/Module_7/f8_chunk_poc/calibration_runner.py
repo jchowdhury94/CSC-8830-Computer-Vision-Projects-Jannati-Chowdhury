@@ -10,6 +10,7 @@ every check is reported in the result (``validation``), never silently skipped.
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import signal
@@ -23,6 +24,7 @@ from pathlib import Path
 
 from chunk_store import ChunkStore, UploadError
 from monitor import ResourceMonitor, probe_environment, read_cgroup
+from result_store import ResultStore, build_result_document, new_code
 from video_check import VideoSafetyLimits, inspect_video
 
 HERE = Path(__file__).resolve().parent
@@ -63,6 +65,8 @@ class RunnerLimits:
     benchmark_timeout_s: float = 300.0         # wall clock for a benchmark worker
     benchmark_frames: int = 600                # frames per video the benchmark reads (every STRIDE-th gets a detection attempt)
     benchmark_frames_cap: int = 3000           # hard ceiling whatever is asked for
+    require_memory_guard: bool = False         # F8.10: refuse a FULL run when no container memory limit (or tree-RSS limit) is known, i.e. the guard could not act; from_env: F8_REQUIRE_MEMORY_GUARD=1
+    start_headroom_fraction: float = 0.60      # F8.10: a full run (or a retry after a memory stop) does not start while container anonymous memory is already above this fraction of the limit
 
     @classmethod
     def from_env(cls, env=None):
@@ -71,11 +75,59 @@ class RunnerLimits:
         env = os.environ if env is None else env
         d = cls()
         return cls(timeout_s=_env_num(env, "F8_CALIB_TIMEOUT_S", d.timeout_s, 60.0, 14400.0), benchmark_timeout_s=_env_num(env, "F8_BENCH_TIMEOUT_S", d.benchmark_timeout_s, 10.0, 900.0),
-                   benchmark_frames=int(_env_num(env, "F8_BENCH_FRAMES", d.benchmark_frames, 30, d.benchmark_frames_cap)), allow_full=str(env.get("F8_ENABLE_FULL_CALIBRATION", "")).strip() == "1")
+                   benchmark_frames=int(_env_num(env, "F8_BENCH_FRAMES", d.benchmark_frames, 30, d.benchmark_frames_cap)), allow_full=str(env.get("F8_ENABLE_FULL_CALIBRATION", "")).strip() == "1",
+                   require_memory_guard=str(env.get("F8_REQUIRE_MEMORY_GUARD", "")).strip() == "1")
+
+
+def lease_margin_s(limits: "RunnerLimits") -> float:
+    """Lease time the job needs besides the worker's own timeout: the sandboxed inspection of both videos (2 x inspect_timeout_s, worst case) happens after
+    the lease starts but before the timeout clock does, plus the SIGTERM->SIGKILL grace and a fixed allowance for start-up and clean-up."""
+    return 2.0 * limits.inspect_timeout_s + limits.kill_grace_s + 30.0
 
 
 class RunnerError(Exception):
     pass
+
+
+# ---- F8.10: jobs that are still running can be found (status, cancel) by their recovery code from ANOTHER browser session; the supervisor thread itself never
+# depends on a session. The registry only holds live runners and forgets a job when it is done.
+_ACTIVE: dict = {}
+_ACTIVE_LOCK = threading.Lock()
+
+
+def active_runner(code):
+    with _ACTIVE_LOCK:
+        return _ACTIVE.get(code)
+
+
+def cancel_by_code(code) -> bool:
+    r = active_runner(code)
+    if r is None:
+        return False
+    r.cancel()
+    return True
+
+
+def _sane(v):
+    """A usable measurement: a finite, non-negative real number; anything else (None, NaN, inf, negative, text, bool) is treated as 'not measured'."""
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0 else None
+
+
+def guard_memory(cg) -> dict:
+    """What the container memory guard judges, from a cgroup reading, using only sane values. Page cache is reclaimable and is NOT counted:
+    anonymous memory (+ shmem) when known; else current - file cache; else current (conservative: includes cache). ``limit_mb`` None = no usable limit."""
+    cg = cg if isinstance(cg, dict) else {}
+    lim = _sane(cg.get("memory_max_mb")); lim = lim if lim and lim > 0 else None
+    anon, shm, cur, fil = (_sane(cg.get(k)) for k in ("anon_mb", "shmem_mb", "memory_current_mb", "file_mb"))
+    if anon is not None:
+        used, basis = anon + (shm or 0.0), "anonymous+shmem"
+    elif cur is not None and fil is not None and fil <= cur:
+        used, basis = cur - fil + (shm or 0.0), "current minus page cache"
+    elif cur is not None:
+        used, basis = cur, "current (includes page cache)"
+    else:
+        used, basis = None, "unknown"
+    return dict(used_mb=used, limit_mb=lim, basis=basis)
 
 
 def _scrubbed_env():
@@ -118,14 +170,23 @@ class CalibrationJobRunner:
 
     def __init__(self, store: ChunkStore, owner: str, settings: dict, limits: RunnerLimits = RunnerLimits(), f7_dir=None, worker_cmd=None,
                  monitor_interval: float = 1.0, dump_detections: bool = True, work_dir=None, mode: str = "calibrate",
-                 benchmark_frames: int | None = None):
+                 benchmark_frames: int | None = None, results: ResultStore | None = None, job_code: str | None = None, cgroup_root: str = "/sys/fs/cgroup",
+                 proc_root: str = "/proc"):
         if mode not in MODES:
             raise RunnerError("unknown mode")
         self.mode = mode
         self.store, self.owner, self.settings, self.limits = store, owner, dict(settings), limits
         self.bench_frames = int(min(max(int(benchmark_frames or limits.benchmark_frames), 1), limits.benchmark_frames_cap))
         # the timeout actually applied: the benchmark has its own short one; a full run can never outlive the store's hard lease limit
-        self.timeout_s = float(limits.benchmark_timeout_s if mode == "benchmark" else max(1.0, min(limits.timeout_s, store.limits.lease_max_s - 120.0)))
+        self.lease_margin_s = lease_margin_s(limits)
+        self.timeout_s = float(limits.benchmark_timeout_s if mode == "benchmark" else max(1.0, min(limits.timeout_s, store.limits.lease_max_s - self.lease_margin_s)))
+        self.timeout_info = dict(requested_s=limits.timeout_s if mode == "calibrate" else limits.benchmark_timeout_s, effective_s=self.timeout_s, lease_max_s=store.limits.lease_max_s,
+                                 lease_margin_s=self.lease_margin_s, clipped_by_lease=mode == "calibrate" and self.timeout_s < limits.timeout_s)
+        self.results = results if results is not None else ResultStore()
+        self.job_code = job_code or new_code()
+        self.cgroup_root, self.proc_root = cgroup_root, proc_root
+        self._guard_info = dict(active=None, basis=None, limit_mb=None, threshold_mb=None, peak_used_mb=None, checks=0)
+        self._pub_t = 0.0; self._persisted = None; self._delete_rejected = False
         self._last_prog = None
         self.f7_dir = Path(f7_dir) if f7_dir else DEFAULT_F7_DIR
         self.worker_cmd, self.monitor_interval, self.dump_detections = worker_cmd, monitor_interval, dump_detections
@@ -140,6 +201,8 @@ class CalibrationJobRunner:
         if self._thread is not None:
             raise RunnerError("this runner has already been started")
         self._set(state="starting", message="Preparing the calibration…", started=time.time())
+        with _ACTIVE_LOCK:
+            _ACTIVE[self.job_code] = self
         self._thread = threading.Thread(target=self._run, daemon=True, name="f8-calibration-supervisor"); self._thread.start()
 
     def cancel(self):
@@ -170,7 +233,20 @@ class CalibrationJobRunner:
     # ---- internals
     def _set(self, **kw):
         with self._lock:
+            changed = "state" in kw and kw["state"] != self._status.get("state")
             self._status.update(kw)
+        self._publish(force=changed)
+
+    def _publish(self, force=False):
+        """Small status record for OTHER sessions (throttled; best effort)."""
+        now = time.monotonic()
+        if not force and now - self._pub_t < 1.5:
+            return
+        self._pub_t = now
+        s = self.status(); m = s.get("monitor") or {}
+        self.results.write_status(self.job_code, dict(mode=self.mode, state=s["state"], stage=s["stage"], fraction=s["fraction"], message=str(s["message"])[:200], elapsed_s=s["elapsed_s"],
+                                                      outcome=s["outcome"], timeout_s=self.timeout_s, started_unix=s["started"], result_saved=bool((self._persisted or {}).get("saved")),
+                                                      worker_rss_mb=m.get("worker_rss_mb"), parent_rss_mb=m.get("parent_rss_mb")))
 
     def _disk(self):
         try:
@@ -185,7 +261,7 @@ class CalibrationJobRunner:
         if error:
             res["error"] = error
         self.result = res
-        self._set(state="done", outcome=outcome, message=error or (("Benchmark finished." if self.mode == "benchmark" else "Calibration finished.") if outcome == "completed" else outcome), fraction=1.0 if outcome == "completed" else self._status["fraction"])
+        self._set(state="cleaning", outcome=outcome, message=error or (("Benchmark finished." if self.mode == "benchmark" else "Calibration finished.") if outcome == "completed" else outcome), fraction=1.0 if outcome == "completed" else self._status["fraction"])
 
     def _spawn(self, spec_path, job_dir):
         if self.worker_cmd:
@@ -215,20 +291,32 @@ class CalibrationJobRunner:
                 proc.kill()
             proc.wait()
 
+    def _read_cg(self):
+        try:
+            return read_cgroup() if (self.cgroup_root, self.proc_root) == ("/sys/fs/cgroup", "/proc") else read_cgroup(self.cgroup_root, self.proc_root)
+        except Exception:                                              # an unreadable cgroup must never crash the supervisor: it just means "not measured"
+            return {}
+
     def _guard(self, sample) -> str | None:
+        """Memory guard, evaluated every poll. Only sane measurements are used (see ``guard_memory``); a missing or invalid one means 'cannot judge', never a kill."""
         lim = self.limits
-        tree = sample.get("combined_rss_mb")
-        if lim.max_tree_rss_mb and tree is not None and tree > lim.max_tree_rss_mb:
+        tree = _sane((sample or {}).get("combined_rss_mb"))
+        if lim.max_tree_rss_mb and lim.max_tree_rss_mb > 0 and tree is not None and tree > lim.max_tree_rss_mb:
             return f"memory guard: parent+worker RSS {tree:.0f} MB exceeded {lim.max_tree_rss_mb:.0f} MB"
-        cg = read_cgroup()
-        mx = cg.get("memory_max_mb")
-        # page cache is reclaimable, so judge anonymous memory when known -- PLUS shared memory: a memory-backed /tmp (tmpfs) holds the uploaded videos as shmem,
-        # which is not reclaimable and counts toward the container's OOM limit but is not "anon"
-        used = None if cg.get("anon_mb") is None else cg["anon_mb"] + (cg.get("shmem_mb") or 0.0)
-        used = used if used is not None else cg.get("memory_current_mb")
-        if mx and used is not None and used > lim.max_cgroup_fraction * mx:
-            return f"memory guard: container memory {used:.0f} MB exceeded {lim.max_cgroup_fraction:.0%} of its {mx:.0f} MB limit"
+        g = guard_memory(self._read_cg())
+        frac = lim.max_cgroup_fraction if isinstance(lim.max_cgroup_fraction, (int, float)) and 0 < lim.max_cgroup_fraction <= 1 else 0.90
+        info = self._guard_info; info["checks"] += 1; info["basis"] = g["basis"]; info["limit_mb"] = g["limit_mb"]
+        info["active"] = bool(g["limit_mb"] and g["used_mb"] is not None); info["threshold_mb"] = g["limit_mb"] * frac if g["limit_mb"] else None
+        if g["used_mb"] is not None:
+            info["peak_used_mb"] = max(info["peak_used_mb"] or 0.0, g["used_mb"])
+        if g["limit_mb"] and g["used_mb"] is not None and g["used_mb"] > frac * g["limit_mb"]:
+            return f"memory guard: container memory {g['used_mb']:.0f} MB ({g['basis']}) exceeded {frac:.0%} of its {g['limit_mb']:.0f} MB limit"
         return None
+
+    def _guard_operative(self) -> bool:
+        """Could the guard act at all? True with a per-process RSS limit or a readable container limit plus a usable usage figure."""
+        g = guard_memory(self._read_cg())
+        return bool(self.limits.max_tree_rss_mb) or bool(g["limit_mb"] and g["used_mb"] is not None)
 
     def _read_json(self, path, limit):
         try:
@@ -246,6 +334,14 @@ class CalibrationJobRunner:
             if self.mode == "calibrate" and not lim.allow_full:                  # explicit opt-in: a full run is never started by accident
                 outcome = "rejected"
                 return self._finish("rejected", error="A full calibration is disabled on this server (set F8_ENABLE_FULL_CALIBRATION=1 to allow it). Run the benchmark instead.")
+            if self.mode == "calibrate":                                          # F8.10 start-up safety checks (nothing is deleted when they refuse)
+                if lim.require_memory_guard and not self._guard_operative():
+                    outcome = "rejected"
+                    return self._finish("rejected", error="The memory guard cannot act on this server (no container memory limit could be read), and F8_REQUIRE_MEMORY_GUARD=1 is set, so a full run is refused.")
+                g = guard_memory(self._read_cg())
+                if g["limit_mb"] and g["used_mb"] is not None and g["used_mb"] > lim.start_headroom_fraction * g["limit_mb"]:
+                    outcome = "rejected"
+                    return self._finish("rejected", error=f"Container memory is already {g['used_mb']:.0f} MB of {g['limit_mb']:.0f} MB; a full run is not started until it drops below {lim.start_headroom_fraction:.0%}. Try again shortly.")
             try:
                 lease = self.store.acquire_lease(self.owner)
             except UploadError as e:
@@ -253,7 +349,7 @@ class CalibrationJobRunner:
             lease_id = self._lease = lease["lease_id"]
             validation = validate_videos(lease["left"]["path"], lease["right"]["path"], lim)
             if not validation["ok"]:
-                outcome = "rejected"
+                outcome = "rejected"; self._delete_rejected = True        # the videos themselves are unusable: retrying the same files cannot succeed, so free the disk (as before F8.10)
                 return self._finish("rejected", validation=validation, error="; ".join(e["message"] for e in validation["errors"][:3]))
             if not (self.f7_dir / "f7_calibration.py").is_file():
                 outcome = "rejected"
@@ -367,37 +463,74 @@ class CalibrationJobRunner:
             disk=dict(temp_disk_peak_mb=peak.get("temp_disk_mb"), temp_disk_free_min_mb=min([x["disk_free_min_mb"] for x in r.get("stages", []) if x.get("disk_free_min_mb") is not None] or [None]) if r else None,
                       temp_dir_memory_backed=(env.get("temp_dir_mount") or {}).get("memory_backed"), temp_dir_fstype=(env.get("temp_dir_mount") or {}).get("fstype"), measurable=peak.get("temp_disk_mb") is not None),
             limits=dict(benchmark_timeout_s=self.timeout_s, timed_out=res.get("outcome") == "timeout", cancelled=res.get("outcome") == "cancelled", memory_guard_triggered=res.get("outcome") == "memory_limit",
-                        frames_cap=self.limits.benchmark_frames_cap, full_calibration_timeout_s=min(self.limits.timeout_s, self.store.limits.lease_max_s - 120.0), full_calibration_allowed=self.limits.allow_full),
+                        frames_cap=self.limits.benchmark_frames_cap, full_calibration_timeout_s=max(1.0, min(self.limits.timeout_s, self.store.limits.lease_max_s - self.lease_margin_s)), full_calibration_allowed=self.limits.allow_full),
             integrity=dict(sha256_verified_before_use=bool((res.get("stage_timings") or {}).get("verify", {}).get("checked")), videos_unchanged_after=b.get("videos_unchanged")),
             projection=projection)
 
+    def _persist(self) -> dict:
+        """Write the result document atomically. Never raises; the outcome is recorded so the caller can decide whether the videos may be deleted."""
+        try:
+            info = self.results.save_result(self.job_code, build_result_document(self.result, code=self.job_code, settings=self.settings))
+            return dict(saved=True, **info)
+        except Exception as e:                                          # a full disk, a bad folder, ...: report it, keep the videos
+            return dict(saved=False, error=f"{type(e).__name__}: {str(e)[:120]}")
+
     def _cleanup(self, lease_id, proc):
-        """Release the lease (deleting both videos) only after the worker is gone; keep trying briefly, then leave it to the lease expiry."""
-        self._set(state="cleaning" if self.result is None else self._status["state"])
-        if proc is not None:
-            self._terminate(proc)
-        released = None
-        if lease_id:
-            for _ in range(20):
-                try:
-                    self.store.release_lease(self.owner, lease_id, (self.result or {}).get("outcome", "failed"), delete_files=self.mode != "benchmark")
-                    released = True
-                    break
-                except UploadError as e:
-                    if e.code == "in_use":
-                        time.sleep(0.25); continue
-                    released = False
-                    break
-            self._lease = None
-        resources = self._monitor.stop() if self._monitor else None
-        if self.result is not None:
-            self.result["resources"] = resources
-            self.result["environment"] = probe_environment(self.store.root)
-            self.result["cleanup"] = dict(lease_released=released, videos_deleted=bool(released) and self.mode != "benchmark", job_dir_removed=True)
-            if self.mode == "benchmark":
-                self.result["cleanup"]["videos_kept_for_next_step"] = bool(released)
-                self.result["benchmark_report"] = self._benchmark_report(resources)
-        if self._job_dir is not None:
-            shutil.rmtree(self._job_dir, ignore_errors=True)
-        with self._lock:
-            self._status["monitor"] = None
+        """End of a job, in this order:  stop the worker -> measure -> SAVE THE RESULT (atomic) -> only then release the lease and decide about the videos -> done.
+
+        Videos are deleted ONLY after a completed full calibration whose result is safely saved. After any other outcome of a full run (failure, timeout,
+        worker crash, memory stop, cancellation, rejection) they are kept, owner-only and unprotected, for ``retry_retention_s`` so a retry needs no re-upload;
+        then the sweeper deletes them. A benchmark always keeps them (its own retention). Session lock and abandonment still delete everything."""
+        try:
+            self._set(state="cleaning")
+            if proc is not None:
+                self._terminate(proc)
+            resources = self._monitor.stop() if self._monitor else None
+            if self.result is not None:
+                self.result["resources"] = resources
+                self.result["environment"] = probe_environment(self.store.root)
+                self.result["timeout"] = self.timeout_info
+                self.result["memory_guard"] = dict(self._guard_info, max_cgroup_fraction=self.limits.max_cgroup_fraction, max_tree_rss_mb=self.limits.max_tree_rss_mb)
+                if self.mode == "benchmark":
+                    self.result["benchmark_report"] = self._benchmark_report(resources)
+                outcome = self.result.get("outcome", "failed")
+                self._persisted = self._persist()                      # BEFORE any video is released
+                self.result["persistence"] = dict(self._persisted, scope="server-local, ephemeral; download the result to keep it")
+            else:
+                outcome = "failed"
+            delete = self.mode == "calibrate" and ((outcome == "completed" and bool((self._persisted or {}).get("saved"))) or self._delete_rejected)
+            retry_keep = self.mode == "calibrate" and not delete
+            released = None
+            if lease_id:
+                for _ in range(20):
+                    try:
+                        self.store.release_lease(self.owner, lease_id, outcome, delete_files=delete, retry_keep=retry_keep)
+                        released = True
+                        break
+                    except UploadError as e:
+                        if e.code == "in_use":
+                            time.sleep(0.25); continue
+                        released = False
+                        break
+                self._lease = None
+            if self.result is not None:
+                kept = bool(released) and not delete
+                self.result["cleanup"] = dict(lease_released=released, videos_deleted=bool(released) and delete, job_dir_removed=True, videos_kept_for_next_step=kept,
+                                              kept_for_retry_s=self.store.limits.retry_retention_s if kept and retry_keep else (None if not kept else self.store.limits.complete_retention_s))
+                if self._persisted and self._persisted.get("saved"):
+                    second = self._persist()                  # second atomic write: the same document with the final cleanup facts (the first copy stands if this fails)
+                    if second.get("saved"):
+                        self._persisted = second; self.result["persistence"].update({k: v for k, v in second.items() if k in ("saved", "bytes", "sha256")})
+            if self._job_dir is not None:
+                shutil.rmtree(self._job_dir, ignore_errors=True)
+        except BaseException as e:                                     # never leave the UI spinning, whatever went wrong here
+            if self.result is not None:
+                self.result.setdefault("cleanup", dict(lease_released=None, videos_deleted=False, job_dir_removed=False, error=type(e).__name__))
+        finally:
+            with self._lock:
+                self._status["monitor"] = None
+            self._set(state="done")
+            self._publish(force=True)
+            with _ACTIVE_LOCK:
+                if _ACTIVE.get(self.job_code) is self:
+                    del _ACTIVE[self.job_code]
