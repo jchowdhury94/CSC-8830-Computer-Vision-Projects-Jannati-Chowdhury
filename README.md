@@ -70,7 +70,11 @@ The original videos and high-resolution photographs are git-ignored; the page us
 
 ### Module 7 - Stereo Vision
 
-Calibrated stereo measurement of an object's Z-depth, width and height from two photographs, using classical OpenCV. A visitor can load a saved calibration (`.npz`) or compute one from their own checkerboard photographs, select the object's corners on both images with a draggable zoom view, and calculate the dimensions. The page also shows the author's saved experiment: an iPhone Air and iPhone 17 Pro Max calibrated from 30 checkerboard pairs, used to measure a notebook. Part 3 (Room Measurement Using Stereo Videos) shows the author's saved room experiment on the website; measuring a room from your own stereo videos runs in a separate standalone application on your own computer (see [Run the Module 7 room-measurement application locally](#run-the-module-7-room-measurement-application-locally)). Visitor measurements never use the author's calibration, and the original photographs are not needed to run the page.
+Both questions use classical computer vision only (no machine learning or deep learning).
+
+**Question 1 - Calibrated Stereo Object Measurement.** Calibrated stereo measurement of an object's Z-depth, width and height from two photographs, using classical OpenCV. A visitor can load a saved calibration (`.npz`) or compute one from their own checkerboard photographs, select the object's corners on both images with a draggable zoom view, and calculate the dimensions. The page also shows the author's saved experiment: an iPhone Air and iPhone 17 Pro Max calibrated from 30 checkerboard pairs, used to measure a notebook. Visitor measurements never use the author's calibration, and the original photographs are not needed to run the page.
+
+**Question 3 - Room Measurement Using Stereo Videos** (Part 3 on the Module 7 page). The website shows the author's saved room experiment (Wall A: room width and height from two viewpoints). The website does not process visitor videos: measuring a room from your own stereo videos (Wall A, and Wall B: room length from three viewpoints) runs in a separate standalone application on your own computer, started with `python run_local.py` (see [Run the Module 7 room-measurement application locally](#run-the-module-7-room-measurement-application-locally)).
 
 See [Modules/Module_7/README.md](Modules/Module_7/README.md) for the method, workflows, results, data files and verification commands.
 
@@ -80,6 +84,8 @@ See [Modules/Module_7/README.md](Modules/Module_7/README.md) for the method, wor
 CSC_8830_Projects_Jannati_Chowdhury/
 ├── README.md
 ├── home.py
+├── run_local.py
+├── local_mode.py
 ├── requirements.txt
 ├── .gitignore
 ├── Pages/
@@ -104,9 +110,10 @@ CSC_8830_Projects_Jannati_Chowdhury/
 │   │   └── Part_B/
 │   └── Module_7/
 │       ├── README.md
-│       ├── stereo_measure/
+│       ├── stereo_measure/              Question 1
 │       ├── calibration/, selections/, reference/, display/, outputs/
-│       └── run_measurement.py, run_calibration.py, verify_pipeline.py
+│       ├── run_measurement.py, run_calibration.py, verify_pipeline.py
+│       └── room_measurement/, visitor_workflow/, f8_chunk_poc/, annotation_ui/   Question 3
 └── tests/
 ```
 

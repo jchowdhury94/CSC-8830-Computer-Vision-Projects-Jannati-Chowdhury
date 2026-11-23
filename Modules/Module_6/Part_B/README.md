@@ -50,8 +50,8 @@ and `output/part_b_landmark_closeups.png` for individual landmarks. Each
 `view_*_correspondences.png` also retains full resolution. Markers are open
 rings, with labels offset from the feature.
 
-The initial coordinates were manually estimated by the assistant through
-visual inspection of full-resolution crops, without subpixel refinement.
+The initial coordinates were estimated manually by visual inspection of
+full-resolution crops, without subpixel refinement.
 Rounded/flexible cover corners have some localization uncertainty. The close-up
 sheet shows the chosen front-cover perimeter locations rather than back-cover
 corners. Inspect these before subsequent geometry. Illustrated facial details,

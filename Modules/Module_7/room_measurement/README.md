@@ -1,6 +1,8 @@
-# Module 7 Part 3 — Room (wall) measurement from two stereo video views
+# Module 7 Question 3 — Wall A: room width and height from two stereo video views
 
-**Status: Phase 1 (Python implementation only).** No Streamlit interface yet.
+This document describes the estimation method and validation of the author's saved **Wall A** experiment (classical computer vision only, no machine
+learning). The website shows its results, and the visitor application (`../visitor_workflow/`, started with `python run_local.py` from the repository root) applies the
+same methods to a visitor's own videos; see [`../README.md`](../README.md) for the overview, Wall B and the local workflow.
 This is an approximate, educational experiment — **not a precision room-measurement system.**
 
 ```
@@ -10,7 +12,10 @@ python -m pytest tests/test_module7_room_measurement.py    # synthetic tests + r
 ```
 
 The estimate is written to `outputs/room_measurement/estimation_result.json` **first**; only afterwards is it compared with the
-ground truth (`validation.json`). The final dimensions are never hard-coded anywhere.
+measured size (`validation.json`). The final dimensions are never hard-coded anywhere.
+
+**Result of the saved experiment:** width 2879.6 mm and height 2380.2 mm against the measured 2900 × 2400 mm (errors −0.70 % and −0.82 %; 95 % intervals
+2655.7 – 3103.5 mm and 2187.7 – 2572.8 mm).
 
 ## Camera setup and data collection
 | | |
@@ -57,7 +62,7 @@ the rig pose for the wall is re-estimated from the wall videos themselves.
 Manual: frame selection, boundary-line seeds and windows, carpet-edge windows, the 225 mm baseline, the choice of corners. Everything else is computed.
 
 ## Validation
-`validation.py` is the only code that knows the ground truth (2900 × 2400 mm) and the lens height (640 mm); estimation code cannot import it
+`validation.py` is the only code that knows the measured size (2900 × 2400 mm) and the lens height (640 mm); estimation code cannot import it
 (tested). It reports signed/absolute/percentage error, whether the truth lies inside the interval, and a lens-height diagnostic.
 
 ## Limitations — read before quoting a number
