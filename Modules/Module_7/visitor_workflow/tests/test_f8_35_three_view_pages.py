@@ -31,7 +31,8 @@ def ready_b(svc6, b3):
     return s, wf
 
 
-def test_measure_page_shows_three_viewpoint_readiness_and_the_closed_gate(svc6, ready_b):
+def test_measure_page_shows_three_viewpoint_readiness_and_the_closed_gate(svc6, ready_b, monkeypatch):
+    monkeypatch.setattr(S, "WALL_B_PROCESSING_ENABLED", False)                                          # closed Wall B gate
     s, wf = ready_b; at = page_app(svc6, s); at.run(); assert not at.exception, at.exception
     t = texts(at); assert "Ready to calculate" in t and "6 videos (3 viewpoints)" in t and "2 usable frame sets" in t and "not yet available" in t
     assert button(at, "Calculate Room Length").disabled and "Calculate Room Length" in t                      # the processing gate is a code constant: no handler, no start

@@ -176,7 +176,7 @@ def test_h3_failed_result_page_buttons_lead_to_each_step(svc, complete):
 
 def test_h3_unavailable_measurement_does_not_offer_a_dead_retry(svc, complete):
     s, wf = complete
-    finished(svc, s, failed_result("WORKER_TIMEOUT", cls="worker_resource")); svc.measurement.gate_open = lambda: False
+    finished(svc, s, failed_result("WORKER_TIMEOUT", cls="worker_resource")); svc.measurement.gate_open = lambda *a: False
     at = page_app(svc, s); at.run(); assert not has_button(at, "Try again") and "nothing to retry" in texts(at)
 
 

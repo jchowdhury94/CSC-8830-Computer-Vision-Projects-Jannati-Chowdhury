@@ -194,11 +194,17 @@ class MeasurementService:
         self._start_lock = threading.Lock()
 
     # ---- the gate
-    def gate_open(self) -> bool:
-        """True only when the code constant allows room processing (or a test injected a gate).  The default gate reads ``ROOM_PROCESSING_ENABLED`` at call time."""
+    def gate_open(self, session=None) -> bool:
+        """True only when the code constants allow processing of the ACTIVE wall (or a test injected a gate).  Wall A reads ``WALL_A_PROCESSING_ENABLED`` and Wall B reads
+        ``WALL_B_PROCESSING_ENABLED`` (independent of each other); a call without a session reads ``ROOM_PROCESSING_ENABLED``.  All are read at call time."""
         if self._gate is not None:
             return self._gate() is True
         import f8_visitor_service as S
+        wall = getattr(session, "active_wall", None) if session is not None else None
+        if wall == "A":
+            return S.WALL_A_PROCESSING_ENABLED is True
+        if wall == "B":
+            return S.WALL_B_PROCESSING_ENABLED is True
         return S.ROOM_PROCESSING_ENABLED is True
 
     # ---- trusted values
@@ -210,6 +216,14 @@ class MeasurementService:
             return self._coordinator
         import resource_budget as RB
         return RB.app_coordinator()
+
+    def resource_policy(self) -> dict:
+        """The processing limits that are ACTUALLY enforced, for display (read-only; nothing here sets or changes a limit): the worker wall-clock timeout, the worker CPU-time limit and the
+        free memory a measurement needs before it is admitted, for two viewpoints (Wall A's method) and for three (the limits ``three_view_runner.run`` applies)."""
+        import three_view_runner as TVRUN
+        RR = _backend(); lim = self.trusted_limits()
+        return dict(timeout_s=float(lim.timeout_s), cpu_limit_s=float(lim.cpu_limit_s), min_memory_mb_2=float(min(lim.min_tree_rss_mb, lim.max_tree_rss_mb)),
+                    min_memory_mb_3=float(TVRUN.three_view_limits(RR, lim).min_tree_rss_mb))
 
     # ---- readiness
     def readiness(self, session) -> MeasurementReadiness:
@@ -285,7 +299,7 @@ class MeasurementService:
             items[key] = ReadinessItem(key, ITEM_LABEL[key], not probs, self._detail(key, summary), None if not probs else step_of[key], probs, tuple(dict.fromkeys(codes_by_item[key])))
         ready = bool(ctx is not None and wf is not None and ready_backend and all(i.ok for i in items.values()))
         b = binding_of(session.room_owner, session.contract, wf, sources) if ctx is not None else None
-        return MeasurementReadiness(ready, tuple(items.values()), summary, tuple(warns), status if not ready else "current", b, self.gate_open())
+        return MeasurementReadiness(ready, tuple(items.values()), summary, tuple(warns), status if not ready else "current", b, self.gate_open(session))
 
     def _readiness3(self, session) -> MeasurementReadiness:
         """Readiness of a three-viewpoint Wall B: the verdict IS the three-viewpoint input check (``three_view_runner.prepare``), nothing is hashed or staged here."""
@@ -336,7 +350,7 @@ class MeasurementService:
             items.append(ReadinessItem(key, ITEM_LABEL_3[key], not probs, detail, None if not probs else step_of[key], probs, tuple(dict.fromkeys(items_c[key]))))
         ready = bool(ctx is not None and wf is not None and ready_backend and all(i.ok for i in items))
         b = binding_of(session.room_owner, session.contract, wf, sources) if ctx is not None else None
-        return MeasurementReadiness(ready, tuple(items), summary, (), status if not ready else "current", b, self.gate_open())
+        return MeasurementReadiness(ready, tuple(items), summary, (), status if not ready else "current", b, self.gate_open(session))
 
     @staticmethod
     def _detail(key: str, s: dict) -> str:
@@ -351,7 +365,7 @@ class MeasurementService:
     # ---- start / cancel / result
     def start(self, session) -> str:
         """Start ONE measurement for this visitor.  The gate is checked first; while it is closed nothing is validated, staged, started or recorded."""
-        if not self.gate_open():
+        if not self.gate_open(session):
             raise MeasurementError(RVW.GATE_MESSAGE)
         rec: MeasurementRecord = session.measurement
         with self._start_lock:

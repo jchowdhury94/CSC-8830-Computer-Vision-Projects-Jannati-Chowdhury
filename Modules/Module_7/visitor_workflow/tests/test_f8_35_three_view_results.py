@@ -137,7 +137,8 @@ def test_downloadable_summaries_carry_method_quality_and_limitations_but_no_grou
 
 
 # ------------------------------------------------------------------ the measurement service
-def test_the_gate_stays_closed_for_a_three_viewpoint_wall(svc6, b3):
+def test_the_gate_stays_closed_for_a_three_viewpoint_wall(svc6, b3, monkeypatch):
+    monkeypatch.setattr(S, "WALL_B_PROCESSING_ENABLED", False)                                          # closed Wall B gate
     s, wf = b3; assert S.ROOM_PROCESSING_ENABLED is False
     with pytest.raises(M.MeasurementError, match="not yet available"):
         svc6.measurement.start(s)

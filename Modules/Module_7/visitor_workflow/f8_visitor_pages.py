@@ -2,7 +2,7 @@
 
 Session-state namespace: every key this module creates starts with ``f8i_`` (the F6 app uses ``f6*`` / ``f7*``, the F8 proof of concept ``f8_`` / ``dual_``).
 Nothing here starts a job on a rerun: a calibration starts only inside the ``Start calibration`` button handler.
-Room VIDEO UPLOAD (F8.31A), frames and boundaries (F8.31B), readiness and results (F8.31C-2A) exist; the measurement action stays disabled while ROOM_PROCESSING_ENABLED is False."""
+Room VIDEO UPLOAD (F8.31A), frames and boundaries (F8.31B), readiness and results (F8.31C-2A) exist; the measurement action is gated per wall (WALL_A_PROCESSING_ENABLED, WALL_B_PROCESSING_ENABLED)."""
 from __future__ import annotations
 
 import json
@@ -744,6 +744,12 @@ def page_room(svc, sess):
                 continue
             _viewpoint_selector(svc, sess, ss)
             st.caption(f"{UT.retention_short(lim)} Use × on a video to remove it.")
+            with st.container(border=True, key=f"f8i_cloud{sfx}"):              # the Cloud-resources notice: limits come from the enforcing objects (the room store, F6 limits, the measurement service)
+                pol = svc.measurement.resource_policy()
+                st.markdown("\n".join(UT.cloud_limits_notice(
+                    wall=sess.active_wall, n_videos=nv, n_viewpoints=nvp, per_file_mb=lim.max_file_bytes / MiB, store_total_mb=lim.max_disk_bytes / MiB,
+                    min_duration_s=RV.F6_LIMITS.min_duration_s, max_duration_s=RV.F6_LIMITS.max_duration_s, timeout_s=pol["timeout_s"], cpu_limit_s=pol["cpu_limit_s"],
+                    min_memory_mb_2=pol["min_memory_mb_2"], min_memory_mb_3=pol["min_memory_mb_3"])))
             with st.container(border=True, key=f"f8i_reqs{sfx}"):               # Phase D.3: the verified recording and upload requirements, beside the uploaders (numbers come from the enforcing objects)
                 st.markdown("\n".join(UT.upload_requirements(
                     n_videos=nv, viewpoints=[(vp, VPC.ROLE[vp] if nvp == 3 else None) for vp in range(1, nvp + 1)], per_file_mb=lim.max_file_bytes / MiB, store_total_mb=lim.max_disk_bytes / MiB,

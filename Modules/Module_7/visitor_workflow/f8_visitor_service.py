@@ -45,6 +45,8 @@ from chunk_store import SLOTS, ChunkStore, UploadError                          
 from result_store import ResultStore, build_result_document, job_id, new_code, valid_code  # noqa: E402
 
 ROOM_PROCESSING_ENABLED = False          # F8.18: a constant on purpose. Room video processing / reconstruction is a LATER phase.
+WALL_B_PROCESSING_ENABLED = True        # Cloud test: the three-viewpoint Wall B (room length) calculation, still subject to every admission check (memory budget, timeout, CPU limit). A constant, not a setting.
+WALL_A_PROCESSING_ENABLED = True        # Cloud test: the validated two-viewpoint Wall A (width + height) calculation is open. The walls are gated independently of each other (see WALL_B_PROCESSING_ENABLED). A constant, not a setting.
 GOOD, QUESTIONABLE, FAILED = B.GOOD, B.QUESTIONABLE, B.FAILED
 NOT_ASSESSED, INVALID = "NOT_ASSESSED", "INVALID"
 NOT_ASSESSED_CONCERN = "The quality of this calibration was not assessed by F8; only its numbers were checked for validity."

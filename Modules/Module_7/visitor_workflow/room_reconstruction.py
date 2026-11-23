@@ -493,7 +493,7 @@ def _run_worker(request: ReconstructionRequest, limits: ReconstructionLimits, *,
 
     F8.31C-1C: admission goes through the application-wide ``resource_budget`` coordinator (shared with the calibration runner, cross-process, no queue).  BUSY (the single
     reconstruction slot is taken) and INSUFFICIENT_MEMORY (the budget cannot grant ``min_tree_rss_mb``) are different outcomes.  The ceiling enforced below is the GRANT."""
-    info = dict(tree_peak_rss_mb=None, rss_checks=0, rss_fresh_checks=0, blind_polls=0, exit_code=None, wall_seconds=None, limit_mb=None, requested_limit_mb=limits.max_tree_rss_mb,
+    info = dict(tree_peak_rss_mb=None, tree_cpu_s=None, cpu_limit_s=float(limits.cpu_limit_s), rss_checks=0, rss_fresh_checks=0, blind_polls=0, exit_code=None, wall_seconds=None, limit_mb=None, requested_limit_mb=limits.max_tree_rss_mb,
                 timeout_s=limits.timeout_s, budget=None, container_guard=dict(active=False, limit_mb=None, peak_used_mb=None), enforcement=None)
     coord = coordinator if coordinator is not None else RB.app_coordinator()
     try:
@@ -551,8 +551,11 @@ def _run_worker(request: ReconstructionRequest, limits: ReconstructionLimits, *,
             info["rss_checks"] += 1
             try:
                 table = snapshot_processes(); rss = sum((table[p].get("rss_mb") or 0.0) for p in tree_pids(table, proc.pid) if p in table) if table else None
+                cpu = sum((table[p].get("cpu_s") or 0.0) for p in tree_pids(table, proc.pid) if p in table) if table else None       # diagnostics only: cumulative CPU of THIS worker's process tree, from the same snapshot
             except Exception:
-                rss = None
+                rss = cpu = None
+            if cpu is not None and cpu > 0:
+                info["tree_cpu_s"] = max(info["tree_cpu_s"] or 0.0, cpu)
             if rss is None or rss <= 0:
                 info["blind_polls"] += 1
                 if info["blind_polls"] >= limits.blind_polls_max:

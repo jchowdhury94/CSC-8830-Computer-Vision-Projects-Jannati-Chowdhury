@@ -205,7 +205,8 @@ def test_failed_wall_b_keeps_wall_a_and_shows_the_real_reason(svc, two_walls):
     button(at, "View Wall A").click().run(); assert s.active_wall == "A" and "Wall A Measured — Step 1 of 2" in texts(at) and "285 cm" in texts(at)
 
 
-def test_wall_b_calculate_page_is_gated_and_labelled(svc, two_walls):
+def test_wall_b_calculate_page_is_gated_and_labelled(svc, two_walls, monkeypatch):
+    monkeypatch.setattr(S, "WALL_B_PROCESSING_ENABLED", False)                                          # closed Wall B gate
     s, wa, wb = two_walls; run_wall(svc, s, "A", ok_result()); s.switch_wall("B"); s.step = "measure"
     svc.measurement = M.MeasurementService(svc, runner=lambda ctx: pytest.fail("must not run"))     # the default gate: closed
     at = page_app(svc, s); at.run(); assert not at.exception, at.exception

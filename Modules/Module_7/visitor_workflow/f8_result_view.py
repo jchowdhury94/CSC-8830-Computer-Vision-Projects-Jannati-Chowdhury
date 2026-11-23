@@ -129,6 +129,41 @@ def scalar_rows(d, prefix: str = "", *, max_rows: int = 40) -> list:
 RV_LABEL = {"p1_left": "Viewpoint 1 · Left camera video", "p1_right": "Viewpoint 1 · Right camera video", "p2_left": "Viewpoint 2 · Left camera video", "p2_right": "Viewpoint 2 · Right camera video"}
 
 
+def _num(v, unit="", nd=0):
+    """A finite number as text, else None (a missing or malformed field is simply not shown as a value)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return None
+    return f"{v:,.{nd}f}{unit}"
+
+
+def resource_rows(proc: dict | None) -> list:
+    """[(label, text)] of the resources one calculation used, read ONLY from the result's own ``processing`` record (numbers and fixed words: never a path, owner, code or video content).
+    A field that was not recorded reads "not available".  CPU time is the sampled cumulative CPU of the worker's process tree, recorded by the worker supervisor."""
+    p = proc if isinstance(proc, dict) else {}
+    w = p.get("worker") if isinstance(p.get("worker"), dict) else {}
+    b = w.get("budget") if isinstance(w.get("budget"), dict) else {}
+    g = w.get("container_guard") if isinstance(w.get("container_guard"), dict) else {}
+    na = "not available"
+    out = {"GRANTED": "Admitted", "BUSY": "Refused: another measurement was running", "INSUFFICIENT_MEMORY": "Refused: not enough free memory"}.get(b.get("outcome"), na)
+
+    def row(label, value, unit="", nd=0, extra=None):
+        t = _num(value, unit, nd)
+        return (label, (t + (extra or "")) if t else na)
+    peak, grant = w.get("tree_peak_rss_mb"), w.get("limit_mb")
+    return [
+        ("Admission", out),
+        row("Memory free before start", b.get("available_mb_before"), " MB"),
+        row("Memory granted to the worker", grant, " MB", extra=(f" (requested {_num(w.get('requested_limit_mb'), ' MB')})" if _num(w.get("requested_limit_mb")) else "")),
+        row("Worker peak memory (process tree, sampled)", peak, " MB"),
+        row("Worker peak memory (its own high-water mark)", p.get("worker_self_peak_rss_mb"), " MB"),
+        row("Container memory in use, peak", g.get("peak_used_mb"), " MB", extra=(f" (container limit {_num(g.get('limit_mb'), ' MB')})" if _num(g.get("limit_mb")) else "")),
+        row("Worker wall-clock time", w.get("wall_seconds"), " s", 1, extra=(f" (limit {_num(w.get('timeout_s'), ' s')})" if _num(w.get("timeout_s")) else "")),
+        row("Worker CPU time (sampled, all threads)", w.get("tree_cpu_s"), " s", 1, extra=(f" (limit {_num(w.get('cpu_limit_s'), ' s')})" if _num(w.get("cpu_limit_s")) else "")),
+        row("Total processing time", p.get("seconds"), " s", 1),
+        ("Worker exit status", str(w["exit_code"]) if isinstance(w.get("exit_code"), int) and not isinstance(w.get("exit_code"), bool) else na),
+    ]
+
+
 def technical_rows(prov: dict | None) -> list:
     """[(label, text)] for developers only: the raw checksums of the videos the result was computed from."""
     return [(f"Video {slot} · SHA-256", str(v.get("sha256", ""))) for slot, v in sorted(((prov or {}).get("videos") or {}).items())]
@@ -265,7 +300,7 @@ def build_view(result, baseline_source=None) -> dict:
         notice=VM.QUESTIONABLE_SUMMARY if ok and r.get("status") == QUESTIONABLE else None, seconds=proc.get("seconds") if isinstance(proc.get("seconds"), (int, float)) and not isinstance(proc.get("seconds"), bool) and math.isfinite(proc.get("seconds")) else None,
         pose=scalar_rows(diag.get("pose")) if ok else [], registration=scalar_rows(diag.get("registration")) if ok else [],
         provenance=provenance_rows(r.get("provenance"), baseline_source) if _valid_schema(result) else [],
-        technical=technical_rows(r.get("provenance")) if _valid_schema(result) else [], disclaimer=DISCLAIMER,
+        technical=technical_rows(r.get("provenance")) if _valid_schema(result) else [], resources=resource_rows(proc) if _valid_schema(result) else [], disclaimer=DISCLAIMER,
         variability=dict(title=VARIABILITY_TITLE, text=VARIABILITY_TEXT) if ok else None, boundaries=boundary_rows(r.get("provenance")) if ok else [], three_view=tv)
 
 

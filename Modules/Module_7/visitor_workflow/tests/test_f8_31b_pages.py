@@ -83,7 +83,8 @@ def test_annotation_step_renders_the_frame_and_the_controls(svc, ready):
     assert not at.exception and not button(at, "Next").disabled and not has_button(at, "Accept this boundary")      # two points are enough to go on; no per-boundary Accept
 
 
-def test_continue_is_gated_and_leads_to_the_placeholder(svc, ready):
+def test_continue_is_gated_and_leads_to_the_placeholder(svc, ready, monkeypatch):
+    monkeypatch.setattr(S, "WALL_A_PROCESSING_ENABLED", False)                                          # closed-gate wording is tested with the Wall A gate closed
     s, wf = ready; s.step = "frames"; wf.auto_select()
     at = page_app(svc, s); at.run()
     assert not at.exception and "Locked. Confirm all six wall boundaries first." in texts(at) and not has_button(at, "Continue")      # step 3 is locked until the six marks were applied

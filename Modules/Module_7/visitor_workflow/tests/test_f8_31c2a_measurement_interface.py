@@ -93,7 +93,7 @@ def complete5(ready):
 def test_complete_readiness_comes_from_the_backend_input_check(svc, complete5):
     s, wf = complete5
     rd = svc.measurement.readiness(s)
-    assert rd.ready and rd.input_status == "current" and all(i.ok for i in rd.items) and rd.binding is not None and rd.gate_open is False
+    assert rd.ready and rd.input_status == "current" and all(i.ok for i in rd.items) and rd.binding is not None and rd.gate_open is True      # Wall A: open for the Cloud test
     assert [i.key for i in rd.items] == ["calibration", "videos", "frames", "annotations"]
     sm = rd.summary
     assert sm["n_frame_sets"] == 5 and sm["annotations_accepted"] == 30 == sm["annotations_required"] and sm["baseline_mm"] == 226.0 and sm["camera_order"] == list(RF.CAMERA_ORDER)
@@ -181,7 +181,8 @@ def test_visitor_isolation(svc, complete, clips):
 
 
 # ================================================================ 10-11. the gate
-def test_gate_disabled_button_and_message(svc, complete5):
+def test_gate_disabled_button_and_message(svc, complete5, monkeypatch):
+    monkeypatch.setattr(S, "WALL_A_PROCESSING_ENABLED", False)                                          # exercise the CLOSED gate of the active wall
     s, wf = complete5; s.step = "measure"; calls = []
     svc.measurement = M.MeasurementService(svc, runner=lambda ctx: calls.append(ctx))                   # the default gate (the code constant); a runner that must never be called
     at = page_app(svc, s); at.run()
@@ -195,6 +196,7 @@ def test_gate_disabled_button_and_message(svc, complete5):
 
 
 def test_no_alternate_route_around_the_gate(svc, complete5, monkeypatch):
+    monkeypatch.setattr(S, "WALL_A_PROCESSING_ENABLED", False)
     s, wf = complete5; s.step = "measure"; calls = []
     for k, v in (("ROOM_PROCESSING_ENABLED", "1"), ("F8_ROOM_PROCESSING_ENABLED", "true"), ("F8_ENABLE_ROOM_PROCESSING", "1")):
         monkeypatch.setenv(k, v)
@@ -219,6 +221,27 @@ def test_no_alternate_route_around_the_gate(svc, complete5, monkeypatch):
         assert "visitor_method_j_adapter" not in srcs[n] and "room_reconstruction" not in srcs[n] and "import pose" not in srcs[n], n
 
 
+def test_gate_is_per_wall_and_each_wall_is_independent(svc, complete5, monkeypatch):
+    s, wf = complete5; ms = M.MeasurementService(svc)
+    assert S.WALL_A_PROCESSING_ENABLED is True and S.WALL_B_PROCESSING_ENABLED is True and S.ROOM_PROCESSING_ENABLED is False
+    assert s.active_wall == "A" and ms.gate_open(s) is True and ms.readiness(s).gate_open is True
+    assert ms.gate_open() is False                                                                    # no session: the global constant (closed)
+    s.switch_wall("B")                                                                                # the real wall switch (Wall B has its own empty uploads and result)
+    assert ms.gate_open(s) is True
+    for a, b in ((True, False), (False, True), (False, False)):                                       # each wall follows ONLY its own constant
+        monkeypatch.setattr(S, "WALL_A_PROCESSING_ENABLED", a); monkeypatch.setattr(S, "WALL_B_PROCESSING_ENABLED", b)
+        assert ms.gate_open(s) is b                                                                   # active wall B
+        s.switch_wall("A"); assert ms.gate_open(s) is a; s.switch_wall("B")
+    with pytest.raises(M.MeasurementError, match="not yet available"):                                # a closed wall refuses before anything else happens
+        ms.start(s)
+    assert s.measurement.job is None
+    # an open gate does not bypass validation: Wall B has no uploads here, so it is still refused for its inputs
+    monkeypatch.setattr(S, "WALL_B_PROCESSING_ENABLED", True)
+    with pytest.raises(M.MeasurementError, match="not complete"):
+        ms.start(s)
+    assert s.measurement.job is None
+
+
 def test_start_takes_only_the_session_and_builds_trusted_values(svc, complete5, monkeypatch):
     s, wf = complete5; seen = []
     ms = M.MeasurementService(svc, gate=lambda: True, runner=lambda ctx: (seen.append(ctx), ok_result())[1])
@@ -234,6 +257,7 @@ def test_start_takes_only_the_session_and_builds_trusted_values(svc, complete5, 
 
 
 def test_default_runner_calls_the_backend_only_after_the_gate_with_trusted_arguments(svc, complete5, monkeypatch):
+    monkeypatch.setattr(S, "WALL_A_PROCESSING_ENABLED", False)
     s, wf = complete5; got = {}
 
     def spy(wf_, owner, contract, cal, sources, limits=None, **kw):

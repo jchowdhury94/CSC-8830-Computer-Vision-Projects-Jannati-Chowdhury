@@ -136,6 +136,24 @@ def upload_requirements(*, n_videos: int, viewpoints, per_file_mb: float, store_
     return tuple(lines)
 
 
+def cloud_limits_notice(*, wall: str, n_videos: int, n_viewpoints: int, per_file_mb: float, store_total_mb: float, min_duration_s: float, max_duration_s: float, timeout_s: float,
+                        cpu_limit_s: float, min_memory_mb_2: float, min_memory_mb_3: float) -> tuple:
+    """Markdown lines of the Cloud-resources notice shown before the room-video uploaders of either wall.  Pure: every number is passed in from the object that enforces it.
+    It states limits, not guarantees: passing the upload checks does not mean the measurement will succeed."""
+    count = {4: "four", 6: "six"}.get(int(n_videos), str(n_videos))
+    return (
+        "**This application runs on limited Streamlit Cloud resources.**",
+        f"- **Wall {wall}** needs {count} videos from {n_viewpoints} stereo viewpoints.",
+        f"- **Each video:** up to {per_file_mb:,.0f} MB, {min_duration_s:g}\u2013{max_duration_s:g} seconds, {ACCEPTED_FORMATS}. Frame size and orientation must match your accepted calibration.",
+        f"- **Shared upload storage:** {store_total_mb:,.0f} MB in total, shared by all visitors and by both walls.",
+        f"- **Calculation:** it runs in a separate worker that is stopped after {timeout_s:g} seconds of run time or {cpu_limit_s:g} seconds of CPU time. It starts only if the server has enough free memory: "
+        f"at least {min_memory_mb_2:,.0f} MB for two viewpoints and {min_memory_mb_3:,.0f} MB for three.",
+        "- **Wall B (three viewpoints, six videos) needs more processing time and memory than Wall A.**",
+        "- **Passing the upload checks does not guarantee a successful measurement.** These limits are not guaranteed to be enough for every accepted video. If a limit is exceeded the application "
+        "tells you which one (for example not enough memory, or the time limit) and does not retry with other settings.",
+    )
+
+
 # ------------------------------------------------------------------ progress (L5)
 def progress_for(step: str, base: dict, *, measurement_complete: bool = False) -> tuple:
     """-> (fraction, label).  100 % is reached only once a measurement was actually accepted; reaching the measurement page is not completion."""

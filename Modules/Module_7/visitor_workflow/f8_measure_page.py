@@ -253,6 +253,14 @@ def _actions(svc, sess, doc, *, second_wall=False):
         c[1].button("Cancel", key="f8i_m_new_no", width="stretch", on_click=_cancel_new)
 
 
+def _resource_use(v):
+    """Read-only 'Resource Use' section of Technical Details (the numbers of this calculation, from the result's own record; nothing is measured here)."""
+    rows = v.get("resources")
+    if rows:
+        st.markdown("**Resource Use**")
+        _table(rows)
+
+
 def _technical_result(v):
     with st.expander("Technical Details"):
         _technical_body(v)
@@ -270,6 +278,7 @@ def _technical_body(v):
         _table(v["registration"] and [("Registration · " + a, b) for a, b in v["registration"]])
         _table(v["provenance"])
         _table(v.get("technical"))
+        _resource_use(v)
         st.caption(v["disclaimer"])
 
 
@@ -347,7 +356,7 @@ def _render_failure(svc, sess, v):
     if r["kind"] == "fix":
         for n, a in enumerate(f["actions"] or [r]):                       # the typed code decides the destination(s); the displayed advice is not parsed
             st.button(a["label"], key=f"f8i_m_retry_fix_{n}", type="primary" if n == 0 else "secondary", on_click=_go, args=(sess, a["step"]))
-    elif not svc.measurement.gate_open():
+    elif not svc.measurement.gate_open(sess):
         st.caption("Measuring is not available on this server at the moment, so there is nothing to retry yet.")
     else:
         st.button(r["label"], key="f8i_m_retry", type="primary", disabled=sess.measurement.running, on_click=_start, args=(svc, sess))
@@ -355,6 +364,7 @@ def _render_failure(svc, sess, v):
         st.table([{"Code": t["code"], "Class": t["failure_class"], "Stage": t["stage"], "Message": t["message"]} for t in f["technical"]])
         _table(v["provenance"])
         _table(v.get("technical"))
+        _resource_use(v)
     st.caption(v["disclaimer"])
 
 
