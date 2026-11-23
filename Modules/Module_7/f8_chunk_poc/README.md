@@ -75,3 +75,22 @@ Unavailable measurements (no cgroup, no `/proc`, no PSS) are shown as "not measu
   (validation failure) are still deleted at once. A retry does not start while container anonymous memory is above 60 % of the limit.
 * **Timeout:** `F8_CALIB_TIMEOUT_S=5400` is supported; the lease (`F8_LEASE_MAX_S`, default 7200) must cover timeout + `lease_margin_s` (2×inspection timeout + kill grace + 30 s); the runner clips and reports it.
   Full calibration stays OFF unless `F8_ENABLE_FULL_CALIBRATION=1` (plus the ticked confirmation and a click). `F8_REQUIRE_MEMORY_GUARD=1` refuses a full run if no container memory limit can be read.
+
+## Choosing a memory limit on a Mac (F8.20a)
+
+Streamlit Cloud (Linux) is protected by the container (cgroup) guard. macOS has no cgroup, so locally the only guard is a **process-tree resident-memory limit**:
+`F8_MAX_TREE_RSS_MB` (256–65536; unset/invalid = no limit). It sums the app process + the calibration worker + every descendant (read with `ps`, sampled about every second)
+and stops the worker (SIGTERM, then SIGKILL after 3 s, whole process group) when the sum is exceeded; the uploaded copies are then kept for a retry. If the limit cannot be
+measured, the run is refused at start (`F8_REQUIRE_MEMORY_GUARD=1`) and stopped after about 5 s of blindness during a run.
+
+Local launch (there is **no default**; the limit must be given with the `=` form):
+
+    F8_PASSCODE=<8+ chars> python Modules/Module_7/run_f8_integrated_app.py --enable-full-calibration --max-tree-rss-mb=3000
+
+How to choose the number
+1. Measured need: the worker peaked at about **770 MB** on the real 3.6-minute stereo recordings (`outputs/stage_f8_6_benchmark/reference.json`, `peak_rss_mb`); the Streamlit app process adds about 150–250 MB.
+   So the expected total is roughly 1 GB.
+2. Set the limit at about 2–3× that (**≈ 2500–3000 MB**): high enough that normal variation never stops a good run, low enough to catch a runaway long before the machine swaps.
+3. Upper bound: leave the OS and your other apps room. Never more than about half of installed RAM (this Mac has 32 GB, so 16000 is a ceiling, not a target).
+4. RSS on macOS excludes memory the OS has compressed or swapped, so it can under-count under heavy pressure. Close memory-hungry apps before a supervised run and watch Activity Monitor.
+5. If a run is stopped by the guard, do not simply raise the limit: read the measured peak in the saved result first.

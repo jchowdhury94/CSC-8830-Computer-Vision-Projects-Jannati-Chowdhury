@@ -269,7 +269,7 @@ class ResourceMonitor:
         cg = self._read_cg()
         used, free = self._disk()
         cpu = sum(table[p]["cpu_s"] for p in tree) if tree else None
-        s = dict(t=round(self._clock() - self._t0, 2), parent_rss_mb=_r(parent), worker_rss_mb=_r(worker_rss), tree_pss_mb=_r(pss), combined_pss_mb=_r(combined_pss),
+        s = dict(t=round(self._clock() - self._t0, 2), mono_s=self._clock(), parent_rss_mb=_r(parent), worker_rss_mb=_r(worker_rss), tree_pss_mb=_r(pss), combined_pss_mb=_r(combined_pss),
                  combined_rss_mb=_r((parent or 0) + (worker_rss or 0)) if parent is not None else None, cgroup_current_mb=_r(cg.get("memory_current_mb")),
                  cgroup_anon_mb=_r(cg.get("anon_mb")), cgroup_file_mb=_r(cg.get("file_mb")), nr_throttled=cg.get("nr_throttled"), temp_disk_mb=_r(used), disk_free_mb=_r(free))
         with self._lock:

@@ -85,7 +85,7 @@ with sync_playwright() as p:
     with pg.expect_download(timeout=30000) as dl: pg.get_by_role("button", name="Download the result (JSON)").click()
     path = dl.value.path(); raw = Path(path).read_bytes(); doc = json.loads(raw); text = raw.decode("utf-8")
     cams = doc["cameras"]
-    step("the download is JSON with the calibration results", doc["schema"] == "f8.calibration_result/1" and doc["outcome"] == "completed" and doc["quality"]["level"] == "GOOD" and doc["quality"]["stereo_rms_px"] is not None
+    step("the download is JSON with the calibration results", doc["schema"] in ("f8.calibration_result/1", "f8.calibration_result/2") and doc["outcome"] == "completed" and doc["quality"]["level"] == "GOOD" and doc["quality"]["stereo_rms_px"] is not None
          and cams["left"]["K"] and cams["right"]["K"] and cams["left"]["distortion"] and doc["extrinsics"]["R"] and doc["extrinsics"]["T"] and doc["extrinsics"]["baseline_mm"]
          and doc["selected_poses"]["count"] and doc["synchronization"]["sync"] and doc["runtime"]["supervisor_total_s"] and doc["measurements"]["stages"],
          stereo_rms=doc["quality"]["stereo_rms_px"], baseline_mm=doc["extrinsics"]["baseline_mm"], poses=doc["selected_poses"]["count"], bytes=len(raw))

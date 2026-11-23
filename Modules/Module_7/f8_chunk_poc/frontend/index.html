@@ -2,7 +2,10 @@
 <html><head><meta charset="utf-8">
 <style>
   :root { --fg:#1f2937; --muted:#6b7280; --bg:transparent; --bar:#e5e7eb; --fill:#2563eb; --ok:#15803d; --err:#b91c1c; --btn:#f3f4f6; --bd:#d1d5db; }
-  @media (prefers-color-scheme: dark) { :root { --fg:#e5e7eb; --muted:#9ca3af; --bar:#374151; --fill:#60a5fa; --ok:#4ade80; --err:#f87171; --btn:#1f2937; --bd:#4b5563; } }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme]) { --fg:#e5e7eb; --muted:#9ca3af; --bar:#374151; --fill:#60a5fa; --ok:#4ade80; --err:#f87171; --btn:#1f2937; --bd:#4b5563; } }
+  /* F8.31D-2: a host that is always dark (the visitor app, --theme.base dark) passes theme="dark" so the control no longer follows the OS light/dark preference */
+  :root[data-theme="dark"] { color-scheme: dark; --fg:#F2F4F7; --muted:#B8BDC7; --bar:#2A2E37; --fill:#C9363E; --ok:#4ade80; --err:#ff8a8a; --btn:#1B1F26; --bd:#5B6470; }
+  :root[data-theme="light"] { color-scheme: light; --fg:#1f2937; --muted:#6b7280; --bar:#e5e7eb; --fill:#2563eb; --ok:#15803d; --err:#b91c1c; --btn:#f3f4f6; --bd:#d1d5db; }
   html, body { margin:0; padding:0; background:var(--bg); color:var(--fg); font:14px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; }
   #box { padding:4px 2px 6px; }
   input[type=file] { font:inherit; color:var(--fg); max-width:100%; }
@@ -12,11 +15,14 @@
   #fill { height:100%; width:0; background:var(--fill); transition:width .15s; }
   #status { min-height:20px; } #stats { color:var(--muted); font-size:12px; }
   .ok { color:var(--ok); } .err { color:var(--err); }
+  /* F8.31F: room-video cards show the accepted filename once (in the card status line), so the native input's own filename text is hidden */
+  html[data-compact] #file { color: transparent; }
+  html[data-compact] #stats { display:none; }
 </style></head>
 <body>
 <div id="box">
   <div id="label" style="font-weight:600;margin-bottom:2px" hidden></div>
-  <input id="file" type="file" accept="video/*,.mov,.mp4,.m4v,.hevc" aria-label="Select a video file">
+  <input id="file" type="file" accept="video/*,.mov,.mp4,.m4v" aria-label="Select a video file">
   <div id="bar"><div id="fill"></div></div>
   <div id="status">Select a video file to upload in chunks.</div>
   <div id="stats"></div>
@@ -80,15 +86,20 @@ const ACK_TIMEOUT_MS = 60000, ATTEMPTS = 3, CHUNK_RETRIES = 3;
 window.addEventListener("message", (ev) => {
   if (!ev.data || ev.data.type !== "streamlit:render") return;
   args = ev.data.args || {};
+  if (args.theme === "dark" || args.theme === "light") { document.documentElement.setAttribute("data-theme", args.theme); }
+  if (args.hide_idle_hint) { document.documentElement.setAttribute("data-compact", "1"); }
+  if (args.hide_idle_hint && !running && !currentFile && $("status").textContent === IDLE_DEFAULT) { $("status").textContent = ""; }
   if (args.label) { const L = $("label"); L.textContent = args.label; L.hidden = false; }
   if (args.epoch !== lastEpoch) { const first = lastEpoch === null; lastEpoch = args.epoch; if (!first) resetUI(); }
   const ack = args.ack;
   if (ack && ack.msg_id && waiters.has(ack.msg_id)) { const w = waiters.get(ack.msg_id); waiters.delete(ack.msg_id); w(ack); }
 });
 
+const IDLE_DEFAULT = "Select a video file to upload in chunks.";
+function idleText() { return args.hide_idle_hint ? "" : IDLE_DEFAULT; }
 function setStatus(text, cls) { const s = $("status"); s.textContent = text; s.className = cls || ""; }
 function setProgress(f) { $("fill").style.width = Math.max(0, Math.min(1, f)) * 100 + "%"; }
-function resetUI() { abortToken++; cancelled = true; running = false; currentFile = null; uploadId = null; $("file").value = ""; setProgress(0); setStatus("Select a video file to upload in chunks."); $("stats").textContent = ""; $("cancel").hidden = true; $("retry").hidden = true; }
+function resetUI() { abortToken++; cancelled = true; running = false; currentFile = null; uploadId = null; $("file").value = ""; setProgress(0); setStatus(idleText()); $("stats").textContent = ""; $("cancel").hidden = true; $("retry").hidden = true; }
 
 async function rpc(msg) {                    // one message in flight; retransmits with the SAME msg_id (the server answers from its cache)
   const id = clientId + "-" + (++counter);
@@ -149,7 +160,7 @@ async function upload(file) {
                    hash_ms_total: +hashMs.toFixed(0), total_s: +((performance.now() - t0) / 1000).toFixed(3), resumed_from_chunk: next};
     const fin = await rpc({type: "finish", upload_id: uploadId, sha256: fileHash.hex(), client_stats: stats});
     if (!fin.ok) throw new Error(fin.message || fin.error);
-    setProgress(1); setStatus("Uploaded and verified (SHA-256 " + fin.sha256.slice(0, 12) + "…).", "ok");
+    setProgress(1); setStatus(args.hide_idle_hint ? "Uploaded and verified." : "Uploaded and verified (SHA-256 " + fin.sha256.slice(0, 12) + "…).", "ok");
   } catch (e) {
     if (token === abortToken) { setStatus(String(e.message || e), "err"); $("retry").hidden = false; }
   } finally {

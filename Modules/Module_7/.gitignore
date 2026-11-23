@@ -1,2 +1,5 @@
 # Original stereo calibration recordings (large, private): never commit.
 data/room_measurement/calibration_videos/
+
+# Wall B three-viewpoint stereo recordings (large, private): never commit.
+data/room_measurement/wall_b_three_viewpoints/

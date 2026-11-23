@@ -146,12 +146,15 @@ class Lease:
     cancel_requested: bool = False
     worker_pid: int | None = None
     outcome: str | None = None
+    kind: str = "calibration"                                     # F8.31C-1C: "calibration" (claims LEFT+RIGHT, deletes on expiry) | "reconstruction" (bounded protection only, never deletes)
 
 
 class ChunkStore:
     def __init__(self, limits: Limits | None = None, root: str | os.PathLike | None = None, clock=time.monotonic, purge_orphans: bool = True,
-                 disk_usage=shutil.disk_usage):
+                 disk_usage=shutil.disk_usage, slots: tuple = SLOTS, root_prefix: str = ROOT_PREFIX):
         self.limits = limits or Limits()
+        self.slots = tuple(slots)                                     # F8.31A: the room-video store has four slots; the calibration store keeps ('left', 'right')
+        self._root_prefix = str(root_prefix)
         self._clock = clock
         self._disk_usage = disk_usage                                 # injectable for tests
         self._lock = threading.RLock()
@@ -161,7 +164,7 @@ class ChunkStore:
         if root is None:
             if purge_orphans:
                 self._purge_stale_roots()
-            root = tempfile.mkdtemp(prefix=ROOT_PREFIX)               # private by construction (0o700)
+            root = tempfile.mkdtemp(prefix=self._root_prefix)               # private by construction (0o700)
             self._owns_root = True
         else:
             Path(root).mkdir(parents=True, exist_ok=True)
@@ -177,7 +180,7 @@ class ChunkStore:
         age = 2 * self.limits.complete_retention_s if max_age_s is None else max_age_s
         tmp = Path(tempfile.gettempdir())
         try:
-            for p in tmp.glob(ROOT_PREFIX + "*"):
+            for p in tmp.glob(self._root_prefix + "*"):
                 try:
                     if p.is_dir() and not p.is_symlink() and time.time() - p.stat().st_mtime > age:
                         shutil.rmtree(p, ignore_errors=True)
@@ -269,6 +272,10 @@ class ChunkStore:
                     self._leases.pop(lease.lease_id, None)            # forget finished leases after an hour (bounded memory)
                 continue
             if lease.state == "active" and not (now - lease.t_heartbeat > self.limits.lease_heartbeat_timeout_s or now > lease.hard_deadline):
+                continue
+            if lease.kind == "reconstruction":                        # F8.31C-1C: an abandoned / over-long reconstruction lease just stops protecting; it never deletes
+                lease.cancel_requested = True
+                self._unprotect(lease, "expired")
                 continue
             lease.state = "expiring"; lease.cancel_requested = True   # abandoned or over-long: stop the worker, then delete once it is really gone
             self._kill_worker(lease)
@@ -365,7 +372,7 @@ class ChunkStore:
         lim = self.limits
         if not isinstance(owner, str) or not owner:
             raise UploadError("bad_request", "Missing session.")
-        if slot is not None and slot not in SLOTS:
+        if slot is not None and slot not in self.slots:
             raise UploadError("bad_request", "Unknown video slot.")
         if not (isinstance(size, int) and not isinstance(size, bool)) or size <= 0:
             raise UploadError("bad_size", "The file is empty or its size is invalid.")
@@ -529,6 +536,18 @@ class ChunkStore:
                     pass                                              # still in use: the sweeper retries
             return removed
 
+    def touch_owner(self, owner: str) -> int:
+        """F8.31B: record visitor ACTIVITY (a real interaction on a later page) so that retention, which counts inactivity from the owner's last activity, is not
+        measured from the upload alone.  Only extends the idle anchor of this owner's existing, non-expired uploads; never resurrects a deleted file and never
+        lifts the absolute ``job_max_s`` ceiling.  Returns how many uploads were touched."""
+        n = 0
+        with self._lock:
+            now = self._clock()
+            for u in self._uploads.values():
+                if u.owner == owner and u.state == COMPLETE and u.retained_until is None:
+                    u.t_activity = now; n += 1
+        return n
+
     release = cancel                                                   # delete an assembled file when the visitor is done with it
 
     def path_of(self, owner: str, upload_id: str) -> Path:
@@ -553,7 +572,7 @@ class ChunkStore:
                     out["slots"][u.slot] = dict(upload_id=u.upload_id, state=u.state, size=u.size, bytes_received=u.bytes_received, n_chunks=u.n_chunks,
                                                 next_index=u.next_index, sha256=u.sha256, leased=u.leased_by is not None, name=u.display_name)
             for l in self._leases.values():
-                if l.owner == owner and l.state in ("active", "expiring"):
+                if l.owner == owner and l.state in ("active", "expiring") and l.kind == "calibration":
                     now = self._clock()
                     out["lease"] = dict(lease_id=l.lease_id, state=l.state, cancel_requested=l.cancel_requested,
                                         heartbeat_age_s=round(now - l.t_heartbeat, 1), hard_remaining_s=round(l.hard_deadline - now, 1))
@@ -580,7 +599,7 @@ class ChunkStore:
                 raise UploadError("retry_blocked", "The memory guard stopped this calibration twice, so it is not retried automatically. Lock the session and start again.")
             if any(u.attempts >= self.limits.max_failed_attempts for u in mine.values()):
                 raise UploadError("retry_blocked", f"This calibration has already failed {self.limits.max_failed_attempts} times; it is not retried again with the same upload.")
-            if sum(1 for l in self._leases.values() if l.state in ("active", "expiring")) >= self.limits.max_active_leases:
+            if sum(1 for l in self._leases.values() if l.kind == "calibration" and l.state in ("active", "expiring")) >= self.limits.max_active_leases:
                 raise UploadError("busy", "Another calibration is running. Please try again when it has finished.")
             for s, u in mine.items():                                  # stale-reference check: the file must still be exactly what was verified
                 try:
@@ -600,6 +619,63 @@ class ChunkStore:
             log.info("lease %s acquired", lease.lease_id[:6])
             return dict(ok=True, lease_id=lease.lease_id, left=info["left"], right=info["right"], heartbeat_timeout_s=self.limits.lease_heartbeat_timeout_s,
                         max_s=self.limits.lease_max_s)
+
+    # ------------------------------------------------------------ F8.31C-1C: bounded protection of uploads while a reconstruction uses them
+    def acquire_job_lease(self, owner: str, expected: dict, max_s: float) -> dict:
+        """Protect the owner's uploads for ONE job, for at most ``max_s`` seconds (capped by ``lease_max_s``).  ``expected``: slot -> (upload_id, sha256) as the frames were chosen.
+        Refused (UploadError) when the owner does not hold exactly those complete, intact uploads: ``not_found`` (missing / expired / not this owner's), ``replaced`` (another
+        upload or other content now sits in the slot), ``job_running`` (already protected).  While protected nothing deletes, sweeps or replaces them; ``heartbeat`` renews,
+        ``release_job_lease`` ends it, and an abandoned lease unprotects on its own and never deletes anything."""
+        if not isinstance(expected, dict) or not expected:
+            raise UploadError("bad_request", "No uploads were named.")
+        with self._lock:
+            self.sweep()
+            now = self._clock(); picked = {}
+            for slot, pair in expected.items():
+                try:
+                    uid, sha = pair
+                except (TypeError, ValueError):
+                    raise UploadError("bad_request", "Malformed upload reference.")
+                u = next((x for x in self._uploads.values() if x.slot == slot and x.owner == owner), None)
+                if u is None or u.state != COMPLETE:
+                    raise UploadError("not_found", "An upload is missing or has expired.")
+                if u.upload_id != uid or u.sha256 != sha:
+                    raise UploadError("replaced", "An upload is not the one that was selected.")
+                try:
+                    if u.path.stat().st_size != u.size:
+                        raise UploadError("not_found", "An upload changed on disk.")
+                except OSError:
+                    raise UploadError("not_found", "An upload is no longer available.")
+                if u.leased_by is not None:
+                    raise UploadError("job_running", "These uploads are already in use by a running job.")
+                picked[slot] = u
+            if len({u.upload_id for u in picked.values()}) != len(picked):
+                raise UploadError("bad_request", "Duplicate upload reference.")
+            span = min(max(float(max_s), 1.0), self.limits.lease_max_s)
+            lease = Lease(secrets.token_urlsafe(18), owner, {s: u.upload_id for s, u in picked.items()}, now, now, now + span, kind="reconstruction")
+            self._leases[lease.lease_id] = lease
+            for u in picked.values():
+                u.leased_by = lease.lease_id; u.t_activity = now; u.retained_until = None
+            return dict(ok=True, lease_id=lease.lease_id, max_s=span)
+
+    def _unprotect(self, lease: Lease, outcome: str):
+        """End a reconstruction lease: the uploads stay, protection ends and the ordinary retention clock restarts from now (nothing is kept longer than before)."""
+        now = self._clock()
+        for i in lease.upload_ids.values():
+            u = self._uploads.get(i)
+            if u is not None and u.leased_by == lease.lease_id:
+                u.leased_by = None; u.t_activity = now
+        lease.state = "released" if outcome != "expired" else "expired"; lease.outcome = outcome
+
+    def release_job_lease(self, owner: str, lease_id: str, outcome: str = "done") -> dict:
+        with self._lock:
+            l = self._lease(owner, lease_id)
+            if l.kind != "reconstruction":
+                raise UploadError("not_found", "This job does not exist.")
+            if l.state in ("released", "expired"):
+                return dict(ok=True, already=True, outcome=l.outcome)
+            self._unprotect(l, str(outcome)[:24])
+            return dict(ok=True, outcome=l.outcome)
 
     def heartbeat(self, owner: str, lease_id: str) -> dict:
         """Extend an active lease. Raises 'lease_expired' once it is no longer active. ``cancel_requested`` tells the supervisor to stop the worker."""

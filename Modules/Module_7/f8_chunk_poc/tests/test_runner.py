@@ -322,12 +322,29 @@ def test_a_failed_quality_level_is_not_completed(store, syn):
     assert r.result["outcome"] == "failed"; assert_retained(store)
 
 
-def test_memory_guard_kills_a_runaway_worker(store, syn):
+def test_memory_guard_kills_a_runaway_worker(store, syn, tmp_path):
+    """F8.31C-1C: the guard sums the PARENT and the worker tree, so a fixed limit of 300 MB is tripped by a large pytest process on its own (the worker was then killed at 13 MB,
+    before it had allocated anything, and the old assertion on the SAMPLED worker peak failed).  The limit is now relative to the parent's real RSS, and what is asserted is the
+    safety behaviour: classification, the guard's own recorded over-limit reading, termination of the worker AND its child, and release of the budget reservation."""
+    import resource_budget as RB
+    from monitor import snapshot_processes
     put_pair(store, syn["left"], syn["right"])
-    body = "b = bytearray(450 * 1024 * 1024); b[::4096] = b'x' * len(b[::4096]); time.sleep(120)"
-    t0 = time.time(); r = run(store, limits=RunnerLimits(allow_full=True, heartbeat_s=0.5, max_tree_rss_mb=300, kill_grace_s=1.0), worker_cmd=fake(body), timeout=60)
+    wpid, cpid = tmp_path / "worker.pid", tmp_path / "child.pid"
+    body = (f"open({str(wpid)!r}, 'w').write(str(os.getpid())); "
+            f"c = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)']); open({str(cpid)!r}, 'w').write(str(c.pid)); "
+            "b = bytearray(450 * 1024 * 1024); b[::4096] = b'x' * len(b[::4096]); time.sleep(120)")
+    parent_mb = snapshot_processes()[os.getpid()]["rss_mb"]
+    limit_mb = parent_mb + 300                                                    # the 450 MB allocation exceeds it whatever the parent holds
+    coord = RB.ResourceCoordinator(root=tmp_path / "budget", cfg=RB.BudgetConfig(ceiling_mb=65536.0), container=dict(limit_mb=None, reliable=False, reason="test"))
+    t0 = time.time()
+    r = run(store, limits=RunnerLimits(allow_full=True, heartbeat_s=0.5, max_tree_rss_mb=limit_mb, kill_grace_s=1.0), worker_cmd=fake(body), timeout=60, coordinator=coord)
     assert r.result["outcome"] == "memory_limit" and "memory guard" in r.result["error"] and time.time() - t0 < 40
-    assert r.result["resources"]["peak"]["worker_rss_mb"] > 250 and r._proc.poll() is not None
+    assert "exceeded" in r.result["error"]                                                 # a real over-limit reading, not 'could not be measured'
+    assert r.result["memory_guard"]["process_tree"]["peak_rss_mb"] > limit_mb             # the guard's own reading at the decision (deterministic, unlike an instantaneous peak)
+    assert r._proc.poll() is not None
+    assert wait_for(lambda: wpid.exists() and cpid.exists(), 5)                           # bounded polling: both processes really existed
+    assert wait_for(lambda: not alive(int(wpid.read_text())) and not alive(int(cpid.read_text())), 10)   # no surviving worker, no surviving child
+    assert coord.state()["reservations"] == [] and r._reservation is None                  # the reservation was released
     assert_retained(store)
 
 

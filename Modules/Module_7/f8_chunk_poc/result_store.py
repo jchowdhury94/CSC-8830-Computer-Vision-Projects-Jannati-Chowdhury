@@ -10,6 +10,8 @@ What this is, and is not
 * It is NOT permanent. On Streamlit Community Cloud the local disk is ephemeral: an app restart, redeploy, reboot or resource-limit restart erases it.
   Results are also deleted after ``ttl_s`` (default 24 h) and the folder is bounded. The DOWNLOAD button is the only durable copy: download it.
 * Original video content is never stored: only metadata, SHA-256 digests, frame indices and calibration numbers.
+* F8.29 (schema /2): also the checkerboard corner observations the calibration was computed from (pixel coordinates only), so a later phase can estimate
+  calibration uncertainty. They are validated and size-bounded on save. Schema /1 documents remain readable.
 """
 from __future__ import annotations
 
@@ -26,7 +28,10 @@ import time
 from pathlib import Path
 
 MiB = 1024 * 1024
-SCHEMA = "f8.calibration_result/1"
+import calibration_observations as CO                              # F8.29 (standard library only)
+
+SCHEMA = CO.RESULT_SCHEMA_V2                                       # new documents are /2; /1 documents still load (see CO.parse_result_document)
+SCHEMA_V1 = CO.RESULT_SCHEMA_V1
 _CODE_RE = re.compile(r"[A-Za-z0-9_-]{16,64}")
 RESULT_NAME, STATUS_NAME = "result.json", "status.json"
 
@@ -90,12 +95,17 @@ def write_atomic(path, data: bytes, mode: int = 0o600) -> None:
 # ------------------------------------------------------------------ the document
 def build_result_document(res: dict, *, code: str, settings: dict | None = None, now: float | None = None) -> dict:
     """The structured, bounded result written for every outcome. ``res`` is the supervisor's result dict. Detections (per-frame corner dumps) and
-    server paths are NOT copied; selected poses are stored as frame indices."""
+    server paths are NOT copied; selected poses are stored as frame indices.
+
+    F8.29 (schema /2): ``calibration_observations`` holds the corner sets actually used by the calibration (see ``calibration_observations``), validated against
+    the calibration stored in the same document. If they are missing or invalid the key is None and ``calibration_observations_status`` says why; the
+    calibration itself is still saved."""
     res = res or {}; cal = res.get("calibration") or {}; model = res.get("model") or {}; ass = res.get("assessment") or {}
     metrics = ass.get("metrics") or {}; vids = ((res.get("validation") or {}).get("videos")) or {}
     rs = res.get("resources") or {}; settings = settings or {}
     side = lambda k: dict(K=model.get("K" + k), distortion=model.get("D" + k), image_size_wh=model.get("image_size_left" if k == "1" else "image_size_right"),
                           rms_px=model.get("rms_left" if k == "1" else "rms_right"), distortion_assessment=model.get("distortion_left" if k == "1" else "distortion_right"))
+    obs, obs_status = res.get("calibration_observations"), dict(res.get("calibration_observations_status") or dict(available=False, reason="no calibration observations were produced"))
     doc = dict(
         schema=SCHEMA, job_id=job_id(code), saved_at_unix=round(now if now is not None else time.time(), 3), mode=res.get("mode"), outcome=res.get("outcome"),
         ok=bool(res.get("ok")), error=res.get("error"),
@@ -113,9 +123,18 @@ def build_result_document(res: dict, *, code: str, settings: dict | None = None,
         measurements=dict(peak=rs.get("peak"), cgroup=rs.get("cgroup"), cpu=rs.get("cpu"), available=rs.get("available"), stages=rs.get("stages"),
                           memory_guard=res.get("memory_guard")),
         benchmark=res.get("benchmark_report"), environment=res.get("environment"), worker_env=res.get("env"), f7=res.get("f7"),
-        cleanup=res.get("cleanup"),
-        note="Contains calibration numbers, frame indices, timings and SHA-256 digests only; no video content and no file paths. Local Cloud storage is ephemeral: keep this download.")
-    return _clean(doc)
+        cleanup=res.get("cleanup"), calibration_observations=obs, calibration_observations_status=obs_status,
+        note="Contains calibration numbers, checkerboard corner pixel coordinates, frame indices, timings and SHA-256 digests only; no video content and no file paths. Local Cloud storage is ephemeral: keep this download.")
+    doc = _clean(doc)
+    if doc.get("calibration_observations") is not None:
+        try:
+            CO.validate_document_observations(doc)
+            doc["calibration_observations_status"] = dict(available=True, reason=None, n_pairs=doc["calibration_observations"]["n_pairs"])
+        except CO.ObservationError as e:                              # keep the calibration; drop what cannot be trusted
+            doc["calibration_observations"] = None
+            doc["calibration_observations_status"] = dict(available=False, reason=f"observations rejected: {str(e)[:200]}")
+    doc["calibration_uncertainty"] = CO.UNAVAILABLE_TEXT if doc.get("calibration_observations") is None else "observations retained; no uncertainty has been computed"
+    return doc
 
 
 class ResultStore:
@@ -149,6 +168,11 @@ class ResultStore:
 
     def save_result(self, code: str, doc: dict) -> dict:
         """Atomically write the result document. Returns dict(bytes, sha256). Raises ResultError (nothing partial is left) on failure."""
+        if isinstance(doc, dict) and doc.get("calibration_observations") is not None:
+            try:                                                      # bounded and validated BEFORE anything is written
+                CO.validate_document_observations(_clean(doc))
+            except CO.ObservationError as e:
+                raise ResultError(f"The calibration observations were rejected: {e}") from e
         try:
             return self._write(code, RESULT_NAME, doc, self.max_bytes)
         except OSError as e:

@@ -168,10 +168,11 @@ def calibrate_from_detections(left: dict, right: dict, settings: Mapping, progre
     keep = [i for i, p in enumerate(res["pairs"]) if p["status"] == "ok"]; out["pairs_used"] = len(keep); out["pairs_discarded"] = len(pairs) - len(keep)
     out["pair_frames"] = [(pr["pairs"][i][0]["frame"], pr["pairs"][i][1]["frame"]) for i in keep]
     if len(keep) < MIN_PAIRS: out["error"] = f"Only {len(keep)} board poses could be matched reliably between the two cameras; at least {MIN_PAIRS} are needed."; return out
+    obs_left, obs_right = [pairs[i][0] for i in keep], [res["pairs"][i]["right_corners"] for i in keep]   # F8.29: the exact corner sets the solver receives (right = order-corrected)
     try:
-        model = uc.calibrate_stereo([pairs[i][0] for i in keep], [res["pairs"][i]["right_corners"] for i in keep], pattern, sq, left["size"], right["size"], pair_ids=[i + 1 for i in keep])
+        model = uc.calibrate_stereo(obs_left, obs_right, pattern, sq, left["size"], right["size"], pair_ids=[i + 1 for i in keep])
     except (uc.CalibrationFailed, ValueError) as e: out["error"] = f"The calibration solver failed: {e}"; return out
-    out.update(ok=True, model=model); return out
+    out.update(ok=True, model=model, observations=dict(left=obs_left, right=obs_right, pair_ids=[i + 1 for i in keep])); return out
 
 
 def contract_from_model(model: Mapping, baseline_mm: float | None = None) -> dict:

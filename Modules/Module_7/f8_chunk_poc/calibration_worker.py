@@ -218,9 +218,22 @@ def main(spec_path):
                             detections=[dict(frame=d["frame"], square_px=d["square_px"], sharp=d["sharp"], corners=[[round(float(x), 4), round(float(y), 4)] for x, y in d["corners"]])
                                         for d in dets[s]["detections"][:MAX_DUMP]],
                             motion=[round(float(v), 4) for v in dets[s]["motion"]]) for s in ("left", "right")}
-        slim = {k: v for k, v in res.items() if k not in ("model",)}
+        obs_doc, obs_status = None, dict(available=False, reason="no accepted calibration")
+        if model is not None and res.get("ok") and assessment["level"] != K.FAILED and res.get("observations"):   # F8.29: only an ACCEPTABLE calibration keeps its observations
+            try:
+                import calibration_observations as CO
+                o = res["observations"]
+                obs_doc = CO.build_observations(pattern=pattern, square_mm=settings["square_mm"], image_size_left=model["image_size_left"], image_size_right=model["image_size_right"],
+                                                pair_ids=o["pair_ids"], pair_frames=res["pair_frames"], left_corners=o["left"], right_corners=o["right"],
+                                                params={k: jsonable(summary[k]) for k in ("K1", "D1", "K2", "D2", "R", "T")})
+                obs_status = dict(available=True, reason=None)
+            except Exception as e:                                     # never fail a calibration because its observations could not be recorded
+                obs_doc, obs_status = None, dict(available=False, reason=f"observations could not be recorded ({type(e).__name__})")
+        elif model is not None:
+            obs_status = dict(available=False, reason="calibration did not pass its validity checks, so its observations are not retained")
+        slim = {k: v for k, v in res.items() if k not in ("model", "observations")}
         result.update(ok=bool(res.get("ok")), error=clean(res.get("error")) if res.get("error") else None, calibration=jsonable(slim), model=jsonable(summary),
-                      assessment=jsonable(assessment), contract=jsonable(contract), detections=jsonable(dump), sizes=dict(left=jsonable(dets["left"]["size"]), right=jsonable(dets["right"]["size"])))
+                      assessment=jsonable(assessment), contract=jsonable(contract), calibration_observations=jsonable(obs_doc), calibration_observations_status=obs_status, detections=jsonable(dump), sizes=dict(left=jsonable(dets["left"]["size"]), right=jsonable(dets["right"]["size"])))
         progress("done", 1.0, True)
     except _Done:
         code = 0

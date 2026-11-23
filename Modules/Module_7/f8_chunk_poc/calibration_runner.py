@@ -23,6 +23,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from chunk_store import ChunkStore, UploadError
+import resource_budget as RB                                         # F8.31C-1C: one memory budget / worker slot shared with the room-reconstruction backend
 from monitor import ResourceMonitor, probe_environment, read_cgroup
 from result_store import ResultStore, build_result_document, new_code
 from video_check import VideoSafetyLimits, inspect_video
@@ -35,6 +36,10 @@ _ENV_KEEP = ("PATH", "LANG", "LC_ALL", "TMPDIR", "LD_LIBRARY_PATH")
 
 STAGE_ORDER = ("validate", "start", "import", "verify", "detect_left", "detect_right", "verify_after", "solve", "assess", "finish")
 MODES = ("calibrate", "benchmark")
+STALE_SAMPLE_S = 3.0                          # F8.20c: a memory sample older than this (monotonic clock) is "not measured" -- a frozen monitor can never keep satisfying the guard
+CALIBRATION_DESIRED_MB = 2048.0               # F8.31C-1C: ceiling a calibration worker asks the shared budget for when RunnerLimits.max_tree_rss_mb is not set (planning value; the benchmark worker measured about 770 MB locally; not a Cloud measurement)
+CALIBRATION_MIN_MB = 1024.0                   # F8.31C-1C: a calibration is not started with a smaller grant (resource-safety planning value)
+BLIND_POLLS_MAX = 20                          # consecutive polls (poll_s each) without a usable RSS reading before a configured RSS limit is declared unenforceable
 
 
 def _env_num(env, name, default, lo, hi):
@@ -44,6 +49,18 @@ def _env_num(env, name, default, lo, hi):
     except (KeyError, ValueError, TypeError):
         return default
     return default if v != v or v in (float("inf"), float("-inf")) else min(max(v, lo), hi)
+
+
+TREE_RSS_MB_RANGE = (256.0, 65536.0)
+
+
+def _env_limit_mb(env, name):
+    """F8.20a: optional process-tree memory limit in MB from the environment. Unset, invalid, not finite or outside TREE_RSS_MB_RANGE -> None (no limit; never a silent clamp)."""
+    try:
+        v = float(str(env[name]).strip())
+    except (KeyError, ValueError):
+        return None
+    return v if math.isfinite(v) and TREE_RSS_MB_RANGE[0] <= v <= TREE_RSS_MB_RANGE[1] else None
 
 
 @dataclass(frozen=True)
@@ -57,7 +74,7 @@ class RunnerLimits:
     max_duration_s: float = 900.0              # 15 min per video (the real recordings are about 3.6 min)
     max_frames: int = 40_000
     max_fps_difference: float = 1.0            # across the two videos (same as F7's warning threshold)
-    max_tree_rss_mb: float | None = None       # kill if parent+worker RSS exceeds this
+    max_tree_rss_mb: float | None = None       # kill if parent+worker(+children) RSS exceeds this; from_env: F8_MAX_TREE_RSS_MB (256-65536). The only guard on macOS (no cgroup)
     max_cgroup_fraction: float = 0.90          # kill if container ANONYMOUS memory (not page cache) exceeds this fraction of the cgroup limit
     result_max_bytes: int = 32 * MiB
     inspect_timeout_s: float = 60.0            # per-video sandboxed inspection
@@ -76,7 +93,7 @@ class RunnerLimits:
         d = cls()
         return cls(timeout_s=_env_num(env, "F8_CALIB_TIMEOUT_S", d.timeout_s, 60.0, 14400.0), benchmark_timeout_s=_env_num(env, "F8_BENCH_TIMEOUT_S", d.benchmark_timeout_s, 10.0, 900.0),
                    benchmark_frames=int(_env_num(env, "F8_BENCH_FRAMES", d.benchmark_frames, 30, d.benchmark_frames_cap)), allow_full=str(env.get("F8_ENABLE_FULL_CALIBRATION", "")).strip() == "1",
-                   require_memory_guard=str(env.get("F8_REQUIRE_MEMORY_GUARD", "")).strip() == "1")
+                   require_memory_guard=str(env.get("F8_REQUIRE_MEMORY_GUARD", "")).strip() == "1", max_tree_rss_mb=_env_limit_mb(env, "F8_MAX_TREE_RSS_MB"))
 
 
 def lease_margin_s(limits: "RunnerLimits") -> float:
@@ -111,6 +128,17 @@ def cancel_by_code(code) -> bool:
 def _sane(v):
     """A usable measurement: a finite, non-negative real number; anything else (None, NaN, inf, negative, text, bool) is treated as 'not measured'."""
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0 else None
+
+
+def _fresh_tree_rss(sample, now=None, max_age_s=None):
+    """F8.20c: combined parent+worker RSS from a monitor sample, or None if it is missing/invalid OR older than ``max_age_s`` (``mono_s`` is the monitor's monotonic stamp; no stamp = unusable)."""
+    if not isinstance(sample, dict):
+        return None
+    max_age_s = STALE_SAMPLE_S if max_age_s is None else max_age_s
+    t = _sane(sample.get("mono_s"))
+    if t is None or (time.monotonic() if now is None else now) - t > max_age_s:
+        return None
+    return _sane(sample.get("combined_rss_mb"))
 
 
 def guard_memory(cg) -> dict:
@@ -171,7 +199,7 @@ class CalibrationJobRunner:
     def __init__(self, store: ChunkStore, owner: str, settings: dict, limits: RunnerLimits = RunnerLimits(), f7_dir=None, worker_cmd=None,
                  monitor_interval: float = 1.0, dump_detections: bool = True, work_dir=None, mode: str = "calibrate",
                  benchmark_frames: int | None = None, results: ResultStore | None = None, job_code: str | None = None, cgroup_root: str = "/sys/fs/cgroup",
-                 proc_root: str = "/proc"):
+                 proc_root: str = "/proc", coordinator: "RB.ResourceCoordinator | None" = None):
         if mode not in MODES:
             raise RunnerError("unknown mode")
         self.mode = mode
@@ -185,9 +213,12 @@ class CalibrationJobRunner:
         self.results = results if results is not None else ResultStore()
         self.job_code = job_code or new_code()
         self.cgroup_root, self.proc_root = cgroup_root, proc_root
+        self._coord = coordinator                                       # None: the application-wide coordinator (resolved at start, so a test or operator may replace it)
+        self._reservation = None; self._tree_limit_mb = None; self._budget_info = None
         self._guard_info = dict(active=None, basis=None, limit_mb=None, threshold_mb=None, peak_used_mb=None, checks=0)
+        self._tree_info = dict(active=False, limit_mb=None, peak_rss_mb=None, checks=0, fresh_checks=0)   # F8.25: process-tree RSS guard reporting
         self._pub_t = 0.0; self._persisted = None; self._delete_rejected = False
-        self._last_prog = None
+        self._last_prog = None; self._blind_polls = 0
         self.f7_dir = Path(f7_dir) if f7_dir else DEFAULT_F7_DIR
         self.worker_cmd, self.monitor_interval, self.dump_detections = worker_cmd, monitor_interval, dump_detections
         self.work_dir = Path(work_dir) if work_dir else None
@@ -300,9 +331,20 @@ class CalibrationJobRunner:
     def _guard(self, sample) -> str | None:
         """Memory guard, evaluated every poll. Only sane measurements are used (see ``guard_memory``); a missing or invalid one means 'cannot judge', never a kill."""
         lim = self.limits
-        tree = _sane((sample or {}).get("combined_rss_mb"))
-        if lim.max_tree_rss_mb and lim.max_tree_rss_mb > 0 and tree is not None and tree > lim.max_tree_rss_mb:
-            return f"memory guard: parent+worker RSS {tree:.0f} MB exceeded {lim.max_tree_rss_mb:.0f} MB"
+        tree = _fresh_tree_rss(sample)
+        tree_limit = self._tree_limit_mb if self._tree_limit_mb else lim.max_tree_rss_mb      # F8.31C-1C: the GRANT of the shared budget (never above max_tree_rss_mb when that is set)
+        if tree_limit and tree_limit > 0:
+            ti = self._tree_info; ti["checks"] += 1; ti["limit_mb"] = tree_limit; ti["active"] = tree is not None   # active only while a fresh reading exists
+            if tree is not None:
+                ti["fresh_checks"] += 1; ti["peak_rss_mb"] = max(ti["peak_rss_mb"] or 0.0, tree)
+            if tree is None:                                           # F8.20a: a configured RSS limit that cannot be measured is not a guard: stop after ~5 s of blindness
+                self._blind_polls += 1
+                if self._blind_polls >= BLIND_POLLS_MAX:
+                    return "memory guard: the process memory could not be measured, so the configured limit cannot be enforced"
+            else:
+                self._blind_polls = 0
+                if tree > tree_limit:
+                    return f"memory guard: parent+worker RSS {tree:.0f} MB exceeded {tree_limit:.0f} MB"
         g = guard_memory(self._read_cg())
         frac = lim.max_cgroup_fraction if isinstance(lim.max_cgroup_fraction, (int, float)) and 0 < lim.max_cgroup_fraction <= 1 else 0.90
         info = self._guard_info; info["checks"] += 1; info["basis"] = g["basis"]; info["limit_mb"] = g["limit_mb"]
@@ -313,10 +355,61 @@ class CalibrationJobRunner:
             return f"memory guard: container memory {g['used_mb']:.0f} MB ({g['basis']}) exceeded {frac:.0%} of its {g['limit_mb']:.0f} MB limit"
         return None
 
+    def _reserve(self) -> str | None:
+        """F8.31C-1C: ask the application-wide coordinator for this worker's memory.  Returns a visitor-readable refusal, or None when granted.  Never raises."""
+        lim = self.limits
+        desired = lim.max_tree_rss_mb if lim.max_tree_rss_mb else CALIBRATION_DESIRED_MB
+        try:
+            coord = self._coord if self._coord is not None else RB.app_coordinator()
+            adm = coord.reserve("calibration", self.owner, desired, min(CALIBRATION_MIN_MB, desired))
+        except Exception as ex:                                              # a broken coordinator is a refusal, never an unbudgeted run
+            self._budget_info = dict(outcome="UNAVAILABLE", error=type(ex).__name__)
+            return "The server's memory budget could not be consulted, so the job was not started. Try again shortly."
+        d = adm.detail; b = d.get("budget") or {}
+        self._budget_info = dict(outcome=adm.outcome, requested_mb=desired, granted_mb=adm.granted_mb, total_mb=b.get("total_mb"), usable_mb=b.get("usable_mb"), reserve_mb=b.get("reserve_mb"),
+                                 source=b.get("source"), limitation=b.get("limitation"), parent_rss_mb=d.get("parent_rss_mb"), reserved_mb_before=d.get("reserved_mb"),
+                                 available_mb_before=d.get("available_mb"), reason=d.get("reason"), cross_process=d.get("cross_process"))
+        if adm.ok:
+            self._reservation = adm.reservation; self._tree_limit_mb = float(adm.granted_mb)
+            return None
+        if adm.outcome == RB.BUSY:
+            if d.get("busy_with") in ("light", "light_limit"):                 # Phase D.3: a frame-extraction / video-check job holds the budget (short); say so, not "another calibration"
+                return "The server is busy checking another visitor's videos or frames. Nothing was started. Please try again in a minute."
+            return "Another calibration is running on this server. Please try again when it has finished."
+        return "This server does not have enough free memory to start the calibration right now. Nothing was started. Try again in a few minutes."
+
+    def _release_reservation(self):
+        r, self._reservation = self._reservation, None
+        if r is not None:
+            r.release()
+
+    def _guard_report(self) -> dict:
+        """F8.25: the saved ``memory_guard`` block. Old keys keep their names; ``active`` is true when ANY guard operated, and ``basis`` / ``limit_mb`` describe
+        the guard(s) that operated. ``process_tree`` and ``cgroup`` hold each guard's own detail; ``active_guards`` lists the operating ones."""
+        cg = dict(self._guard_info); ti = dict(self._tree_info)
+        cg_active = bool(cg.get("active")); tree_active = bool(ti.get("active"))
+        cg_detail = dict(active=cg_active, basis=cg.get("basis"), limit_mb=cg.get("limit_mb"), threshold_mb=cg.get("threshold_mb"), peak_used_mb=cg.get("peak_used_mb"), checks=cg.get("checks"))
+        out = dict(cg)
+        out["active"] = cg_active or tree_active
+        out["active_guards"] = (["process_tree_rss"] if tree_active else []) + (["cgroup"] if cg_active else [])
+        if tree_active and cg_active:
+            out["basis"] = "process-tree RSS + cgroup " + str(cg.get("basis"))
+        elif tree_active:
+            out["basis"] = "process-tree RSS"; out["limit_mb"] = ti["limit_mb"]; out["threshold_mb"] = ti["limit_mb"]; out["peak_used_mb"] = ti["peak_rss_mb"]
+            out["checks"] = ti["checks"]
+        out["process_tree"] = dict(active=tree_active, limit_mb=ti["limit_mb"], peak_rss_mb=ti["peak_rss_mb"], checks=ti["checks"], fresh_checks=ti["fresh_checks"],
+                                   basis="process-tree RSS" if ti["limit_mb"] else None)
+        out["cgroup"] = cg_detail
+        return out
+
     def _guard_operative(self) -> bool:
-        """Could the guard act at all? True with a per-process RSS limit or a readable container limit plus a usable usage figure."""
+        """Could the guard act at all? True with a MEASURABLE per-process RSS limit or a readable container limit plus a usable usage figure."""
         g = guard_memory(self._read_cg())
-        return bool(self.limits.max_tree_rss_mb) or bool(g["limit_mb"] and g["used_mb"] is not None)
+        tree_ok = False
+        if self.limits.max_tree_rss_mb and self._monitor is not None:           # F8.20a: an RSS limit counts only if a fresh reading of this process works (ps / proc)
+            self._monitor._safe_sample()
+            tree_ok = _fresh_tree_rss(self._monitor.latest) is not None
+        return tree_ok or bool(g["limit_mb"] and g["used_mb"] is not None)
 
     def _read_json(self, path, limit):
         try:
@@ -342,6 +435,10 @@ class CalibrationJobRunner:
                 if g["limit_mb"] and g["used_mb"] is not None and g["used_mb"] > lim.start_headroom_fraction * g["limit_mb"]:
                     outcome = "rejected"
                     return self._finish("rejected", error=f"Container memory is already {g['used_mb']:.0f} MB of {g['limit_mb']:.0f} MB; a full run is not started until it drops below {lim.start_headroom_fraction:.0%}. Try again shortly.")
+            denial = self._reserve()                                              # F8.31C-1C: shared memory budget and worker slot (BUSY and INSUFFICIENT_MEMORY are different outcomes)
+            if denial:
+                outcome = "rejected"
+                return self._finish("rejected", result=dict(resource_budget=self._budget_info), error=denial)
             try:
                 lease = self.store.acquire_lease(self.owner)
             except UploadError as e:
@@ -430,7 +527,10 @@ class CalibrationJobRunner:
                 self._terminate(proc)
             self._finish("worker_crashed", validation=validation, error=f"Supervisor error: {type(e).__name__}")
         finally:
-            self._cleanup(lease_id, proc)
+            try:
+                self._cleanup(lease_id, proc)
+            finally:
+                self._release_reservation()                                # whatever happened above, a reservation never outlives the job
 
     def _benchmark_report(self, resources) -> dict:
         """One flat, bounded summary of everything the Cloud test must tell us (all numbers measured; unavailable ones are None, never guessed)."""
@@ -485,12 +585,15 @@ class CalibrationJobRunner:
             self._set(state="cleaning")
             if proc is not None:
                 self._terminate(proc)
+            self._release_reservation()                                   # the worker is gone: its memory is free for the next job (also released in the outer finally)
             resources = self._monitor.stop() if self._monitor else None
             if self.result is not None:
                 self.result["resources"] = resources
                 self.result["environment"] = probe_environment(self.store.root)
                 self.result["timeout"] = self.timeout_info
-                self.result["memory_guard"] = dict(self._guard_info, max_cgroup_fraction=self.limits.max_cgroup_fraction, max_tree_rss_mb=self.limits.max_tree_rss_mb)
+                self.result["memory_guard"] = dict(self._guard_report(), max_cgroup_fraction=self.limits.max_cgroup_fraction, max_tree_rss_mb=self.limits.max_tree_rss_mb)
+                if self._budget_info is not None:
+                    self.result["resource_budget"] = self._budget_info
                 if self.mode == "benchmark":
                     self.result["benchmark_report"] = self._benchmark_report(resources)
                 outcome = self.result.get("outcome", "failed")
