@@ -295,7 +295,7 @@ of the three viewpoints and measures the 3D distance between the two outer botto
 
 ### Accepted experimental results
 
-*Where the results are:* the Wall A files `outputs/room_measurement/estimation_result.json` and `validation.json` (with the display images and reduced videos beside them), and the Wall B file [`outputs/room_measurement/wall_b_accepted_results.json`](outputs/room_measurement/wall_b_accepted_results.json). The original recordings are excluded from Git, are not part of the repository and must be supplied by anyone who wants to re-run the experiment; the Wall B file records their SHA-256 hashes so that the exact inputs can be identified.
+*Where the results are:* the Wall A files `outputs/room_measurement/estimation_result.json` and `validation.json` (with the display images and reduced videos beside them), and the Wall B file [`outputs/room_measurement/wall_b_accepted_results.json`](outputs/room_measurement/wall_b_accepted_results.json). The original recordings are excluded from Git, are not part of the repository and must be supplied by anyone who wants to re-run the experiment; the Wall B file lists the input files by name only.
 
 **Wall A (the author's experiment, shown under *View My Experiment & Results* on the website).** The estimate was written first and compared
 with the measured size afterwards (`outputs/room_measurement/estimation_result.json` and `validation.json`):
@@ -311,7 +311,7 @@ artefact of sharing one pose and one set of annotations and is not the measureme
 
 **Wall B (the author's offline experiment).** The three frame sets (frames 60, 150 and 240 of the three-viewpoint recordings) gave room lengths of
 **3790.9 mm, 3812.0 mm and 3804.0 mm** (379.09, 381.20 and 380.40 cm; mean 380.2 cm), computed from the author's hand-placed annotations. These
-values are recorded in [`outputs/room_measurement/wall_b_accepted_results.json`](outputs/room_measurement/wall_b_accepted_results.json) and used as regression references in the test suite (tolerance ±5 mm); the website's saved-experiment view shows Wall A only. The Wall B
+values are recorded in [`outputs/room_measurement/wall_b_accepted_results.json`](outputs/room_measurement/wall_b_accepted_results.json) and used as regression references in the test suite (tolerance ±5 mm, an algorithm-regression tolerance that says how closely a re-run must reproduce these values; it is **not** a claim that the method is accurate to ±5 mm in the real room); the website's saved-experiment view shows Wall A only. A tape-measured Wall B length of 3937 mm is recorded in the repository (in a test docstring, and in the JSON file); the mean stereo estimate is about 3.4 % (135 mm) shorter than it. The conditions of that tape measurement are not documented, so this is a transparency comparison and not a controlled physical-accuracy validation, and no explanation of the difference was established. No uncertainty analysis was computed for Wall B, and the Wall B
 application reports no confidence interval and no percentage error.
 
 ### Later verification of the visitor application

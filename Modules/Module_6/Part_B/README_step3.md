@@ -3,8 +3,9 @@
 `measurement_matrix.py` reads the approved `output/part_b_correspondences.csv`
 directly. It validates P1–P8 in order, four view coordinate pairs, numeric finite
 values, and image bounds. Rows are V1_x, V1_y, V2_x, V2_y, V3_x, V3_y, V4_x,
-V4_y; columns are P1–P8. This follows the lecture-style convention supplied in
-the Step 3 request. No lecture files were available locally to verify separately.
+V4_y; columns are P1–P8. This is the standard measurement-matrix layout for
+factorization-based structure from motion (one pair of rows per view, one column
+per point).
 
 NumPy performs the calculations; Matplotlib produces the PNG plot. No Pandas
 or new root dependency file is needed. Run with a Python environment containing
