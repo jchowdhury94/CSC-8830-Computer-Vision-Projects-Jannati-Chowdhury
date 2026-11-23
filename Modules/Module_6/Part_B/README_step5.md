@@ -5,18 +5,14 @@ there is no new reconstruction or point fitting. It refits the all-point plane
 and verifies its normal/distances against the Step 4 report and planarity CSV,
 allowing equivalent normal signs.
 
-Run with NumPy and Matplotlib. Using the existing temporary plotting packages:
+Run with NumPy and Matplotlib, from the repository root:
 
 ```sh
-PYTHONPATH=/private/tmp/module6-step3-plot-deps \
-MPLCONFIGDIR=/private/tmp/module6-step3-matplotlib \
-PYTHONDONTWRITEBYTECODE=1 \
-.venv/bin/python Modules/Module_6/Part_B/scale_and_validate_reconstruction.py
+python Modules/Module_6/Part_B/scale_and_validate_reconstruction.py
 ```
 
-Alternatively use a Python environment containing NumPy and Matplotlib; the
-temporary package directory may eventually be removed by the system. No new
-dependencies were installed for Step 5, and Pandas is not required.
+Matplotlib is not listed in the root `requirements.txt`; install it first
+(`python -m pip install matplotlib`). Pandas is not required.
 
 The coordinate origin is the centroid of P1–P4. The X direction uses the sum
 of the top and bottom edges projected into the fitted plane. Y and Z are

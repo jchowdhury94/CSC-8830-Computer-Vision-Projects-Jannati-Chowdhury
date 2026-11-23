@@ -3,17 +3,14 @@
 Run `factorization_reconstruction.py` with NumPy and Matplotlib. The script
 reads the approved Step 3 centered matrix and singular-value CSV directly,
 preserving their contents and point/row ordering. It does not re-center or
-reselect measurements. Using the temporary plotting environment from Step 3:
+reselect measurements. From the repository root:
 
 ```sh
-PYTHONPATH=/private/tmp/module6-step3-plot-deps \
-MPLCONFIGDIR=/private/tmp/module6-step3-matplotlib \
-PYTHONDONTWRITEBYTECODE=1 \
-.venv/bin/python Modules/Module_6/Part_B/factorization_reconstruction.py
+python Modules/Module_6/Part_B/factorization_reconstruction.py
 ```
 
-Alternatively use an environment with NumPy and Matplotlib already installed.
-The temporary package directory may eventually be removed by the system.
+Matplotlib is not listed in the root `requirements.txt`; install it first
+(`python -m pip install matplotlib`).
 No Pandas or SciPy is required.
 
 The script retains three SVD components, forms the square-root initial factors,

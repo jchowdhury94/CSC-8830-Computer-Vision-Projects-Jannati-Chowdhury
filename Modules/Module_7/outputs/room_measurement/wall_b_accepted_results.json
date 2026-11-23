@@ -1,0 +1,75 @@
+{
+  "schema": "csc8830.module7.wall_b_accepted_results.v1",
+  "description": "Accepted Wall B (room length) measurements of the author's offline three-viewpoint experiment, recorded here as evidence. Values are the regression references used by the repository's tests; this file is not read by the application.",
+  "measurement": "Wall B room length, three viewpoints (six videos: left and right camera at each viewpoint)",
+  "method": {
+    "code": "Modules/Module_7/room_measurement/three_view_wall_b.py",
+    "classical_computer_vision_only": true,
+    "summary": "Independent stereo pose per viewpoint with the baseline fixed; robust floor plane per viewpoint; rigid registration of viewpoints 1 and 3 onto viewpoint 2 from cross-view matches; the two outer bottom wall corners are the intersections of the vertical-edge planes with each floor; the length is the 3D distance between them. The corners come from the author's hand-placed boundary annotations."
+  },
+  "calibration": {
+    "file": "Modules/Module_7/calibration/room_video/room_video_recipe_a_calibration.json",
+    "sha256": "d6d3b4870229a62c18a5542a5d0611619e2cce4e3258914697e7c0ba91ca5d43",
+    "image_size_wh": [
+      2160,
+      3840
+    ],
+    "physical_baseline_mm": 225.0
+  },
+  "inputs_not_published": {
+    "note": "The original recordings and the hand-made annotation file are private, are excluded from Git and are not included here; only their SHA-256 hashes are recorded so that the exact inputs can be identified.",
+    "videos_sha256": {
+      "left_air_2_1.MOV": "0210fc0f36b49ef56ecb2f1b9b69daf55d2190bdedbb0c7b960463e647aefafb",
+      "right_pro_2_1.MOV": "958185083d690318e062c5e845a48bc54cc9ee2c28f8692f181903e5dae0e4c1",
+      "left_air_2_2.MOV": "98fbf3d669a0e03ec43a8075c58970599c7c505d36c22a3b12895882d5b6fd3f",
+      "right_pro_2_2.MOV": "322ca8b30a8004064bf2f61822c6e47e42ceda1bd984839d2f08710d0169ed19",
+      "left_air_2_3.MOV": "76b24630a9bf473d8d5122848dd09e2cd7f34bb30c4ab0e3d743cb6bce572303",
+      "right_pro_2_3.MOV": "313a5339e6b5660c42d893061739ee459bf77e7c874b06e4f3281124ad2144ad"
+    },
+    "annotations_file": "wall_b_three_viewpoint_annotations_backup_20261120.json",
+    "annotations_sha256": "c829f1859ade4e928a7847f0a9d83abda6bdb49b8b6882645f333789a4a6d271"
+  },
+  "accepted_results": {
+    "unit": "mm",
+    "per_frame_set": [
+      {
+        "frame": 60,
+        "length_mm": 3790.889,
+        "length_cm": 379.0889
+      },
+      {
+        "frame": 150,
+        "length_mm": 3811.971,
+        "length_cm": 381.1971
+      },
+      {
+        "frame": 240,
+        "length_mm": 3803.973,
+        "length_cm": 380.3973
+      }
+    ],
+    "mean_length_mm": 3802.278,
+    "mean_length_cm": 380.2278,
+    "spread_max_minus_min_mm": 21.082
+  },
+  "regression_check": {
+    "tolerance_mm": 5.0,
+    "description": "The tests re-run the production three-viewpoint path on the private recordings and require each frame set, and their mean, to agree with these values within the tolerance. They run only when the recordings are present and M7_REAL_VIDEO_TESTS=1.",
+    "tests": [
+      "Modules/Module_7/visitor_workflow/tests/test_f8_35_real_three_view.py (values to 3 decimals)",
+      "Modules/Module_7/room_measurement/tests/test_three_view_real_data.py (values rounded to 1 mm: 3791, 3812, 3804)"
+    ]
+  },
+  "comparison_with_tape_measurement": {
+    "tape_measured_length_mm": 3937,
+    "source": "recorded in the docstring of Modules/Module_7/room_measurement/tests/test_three_view_real_data.py, which states that this value is deliberately not used by the estimation or the tests",
+    "mean_difference_mm": -134.722,
+    "mean_difference_percent": -3.42,
+    "note": "The measurement conditions of the tape value are not documented in the repository. No confidence interval was computed for Wall B."
+  },
+  "notes": [
+    "The repository's regression tests classify this result as approximate (MEASURED_WITH_WARNINGS): the recordings are usable but not clean.",
+    "The three frame sets share one set of annotations per viewpoint; their small spread is not a measurement uncertainty.",
+    "Visitor-application runs on the same recordings give different numbers (see Modules/Module_7/README.md); those are checks of the application, not accepted results."
+  ]
+}

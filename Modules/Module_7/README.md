@@ -245,16 +245,21 @@ if any check fails.
 
 ## Testing
 
-From the repository root:
+The tests use pytest (several rely on pytest fixtures, so `python -m unittest discover` would run only part of the suite). From the
+repository root:
 
 ```bash
-python -m unittest discover -s tests
+python -m pip install pytest
+python -m pytest Modules/Module_7 tests/test_module7_*.py     # complete Module 7 suite, roughly 25 minutes
+python -m pytest tests/test_module7_stereo.py                 # for example, a single file
 ```
 
-`pytest tests` also works if pytest is installed. The suite covers calibration, NPZ I/O, the wizard, corner mapping and dragging, the
-measurement logic, reset behaviour and the Streamlit page (via `streamlit.testing`). Tests that need the git-ignored original
-photographs are skipped, with a message, when those files are absent, so the suite runs from a fresh clone of the tracked files and runs
-in full when the photographs are present.
+The suite covers Question 1 (calibration, NPZ I/O, the wizard, corner mapping and dragging, the measurement logic, reset behaviour and the
+Streamlit page via `streamlit.testing`) and Question 3 (the visitor workflow, workers, memory budget and temporary-file cleanup, and
+synthetic-data checks of the estimation code). Tests that need the git-ignored original photographs or room recordings are skipped, with a
+message, when those files are absent, so the suite runs from a fresh clone of the tracked files. The expensive regression tests on the private Wall B
+recordings run only when the recordings are present and `M7_REAL_VIDEO_TESTS=1` is set. The Module 7 suite needs only
+`visitor_workflow/requirements.txt` and pytest; the tests of the other modules (`python -m pytest tests`) need the root `requirements.txt`.
 
 ## Question 3 – Room Measurement Using Stereo Videos
 
@@ -290,6 +295,8 @@ of the three viewpoints and measures the 3D distance between the two outer botto
 
 ### Accepted experimental results
 
+*Where the results are:* the Wall A files `outputs/room_measurement/estimation_result.json` and `validation.json` (with the display images and reduced videos beside them), and the Wall B file [`outputs/room_measurement/wall_b_accepted_results.json`](outputs/room_measurement/wall_b_accepted_results.json). The original recordings are excluded from Git, are not part of the repository and must be supplied by anyone who wants to re-run the experiment; the Wall B file records their SHA-256 hashes so that the exact inputs can be identified.
+
 **Wall A (the author's experiment, shown under *View My Experiment & Results* on the website).** The estimate was written first and compared
 with the measured size afterwards (`outputs/room_measurement/estimation_result.json` and `validation.json`):
 
@@ -304,7 +311,7 @@ artefact of sharing one pose and one set of annotations and is not the measureme
 
 **Wall B (the author's offline experiment).** The three frame sets (frames 60, 150 and 240 of the three-viewpoint recordings) gave room lengths of
 **3790.9 mm, 3812.0 mm and 3804.0 mm** (379.09, 381.20 and 380.40 cm; mean 380.2 cm), computed from the author's hand-placed annotations. These
-values are used as regression references in the test suite (tolerance ±5 mm); the website's saved-experiment view shows Wall A only. The Wall B
+values are recorded in [`outputs/room_measurement/wall_b_accepted_results.json`](outputs/room_measurement/wall_b_accepted_results.json) and used as regression references in the test suite (tolerance ±5 mm); the website's saved-experiment view shows Wall A only. The Wall B
 application reports no confidence interval and no percentage error.
 
 ### Later verification of the visitor application
@@ -355,7 +362,7 @@ python run_local.py                      # website http://127.0.0.1:8501, visito
 
 `run_local.py` (repository root) starts two separate Streamlit applications bound to `127.0.0.1`: `home.py` and `Modules/Module_7/run_f8_integrated_app.py <port>`. It refuses to start when a port is busy (naming it; `--website-port` and `--visitor-port` choose others), reports a failed start-up, and stops both applications and their child processes on Ctrl+C or SIGTERM. Local mode is enabled only by the launcher, through `CSC8830_LOCAL_MODE=1` in the environment of the website it starts (see `local_mode.py`); the visitor application's address is always `http://127.0.0.1:<port>`. Running `python -m streamlit run home.py` yourself therefore behaves like the public website, with **Run Your Experiment** disabled. The visitor application alone: `python Modules/Module_7/run_f8_integrated_app.py [port]`.
 
-Tested: the macOS (Apple silicon) commands above, from a fresh copy of the repository in a new virtual environment with Python 3.13.7 (`python run_local.py` started both applications, both answered their health checks, and Ctrl+C stopped both). The pinned packages need Python 3.12 or newer (`.python-version` says 3.12, which the author has not tested); the Windows and Linux commands follow standard Python conventions and have not been tested. No FFmpeg or system packages are needed (OpenCV bundles its own decoder), and no secrets or private files are required; the validated calibration file `calibration/room_video/room_video_recipe_a_calibration.json` is part of the repository.
+Tested: the macOS (Apple silicon) commands above, from a fresh copy of the repository in a new virtual environment with Python 3.13.7 (`python run_local.py` started both applications, both answered their health checks, and Ctrl+C stopped both). The pinned packages need Python 3.12 or newer (`.python-version` says 3.12; the application was tested with 3.13.7, and 3.12 itself has not been tested); the Windows and Linux commands follow standard Python conventions and have not been tested. No FFmpeg or system packages are needed (OpenCV bundles its own decoder), and no secrets or private files are required; the validated calibration file `calibration/room_video/room_video_recipe_a_calibration.json` is part of the repository.
 
 Both walls (Wall A and Wall B) are enabled in this application. The measurement runs in a separate worker that is stopped after 300 seconds of run time or 1800 CPU-seconds, and it starts only if enough memory is free; if a limit is reached, the application names it.
 
@@ -367,7 +374,7 @@ Both walls (Wall A and Wall B) are enabled in this application. The measurement 
 
 **Recording requirements.** Enforced by the application: four videos for Wall A (two viewpoints) or six for Wall B (three viewpoints), one per left/right camera slot; MP4/M4V, MOV, Matroska/WebM or AVI (checked by file content); 1-120 seconds and 1-480 fps; at most 1024 MB per video (`F8_ROOM_MAX_FILE_MB` can lower or raise it, to at most 2048); and exactly the frame size and orientation of the accepted calibration, since videos are never resized or rotated. A left/right frame-rate difference over 1 fps is flagged. Recommended, from the author's validated experiment, and not enforced: the same cameras and settings (resolution, orientation, frame rate, zoom, focus, stabilization) as in calibration, a fixed rig, a still room, a wall with visible corners and a textured floor; the validated recordings are 2160 x 3840 portrait. H.265/HEVC videos pass the file check, but whether they decode depends on your OpenCV build. These checks do not guarantee an accurate result, and accuracy was validated on one room only.
 
-**Tests.** From the repository root, with `pytest` installed: `python -m pytest Modules/Module_7 tests/test_module7_*.py`.
+**Tests.** From the repository root, with `pytest` installed: `python -m pytest Modules/Module_7 tests/test_module7_*.py` (see [Testing](#testing)).
 
 **Troubleshooting.** *Command not found*: install Python 3.12 and activate the virtual environment. *A package fails to install*: `python -m pip install --upgrade pip`, then retry. *Port in use*: `run_local.py` names the busy port; pass `--website-port` / `--visitor-port`. *Run Your Experiment greyed out*: you are on the public website, or the visitor application is not running; use `python run_local.py` and press **Check again**. *A video is rejected*: the message names the check (size, length, frame rate, or a size or orientation different from the calibration). *Out of memory or a stopped calculation* ("Not enough memory"): close other large programs so that at least 4 GB is free, then press **Try again**; the message names the limit that was reached (see **Memory** above). *Calibration button disabled*: start with `--enable-full-calibration --max-tree-rss-mb=<MB>` or use **Upload Saved Calibration**.
 

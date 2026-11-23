@@ -154,7 +154,7 @@ The public website does not accept video uploads: processing full-resolution (4K
    cd CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury
    ```
 
-2. **Create and activate a virtual environment** with Python 3.12 or newer (the pinned packages require it; verified with 3.13.7 on macOS). macOS or Linux:
+2. **Create and activate a virtual environment** with Python 3.12 or newer (the pinned NumPy requires 3.12; the application was tested with 3.13.7 on macOS, and 3.12 itself has not been tested). If your command is `python3` or `python3.13`, use it in place of `python3.12`. macOS or Linux:
 
    ```bash
    python3.12 -m venv .venv
@@ -186,6 +186,8 @@ The public website does not accept video uploads: processing full-resolution (4K
 
 To view all modules of the website without the visitor application, install the root `requirements.txt` and run `python -m streamlit run home.py` (see above); there **Run Your Experiment** stays disabled.
 
+**Videos and calibration are supplied by you:** the author's original recordings are private and are not in the repository, so you need your own stereo videos and a calibration for your own cameras (see below). The saved results of the author's experiments are tracked in the repository (see *Where the results are* in `Modules/Module_7/README.md`).
+
 **Requirements enforced by the application:** four videos (Wall A) or six (Wall B) from the left and right cameras, one per slot; MP4/M4V, MOV, Matroska/WebM or AVI; 1-120 seconds and 1-480 fps per video; at most 1024 MB per video; and exactly the frame size and orientation of the accepted calibration (videos are never resized or rotated). **Recommendations from the author's validated experiment (not enforced):** the same two cameras and settings (resolution, orientation, frame rate, zoom, focus, stabilization) as in calibration, a fixed rig, a still room, a wall with visible corners and a floor with visible texture. The validated recordings are 2160 x 3840 portrait. H.265/HEVC files pass the file check, but decoding depends on your computer's OpenCV build. Arbitrary videos may give inaccurate results or be refused; accuracy was validated on one room only.
 
 **Memory and temporary files:** nothing has to be configured. On a Mac, Windows or an unlimited Linux computer the application uses your computer's physical memory as its budget (keeping 10 % in reserve) and checks at every start that enough memory is free right now. Keep **at least 4 GB free** (the Wall A calculation used about 2.0 GB at its peak on the author's recordings; the application requires 1,024 MB for two viewpoints and 2,450 MB for three) and close other large programs first. Extracted frames live in a marked `f8_frames_...` folder in the system temporary folder and are removed by **New Measurement**, when the session ends, when the application stops, or at the next start after a crash; folders from earlier versions are never touched. Details and the optional `F8_APP_MEMORY_CEILING_MB` setting are in `Modules/Module_7/README.md`.
@@ -194,10 +196,12 @@ To view all modules of the website without the visitor application, install the 
 
 ## Running the Tests
 
-From the project root, with the dependencies installed:
+The tests use pytest, which is the supported way to run them (several tests rely on pytest fixtures, so `python -m unittest discover` finds only part of the suite). From the project root, with the root `requirements.txt` installed:
 
 ```bash
-python -m unittest discover -s tests
+python -m pip install pytest
+python -m pytest tests                              # all modules, about 1.5 minutes plus the Module 7 tests below
+python -m pytest Modules/Module_7 tests/test_module7_*.py   # complete Module 7 suite (roughly 25 minutes)
 ```
 
-`pytest tests` also works if pytest is installed. Some Module 7 tests need the original checkerboard and notebook photographs, which are git-ignored; those tests are skipped automatically when the photographs are absent, so the suite runs from a fresh clone and runs in full when the photographs are present.
+Tests that need the original photographs or room recordings, which are git-ignored and not part of the repository, are skipped automatically when those files are absent, so the suite runs from a fresh clone (and runs those extra checks when the private files are present). The Module 7 suite alone needs only `Modules/Module_7/visitor_workflow/requirements.txt` plus pytest.

@@ -57,8 +57,7 @@ sheet shows the chosen front-cover perimeter locations rather than back-cover
 corners. Inspect these before subsequent geometry. Illustrated facial details,
 repeated stars/leaves, and water texture were excluded because precise
 localization or identity was less clear; shadows, glare, and background were
-also excluded. The manual GUI is provided for correction and has not been
-interactively exercised in this session.
+also excluded. The manual GUI is provided for correcting the coordinates.
 
 No observation matrix, centering, factorization, SfM, reconstruction, camera
 pose estimation, or physical scaling is performed in this step.

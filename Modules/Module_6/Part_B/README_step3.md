@@ -14,18 +14,8 @@ NumPy and Matplotlib:
 python Modules/Module_6/Part_B/measurement_matrix.py
 ```
 
-For this session, the repository environment lacked Matplotlib. Plotting
-packages were downloaded into a temporary directory, leaving the existing
-environment unchanged. The command used from the repository root was:
-
-```sh
-PYTHONPATH=/private/tmp/module6-step3-plot-deps \
-MPLCONFIGDIR=/private/tmp/module6-step3-matplotlib \
-.venv/bin/python Modules/Module_6/Part_B/measurement_matrix.py
-```
-
-The temporary package directory may eventually be removed by the system; use
-an environment containing Matplotlib for future runs.
+Matplotlib is not listed in the root `requirements.txt`; install it in the
+environment first (`python -m pip install matplotlib`).
 
 The script writes raw/centered matrix CSVs, centroids, all eight singular values,
 the singular-value plot, and a detailed text report under `output/`. CSV floats

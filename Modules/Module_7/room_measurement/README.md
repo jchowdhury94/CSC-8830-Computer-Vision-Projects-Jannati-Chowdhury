@@ -14,6 +14,8 @@ python -m pytest tests/test_module7_room_measurement.py    # synthetic tests + r
 The estimate is written to `outputs/room_measurement/estimation_result.json` **first**; only afterwards is it compared with the
 measured size (`validation.json`). The final dimensions are never hard-coded anywhere.
 
+**Data note:** the original recordings (`data/room_measurement/`) are excluded from Git and are not part of the repository; the commands above and the real-video regression tests need them (the tests are skipped when they are absent). The saved results are tracked in `outputs/room_measurement/` (Wall B: `wall_b_accepted_results.json`, described in `../README.md`).
+
 **Result of the saved experiment:** width 2879.6 mm and height 2380.2 mm against the measured 2900 × 2400 mm (errors −0.70 % and −0.82 %; 95 % intervals
 2655.7 – 3103.5 mm and 2187.7 – 2572.8 mm).
 
