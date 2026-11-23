@@ -40,6 +40,14 @@ VIDEOS = (
 )
 VIDEO_GROUPS = {"view1": "View 1 \u2014 Left Side of Wall", "view2": "View 2 \u2014 Right Side of Wall"}
 
+# Wall B (room length, three viewpoints).  Playback copies are looked up in the same videos folder; a copy that is not committed is
+# simply reported as unavailable.  Viewpoint n shows the left (Air) and right (Pro) recording of viewpoint n.
+WALL_B_FILE = "wall_b_accepted_results.json"
+WALL_B_SCHEMA = "csc8830.module7.wall_b_accepted_results.v1"
+WALL_B_VIDEOS = tuple((n, f"wall_b_viewpoint{n}_{side}.mp4", label) for n in (1, 2, 3)
+                      for side, label in (("left_air", "iPhone Air (Left Camera)"), ("right_pro", "iPhone 17 Pro Max (Right Camera)")))
+WALL_B_GROUPS = {n: f"Viewpoint {n}" for n in (1, 2, 3)}
+
 
 class ResultsUnavailable(Exception):
     """The committed results are missing or unusable; the message is shown to the visitor."""
@@ -91,6 +99,35 @@ def load_results(results_dir=RESULTS_DIR):
         raise ResultsUnavailable(f"Results files are incomplete (missing field {missing}).") from None
 
 
+def load_wall_b(results_dir=RESULTS_DIR):
+    """The accepted Wall B (room length) numbers, read from the tracked ``wall_b_accepted_results.json``.  Consistency of the file
+    is checked (mean, tape difference); raises ResultsUnavailable otherwise."""
+    data = _read(Path(results_dir) / WALL_B_FILE)
+    try:
+        if data["schema"] != WALL_B_SCHEMA:
+            raise ResultsUnavailable(f"{WALL_B_FILE} has an unexpected schema ({data['schema']!r}).")
+        sets = [dict(frame=int(r["frame"]), length_mm=float(r["length_mm"])) for r in data["accepted_results"]["per_frame_set"]]
+        mean = float(data["accepted_results"]["mean_length_mm"])
+        tape = data["comparison_with_tape_measurement"]
+        tape_mm, diff_mm, diff_pct = float(tape["tape_measured_length_mm"]), float(tape["mean_difference_mm"]), float(tape["mean_difference_percent"])
+        if len(sets) != 3 or abs(sum(r["length_mm"] for r in sets) / 3 - mean) > 0.01:
+            raise ResultsUnavailable(f"{WALL_B_FILE}: the mean does not match the three frame-set lengths.")
+        if abs(mean - tape_mm - diff_mm) > 0.01 or abs(diff_mm / tape_mm * 100 - diff_pct) > 0.01:
+            raise ResultsUnavailable(f"{WALL_B_FILE}: the tape comparison is inconsistent.")
+        return dict(per_frame=sets, mean_mm=mean, tape_mm=tape_mm, difference_mm=diff_mm, difference_percent=diff_pct,
+                    tape_caveats=list(tape["caveats"]), tape_note=tape["note"], tolerance_mm=float(data["regression_check"]["tolerance_mm"]),
+                    tolerance_meaning=data["regression_check"]["meaning"], notes=list(data["notes"]),
+                    baseline_mm=data["calibration"]["physical_baseline_mm"])
+    except (KeyError, ValueError, TypeError) as missing:
+        raise ResultsUnavailable(f"{WALL_B_FILE} is incomplete or malformed ({missing}).") from None
+
+
+def wall_b_video_status(video_dir=VIDEO_DIR):
+    """[(path, viewpoint, label, exists)] for the Wall B playback copies (none are required)."""
+    video_dir = Path(video_dir)
+    return [(video_dir / name, n, label, (video_dir / name).is_file()) for n, name, label in WALL_B_VIDEOS]
+
+
 def image_status(display_dir=DISPLAY_DIR):
     """[(path, tab, caption, exists)] for the committed display images."""
     display_dir = Path(display_dir)
@@ -100,6 +137,11 @@ def image_status(display_dir=DISPLAY_DIR):
 def cm(mm):
     """Whole centimetres for display (the estimate is only good to about this level)."""
     return f"{mm / 10:.0f}"
+
+
+def cm4(mm):
+    """Centimetres to four decimals, as the accepted Wall B values are recorded."""
+    return f"{mm / 10:.4f}"
 
 
 def signed_cm(mm):

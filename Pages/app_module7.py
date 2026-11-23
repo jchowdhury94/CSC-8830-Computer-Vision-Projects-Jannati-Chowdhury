@@ -1510,8 +1510,12 @@ ROOM_CSS = """
 .st-key-m7_room_body [data-testid="stMetric"] { text-align: left; }
 .st-key-m7_room_body video { width: 100%; max-height: 72vh; object-fit: contain; background: #000; border-radius: 8px; }
 .st-key-m7_room_legend { font-size: 0.9rem; }
+.st-key-m7_room_body h2 { text-align: center; font-size: clamp(1.7rem, 5.2vw, 2.4rem); font-weight: 800; line-height: 1.2; padding: 2.5rem 0 0.25rem; overflow-wrap: anywhere; }
+.st-key-m7_room_wall_b, .st-key-m7_room_final { border-top: 2px solid #C9363E; margin-top: 2.5rem; }
+[class*="st-key-m7_room_wall_note"] p { text-align: center; opacity: 0.85; }
+.st-key-m7_room_final [data-testid="stMetricValue"] { font-size: 2.6rem; }
 /* "What the cameras saw": shaded panel + button-style tabs, scoped to this one container only */
-.st-key-m7_room_seen, .st-key-m7_room_recordings {
+.st-key-m7_room_seen, .st-key-m7_room_recordings, .st-key-m7_room_recordings_b {
     background: color-mix(in srgb, currentColor 7%, transparent); border-radius: 14px; padding: 8px 24px 24px;
 }
 .st-key-m7_room_seen [data-baseweb="tab-list"] { gap: 10px; flex-wrap: wrap; padding: 4px 0 12px; }
@@ -1528,7 +1532,8 @@ ROOM_CSS = """
 .st-key-m7_room_seen button[data-baseweb="tab"][aria-selected="true"] p { color: #FFFFFF; }
 .st-key-m7_room_seen button[data-baseweb="tab"]:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
 @media (max-width: 640px) {
-    .st-key-m7_room_seen, .st-key-m7_room_recordings { padding: 4px 12px 16px; }
+    .st-key-m7_room_seen, .st-key-m7_room_recordings, .st-key-m7_room_recordings_b { padding: 4px 12px 16px; }
+    .st-key-m7_room_final [data-testid="stMetricValue"] { font-size: 2.1rem; }
     .st-key-m7_room_seen button[data-baseweb="tab"] { padding: 8px 14px; flex: 1 1 auto; }
     .st-key-m7_room_seen button[data-baseweb="tab"] p { font-size: 0.95rem; }
 }
@@ -1754,6 +1759,109 @@ def _room_videos():
                "as H.264 without audio.")
 
 
+WALL_B_STEPS = (
+    ("Stereo video collection", "The same two phones recorded the wall from three viewpoints (six recordings, one left and one right per viewpoint)."),
+    ("Camera calibration", "The same calibration as Wall A is used, with the 225 mm baseline between the phones held fixed."),
+    ("Stereo pose per viewpoint", "Each viewpoint gets its own left/right camera pose from SIFT matches between its two recordings."),
+    ("Floor-plane reconstruction", "Matched points of each viewpoint are triangulated and a robust plane is fitted to its floor."),
+    ("Wall-boundary annotation", "The wall's vertical edge is marked by hand in the left and right frames of the end viewpoints."),
+    ("Viewpoint registration", "Viewpoints 1 and 3 are aligned to viewpoint 2 with matched points seen in both views (robust rigid fit)."),
+    ("Geometric corner inference", "Each end corner is where the planes through the marked vertical edge meet that viewpoint's floor."),
+    ("Length estimation", "The length is the 3D distance between the two registered corners, computed for each of the three frame sets."),
+)
+
+
+def _wall_b_videos():
+    status = room_data.wall_b_video_status()
+    for n, title in room_data.WALL_B_GROUPS.items():
+        st.markdown(f"##### {title}")
+        members = [item for item in status if item[1] == n]
+        if not any(item[3] for item in members):
+            st.info(f"Playback copies of the {title.lower()} recordings are not included in this version. "
+                    "The measurements below do not depend on them.")
+            continue
+        for column, (path, _, label, exists) in zip(st.columns(2), members):
+            with column:
+                st.caption(label)
+                if exists:
+                    st.video(str(path), format="video/mp4")
+                else:
+                    st.info(f"Playback copy not available: {path.name}.")
+    if any(item[3] for item in status):
+        st.caption("Playback copies of my original recordings: every frame and the original timing are kept, resized and "
+                   "re-encoded as H.264 without audio.")
+
+
+def _wall_b_section():
+    """Wall B (room length): the accepted three-viewpoint results, read from the tracked wall_b_accepted_results.json."""
+    cm, cm4 = room_data.cm, room_data.cm4
+    with st.container(key="m7_room_wall_b"):
+        st.header("Wall B \u2014 Length Measurement", anchor=False)
+        with st.container(key="m7_room_wall_note_b"):
+            st.markdown("Three viewpoints, six stereo recordings. This second experiment estimates the room's **length**. It uses a "
+                        "different procedure from Wall A (described below), so its evidence is presented separately.")
+        try:
+            wb = room_data.load_wall_b()
+        except room_data.ResultsUnavailable as error:
+            st.error(f"Wall B results are unavailable. {error}")
+            return None
+        with st.container(key="m7_room_recordings_b"):
+            st.subheader("The Stereo Recordings", anchor=False)
+            _wall_b_videos()
+
+        st.subheader("Results", anchor=False)
+        for column, item in zip(st.columns(3), wb["per_frame"]):
+            with column:
+                with st.container(border=True):
+                    st.markdown(f"#### Frame {item['frame']}")
+                    st.metric("Estimated length", f"{cm4(item['length_mm'])} cm")
+        with st.container(border=True):
+            st.markdown("#### Accepted estimate: mean of the three frame sets")
+            left, right = st.columns(2)
+            left.metric("Estimated (approx.)", f"{cm(wb['mean_mm'])} cm")
+            right.metric("Tape reference", f"{wb['tape_mm'] / 10:.1f} cm")
+            st.write(f"**Mean of the three frame sets:** {cm4(wb['mean_mm'])} cm")
+            st.write(f"**Difference from the tape reference:** {wb['difference_mm'] / 10:+.1f} cm ({wb['difference_percent']:+.2f}%)"
+                     .replace("-", "\u2212"))
+        st.info("**How to read the tape comparison.** " + " ".join(wb["tape_caveats"]))
+        st.info(f"**What the \u00b1{wb['tolerance_mm']:.0f} mm tolerance means.** It is a regression tolerance for reproducing the accepted "
+                "outputs of this algorithm on the same recordings and annotations. It is **not** a claim about real-world "
+                "measurement accuracy, and the Wall B length has no confidence interval.")
+
+        with st.expander("How Wall B works"):
+            st.markdown("\n".join(f"{i}. **{title}** - {text}" for i, (title, text) in enumerate(WALL_B_STEPS, 1)))
+            st.caption("Classical computer vision only (feature matching, epipolar geometry, triangulation, plane fitting and rigid "
+                       "registration); no machine learning.")
+        with st.expander("Wall B limitations"):
+            st.markdown("- One room, one rig; no claim of general accuracy.\n"
+                        "- The wall edges were marked by hand; the length depends on where those boundary lines are placed.\n"
+                        "- " + "\n- ".join(wb["notes"][:2]) + "\n"
+                        "- " + wb["tape_note"])
+        return wb
+
+
+def _final_dimensions(results, wb):
+    """The combined summary: width and height from Wall A, length from Wall B, with their measured references."""
+    cm = room_data.cm
+    with st.container(key="m7_room_final"):
+        st.header("Final Room Dimensions", anchor=False)
+        with st.container(key="m7_room_wall_note_final"):
+            st.markdown("Estimates obtained from the two experiments above.")
+        cards = [("Width", results["width"]["estimate_mm"], "From Wall A", f"Measured reference: {cm(results['width']['actual_mm'])} cm"),
+                 ("Length", wb["mean_mm"] if wb else None, "From Wall B", f"Tape reference: {wb['tape_mm'] / 10:.1f} cm" if wb else "Wall B results are unavailable."),
+                 ("Height", results["height"]["estimate_mm"], "From Wall A", f"Measured reference: {cm(results['height']['actual_mm'])} cm")]
+        for column, (title, mm, source, reference) in zip(st.columns(3), cards):
+            with column:
+                with st.container(border=True):
+                    st.metric(title, f"\u2248 {cm(mm)} cm" if mm is not None else "\u2014")
+                    st.caption(f"**{source}**")
+                    st.caption(reference)
+        st.info("These three values are **approximate estimates** from two separate stereo-video experiments (two viewpoints for the "
+                "width and height, three viewpoints for the length). Together they give an approximate room measurement; they are "
+                "**not** a guaranteed-accuracy 3D reconstruction of the room. The measurement conditions of the Wall B tape reference "
+                "are not documented. No combined uncertainty interval or room volume is claimed.")
+
+
 def room_results():
     st.markdown(ROOM_CSS, unsafe_allow_html=True)
     with st.container(key="m7_room_head"):
@@ -1768,14 +1876,20 @@ def room_results():
                      "Modules/Module_7/outputs/room_measurement/.")
             return
         with st.container(key="m7_room_intro"):
-            st.write("This experiment estimates wall dimensions using stereo videos captured from two different viewpoints.")
+            st.write("This page combines two stereo-video experiments on the same room: Wall A, from two viewpoints, gives the width and "
+                     "height, and Wall B, from three viewpoints, gives the length.")
         with st.expander("About this measurement"):
             st.markdown("- This is a stereo-assisted geometric measurement, **not** direct triangulation of all four wall corners.\n"
                         "- Some corners are **inferred** geometrically from fitted wall edges, the floor plane and the camera pose; "
                         "they are not seen directly.\n"
                         "- It is an approximate educational experiment, not a precision measurement system.\n"
-                        "- The accuracy shown is observed on this one room; it is not a guarantee for other rooms or setups.")
+                        "- The accuracy shown is observed on this one room; it is not a guarantee for other rooms or setups.\n"
+                        "- Wall A and Wall B use different procedures and different evidence; each is described in its own section.")
         _room_calibration()
+
+        st.header("Wall A \u2014 Width and Height Measurement", anchor=False)
+        with st.container(key="m7_room_wall_note_a"):
+            st.markdown("Two viewpoints, four stereo recordings. This experiment estimates the room's **width** and **height**.")
 
         with st.container(key="m7_room_recordings"):
             st.subheader("The Stereo Recordings", anchor=False)
@@ -1825,6 +1939,9 @@ def room_results():
                         "- Left and right frames are not synchronised, and one floor corner is partly hidden.\n"
                         "- The result is sensitive to the camera calibration.")
             st.caption(results["assumptions"]["intrinsics_note"])
+
+        wall_b = _wall_b_section()
+        _final_dimensions(results, wall_b)
 
 
 # ---------------------------------------------------------------- page

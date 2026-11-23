@@ -129,6 +129,32 @@ class DataLoaderTests(unittest.TestCase):
         self.assertIs(rd.load_results()["ground_truth_used_in_estimate"], False)
 
 
+def in_page_order(at):
+    """[(element type, text)] of the rendered page in top-to-bottom order (videos have no text and are listed as ('video', ''))."""
+    out = []
+
+    def walk(block):
+        for child in getattr(block, "children", {}).values():
+            kind = child.type
+            if kind in ("markdown", "caption", "header", "subheader", "title", "info", "warning", "error", "metric"):
+                out.append((kind, str(getattr(child, "value", "") or "")))
+            elif kind == "expander":
+                out.append((kind, child.label))
+            elif kind == "video":
+                out.append((kind, ""))
+            walk(child)
+    walk(at.main)
+    return out
+
+
+def section(at, start, end=None):
+    """Text elements between the header ``start`` and the header ``end`` (page order)."""
+    items = in_page_order(at)
+    a = next(i for i, (k, v) in enumerate(items) if k == "header" and v == start)
+    b = next((i for i, (k, v) in enumerate(items) if i > a and k == "header" and v == end), len(items)) if end else len(items)
+    return items[a:b]
+
+
 class NoGroundTruthNoRecalculationTests(unittest.TestCase):
     def test_loader_imports_neither_estimator_nor_validation_nor_opencv(self):
         names = imports_of(MODULE / "room_measurement" / "display_data.py")
@@ -188,7 +214,7 @@ class ResultsPageTests(unittest.TestCase):
     def test_estimates_actuals_errors_and_intervals_are_shown(self):
         at = page("3_results")
         self.assertFalse(at.exception)
-        self.assertEqual([m.value for m in at.metric], ["288 cm", "290 cm", "238 cm", "240 cm"])
+        self.assertEqual([m.value for m in at.metric][:4], ["288 cm", "290 cm", "238 cm", "240 cm"])   # Wall A cards, unchanged
         body = text(at)
         val, est = raw("validation.json"), raw("estimation_result.json")
         for key in ("width", "height"):
@@ -257,7 +283,8 @@ class RevisionTests(unittest.TestCase):
     def test_heading_and_subtitle(self):
         at = page("3_results")
         self.assertEqual([t.value for t in at.title], ["My Experiment & Results"])
-        self.assertEqual([h.value for h in at.header], ["Room Measurement Using Stereo Videos"])
+        self.assertEqual([h.value for h in at.header], ["Room Measurement Using Stereo Videos", "Wall A \u2014 Width and Height Measurement",
+                                                         "Wall B \u2014 Length Measurement", "Final Room Dimensions"])
         css = next(m.value for m in at.markdown if "m7_room_head h2" in m.value)
         self.assertIn("m7_room_head h2 {\n    font-size: clamp(1.4rem, 4.6vw, 2.4rem)", css)   # 2.4rem = 38px on desktop, responsive below
         self.assertIn("padding-bottom: 28px", css)                                              # heading -> subtitle spacing
@@ -265,7 +292,8 @@ class RevisionTests(unittest.TestCase):
 
     def test_intro_is_the_short_sentence_and_details_are_collapsed(self):
         at = page("3_results")
-        intro = "This experiment estimates wall dimensions using stereo videos captured from two different viewpoints."
+        intro = ("This page combines two stereo-video experiments on the same room: Wall A, from two viewpoints, gives the width and "
+                 "height, and Wall B, from three viewpoints, gives the length.")
         self.assertIn(intro, [m.value for m in at.markdown])
         about = next(e for e in at.expander if e.label == "About this measurement")
         body = " ".join(m.value for m in about.markdown)
@@ -340,27 +368,30 @@ class RevisionTests(unittest.TestCase):
             at = page("3_results")
         self.assertFalse(at.exception)
         self.assertTrue(any("calibration details are unavailable" in e.value for e in at.error))
-        self.assertEqual([m.value for m in at.metric], ["288 cm", "290 cm", "238 cm", "240 cm"])   # results unaffected
+        self.assertEqual([m.value for m in at.metric][:4], ["288 cm", "290 cm", "238 cm", "240 cm"])   # results unaffected
 
     def test_videos_render_in_two_groups_with_players(self):
         at = page("3_results")
         self.assertFalse(at.exception)
-        self.assertEqual(len(at.get("video")), 4)
+        self.assertEqual(len(at.get("video")), 4 + len(rd.WALL_B_VIDEOS))      # Wall A's four, then Wall B's six
         body = text(at)
         self.assertIn("View 1 \u2014 Left Side of Wall", body)
         self.assertIn("View 2 \u2014 Right Side of Wall", body)
-        self.assertEqual(body.count("iPhone Air (Left Camera)"), 2)
-        self.assertEqual(body.count("iPhone 17 Pro Max (Right Camera)"), 2)
+        wall_a = section(at, "Wall A \u2014 Width and Height Measurement", "Wall B \u2014 Length Measurement")   # Wall B has its own recordings
+        self.assertEqual([v for k, v in wall_a if k == "caption"].count("iPhone Air (Left Camera)"), 2)
+        self.assertEqual([v for k, v in wall_a if k == "caption"].count("iPhone 17 Pro Max (Right Camera)"), 2)
+        self.assertEqual(len([1 for k, _ in wall_a if k == "video"]), 4)
         self.assertLess(body.index("View 1"), body.index("View 2"))
 
     def test_missing_videos_fall_back_without_breaking_the_page(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(rd, "video_status", side_effect=lambda: [(Path(tmp) / n, g, l, False) for g, n, l in rd.VIDEOS]):
+            with mock.patch.object(rd, "video_status", side_effect=lambda: [(Path(tmp) / n, g, l, False) for g, n, l in rd.VIDEOS]), \
+                    mock.patch.object(rd, "wall_b_video_status", side_effect=lambda: [(Path(tmp) / n, g, l, False) for g, n, l in rd.WALL_B_VIDEOS]):
                 at = page("3_results")
         self.assertFalse(at.exception)
         self.assertEqual(len(at.get("video")), 0)
         self.assertEqual(len([i for i in at.info if "Video not available" in i.value]), 4)
-        self.assertEqual([m.value for m in at.metric], ["288 cm", "290 cm", "238 cm", "240 cm"])
+        self.assertEqual([m.value for m in at.metric][:4], ["288 cm", "290 cm", "238 cm", "240 cm"])
         self.assertEqual(len(at.get("image")), len(rd.IMAGES))
 
     def test_existing_results_are_unchanged(self):
@@ -424,7 +455,8 @@ class DisplayAssetTests(unittest.TestCase):
 
     def test_no_raw_videos_in_the_deployable_outputs(self):
         self.assertEqual([p for p in OUT.rglob("*") if p.suffix.lower() in (".mov", ".avi", ".m4v")], [])
-        self.assertLess(sum(p.stat().st_size for p in OUT.rglob("*") if p.is_file()), 8_000_000)
+        # display images, the Wall A and Wall B playback copies (about 10 MB together) and the JSON results; far below GitHub's limits
+        self.assertLess(sum(p.stat().st_size for p in OUT.rglob("*") if p.is_file()), 16_000_000)
 
 
 @unittest.skipIf(AppTest is None, "streamlit testing is unavailable")
@@ -456,3 +488,179 @@ class VisitorLocalGuideTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+WALL_B = OUT / "wall_b_accepted_results.json"
+
+
+class WallBDataTests(unittest.TestCase):
+    def test_loader_reads_the_accepted_values_from_the_tracked_json(self):
+        data, wb = json.loads(WALL_B.read_text()), rd.load_wall_b()
+        self.assertEqual([(r["frame"], r["length_mm"]) for r in wb["per_frame"]], [(60, 3790.889), (150, 3811.971), (240, 3803.973)])
+        self.assertEqual([rd.cm4(r["length_mm"]) for r in wb["per_frame"]], ["379.0889", "381.1971", "380.3973"])
+        self.assertEqual(rd.cm4(wb["mean_mm"]), "380.2278")
+        self.assertEqual(rd.cm(wb["mean_mm"]), "380")
+        self.assertEqual((wb["tape_mm"], wb["difference_percent"], wb["tolerance_mm"]), (3937.0, -3.42, 5.0))
+        self.assertEqual(wb["mean_mm"], data["accepted_results"]["mean_length_mm"])
+
+    def test_the_tracked_json_agrees_with_the_regression_tests_reference_values(self):
+        src = (MODULE / "visitor_workflow" / "tests" / "test_f8_35_real_three_view.py").read_text()
+        for value in ("3790.889", "3811.971", "3803.973"):
+            self.assertIn(value, src)
+        self.assertIn("TOLERANCE_MM = 5.0", src)
+
+    def test_inconsistent_or_missing_files_are_rejected_with_a_clear_message(self):
+        data = json.loads(WALL_B.read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(rd.ResultsUnavailable) as ctx:
+                rd.load_wall_b(tmp)
+            self.assertIn("not found", str(ctx.exception))
+            for edit in (lambda d: d["accepted_results"].update(mean_length_mm=3900.0),
+                         lambda d: d["comparison_with_tape_measurement"].update(mean_difference_percent=-1.0),
+                         lambda d: d.update(schema="other")):
+                bad = json.loads(json.dumps(data)); edit(bad)
+                (Path(tmp) / rd.WALL_B_FILE).write_text(json.dumps(bad))
+                with self.assertRaises(rd.ResultsUnavailable):
+                    rd.load_wall_b(tmp)
+
+    def test_six_wall_b_videos_are_three_labelled_viewpoint_pairs(self):
+        self.assertEqual([(n, label) for n, _, label in rd.WALL_B_VIDEOS],
+                         [(n, label) for n in (1, 2, 3) for label in ("iPhone Air (Left Camera)", "iPhone 17 Pro Max (Right Camera)")])
+        self.assertEqual([name for _, name, _ in rd.WALL_B_VIDEOS],
+                         [f"wall_b_viewpoint{n}_{side}.mp4" for n in (1, 2, 3) for side in ("left_air", "right_pro")])
+
+
+@unittest.skipIf(AppTest is None, "streamlit testing is unavailable")
+class WallBAndFinalDimensionsPageTests(unittest.TestCase):
+    def test_wall_b_section_shows_the_accepted_values_and_the_caveats(self):
+        at = page("3_results")
+        self.assertFalse(at.exception)
+        metrics = [m.value for m in at.metric]
+        self.assertEqual(metrics[4:9], ["379.0889 cm", "381.1971 cm", "380.3973 cm", "380 cm", "393.7 cm"])
+        body = text(at)
+        for phrase in ("Frame 60", "Frame 150", "Frame 240", "380.2278 cm", "−13.5 cm (−3.42%)", "not documented",
+                       "not a controlled physical-accuracy validation", "regression tolerance", "**not** a claim about real-world measurement accuracy",
+                       "no confidence interval"):
+            self.assertIn(phrase, body)
+        self.assertIn("\u00b15 mm", body)
+        self.assertNotIn("accurate to \u00b15", body)
+        self.assertEqual({"How Wall B works", "Wall B limitations"} - {e.label for e in at.expander}, set())
+        self.assertIn("Classical computer vision only", body)
+
+    def test_final_room_dimensions_cards(self):
+        at = page("3_results")
+        self.assertEqual([m.value for m in at.metric][-3:], ["\u2248 288 cm", "\u2248 380 cm", "\u2248 238 cm"])
+        body = text(at)
+        for phrase in ("From Wall A", "From Wall B", "Measured reference: 290 cm", "Tape reference: 393.7 cm", "Measured reference: 240 cm",
+                       "approximate estimates", "not** a guaranteed-accuracy 3D reconstruction", "No combined uncertainty interval or room volume"):
+            self.assertIn(phrase, body)
+        self.assertLess(body.index("Wall B \u2014 Length Measurement"), body.index("Final Room Dimensions"))
+        self.assertNotIn("volume:", body.lower())
+
+    def test_section_order_and_wall_a_content_is_unchanged(self):
+        at = page("3_results")
+        order = [h.value for h in at.header]
+        self.assertEqual(order[1:], ["Wall A \u2014 Width and Height Measurement", "Wall B \u2014 Length Measurement", "Final Room Dimensions"])
+        self.assertEqual(len(at.get("image")), 5)
+        self.assertEqual(len(at.tabs), 3)
+        body = text(at)
+        for phrase in ("−2.0 cm (2.0 cm absolute, −0.70%)", "−2.0 cm (2.0 cm absolute, −0.82%)", "266 to 310 cm", "219 to 257 cm"):
+            self.assertIn(phrase, body)
+
+    def test_wall_b_without_playback_copies_says_so_and_still_works(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(rd, "wall_b_video_status", side_effect=lambda: [(Path(tmp) / n, g, l, False) for g, n, l in rd.WALL_B_VIDEOS]):
+                at = page("3_results")
+        self.assertEqual(len(at.get("video")), 4)                                   # only Wall A's four
+        notes = [i.value for i in at.info if "recordings are not included in this version" in i.value]
+        self.assertEqual(len(notes), 3)
+        body = text(at)
+        for title in ("Viewpoint 1", "Viewpoint 2", "Viewpoint 3"):
+            self.assertIn(title, body)
+
+    def test_wall_b_playback_copies_render_in_three_viewpoint_groups(self):
+        sample = rd.VIDEO_DIR / "left_air_wall_left.mp4"                           # any small committed H.264 file stands in for a playback copy
+        with tempfile.TemporaryDirectory() as tmp:
+            for _, name, _ in rd.WALL_B_VIDEOS:
+                shutil.copy(sample, Path(tmp) / name)
+            present = [(Path(tmp) / name, viewpoint, label, True) for viewpoint, name, label in rd.WALL_B_VIDEOS]
+            with mock.patch.object(rd, "wall_b_video_status", return_value=present):
+                at = page("3_results")
+        self.assertFalse(at.exception)
+        self.assertEqual(len(at.get("video")), 10)                                  # 4 Wall A + 6 Wall B
+        body = text(at)
+        positions = [body.index(f"Viewpoint {n}") for n in (1, 2, 3)]
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(len([i for i in at.info if "recordings are not included" in i.value]), 0)
+
+    def test_missing_wall_b_file_does_not_break_wall_a_or_the_final_summary(self):
+        with mock.patch.object(rd, "load_wall_b", side_effect=rd.ResultsUnavailable("Required results file not found: wall_b_accepted_results.json")):
+            at = page("3_results")
+        self.assertFalse(at.exception)
+        self.assertTrue(any("Wall B results are unavailable" in e.value for e in at.error))
+        metrics = [m.value for m in at.metric]
+        self.assertEqual(metrics[:4], ["288 cm", "290 cm", "238 cm", "240 cm"])
+        self.assertEqual(metrics[-3:], ["\u2248 288 cm", "\u2014", "\u2248 238 cm"])
+
+    def test_no_machine_learning_and_no_private_data_in_the_new_sections(self):
+        source = PAGE.read_text()
+        section = source[source.index("WALL_B_STEPS"):source.index("# ---------------------------------------------------------------- page\n")]
+        for forbidden in (".MOV", "VideoCapture", "annotations_backup", "data/room_measurement", "torch", "tensorflow", "sam2", "Method J", "2900", "2400"):
+            self.assertNotIn(forbidden, section, forbidden)
+        self.assertNotIn("method j", text(page("3_results")).lower())
+
+
+WALL_B_FILES = [f"wall_b_viewpoint{n}_{side}.mp4" for n in (1, 2, 3) for side in ("left_air", "right_pro")]
+
+
+class WallBPlaybackCopiesTests(unittest.TestCase):
+    def test_the_six_committed_copies_are_small_h264_and_match_their_manifest(self):
+        manifest = json.loads((rd.VIDEO_DIR / "wall_b_videos_manifest.json").read_text())
+        self.assertEqual(sorted(manifest["videos"]), sorted(WALL_B_FILES))
+        self.assertEqual(manifest["audio"], "removed")
+        self.assertEqual(sorted(name for _, name, _ in rd.WALL_B_VIDEOS), sorted(WALL_B_FILES))
+        total = 0
+        for name, row in manifest["videos"].items():
+            path = rd.VIDEO_DIR / name
+            self.assertTrue(path.is_file(), name)
+            size = path.stat().st_size
+            total += size
+            self.assertEqual(size, row["bytes"])
+            self.assertLess(size, 3_000_000)
+            n = row["viewpoint"]
+            side = "left_air" if "left" in row["camera"] else "right_pro"
+            self.assertEqual(name, f"wall_b_viewpoint{n}_{side}.mp4")
+            self.assertEqual(row["source"], f"{side}_2_{n}.MOV")                        # viewpoint n, correct camera
+            self.assertEqual(row["camera"], "left (iPhone Air)" if side == "left_air" else "right (iPhone 17 Pro Max)")
+            data = path.read_bytes()
+            self.assertIn(b"ftyp", data[:4096])
+            self.assertIn(b"avc1", data[:100000])                                       # H.264
+            self.assertNotIn(b"mp4a", data)                                             # no audio track
+            cap = cv2.VideoCapture(str(path))
+            self.assertEqual(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), row["frames"])
+            self.assertEqual((int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))), (720, 1280))   # portrait
+            self.assertAlmostEqual(cap.get(cv2.CAP_PROP_FPS), row["fps"], places=1)
+            cap.release()
+        self.assertEqual(total, manifest["total_bytes"])
+        self.assertLess(total, 8_000_000)
+
+    def test_the_manifest_publishes_no_private_hashes_or_paths(self):
+        raw = (rd.VIDEO_DIR / "wall_b_videos_manifest.json").read_text()
+        self.assertNotIn("sha256", raw)
+        self.assertNotIn("/Users/", raw)
+        self.assertNotIn("data/room_measurement", raw)
+
+    def test_each_video_sits_in_its_viewpoint_group_left_before_right(self):
+        shown = []
+        real_video = __import__("streamlit").video
+        with mock.patch("streamlit.video", side_effect=lambda data, *a, **k: (shown.append(Path(str(data)).name), real_video(data, *a, **k))[1]):
+            at = page("3_results")
+        self.assertFalse(at.exception)
+        wall_a = [name for _, name, _ in rd.VIDEOS]
+        self.assertEqual(shown, wall_a + WALL_B_FILES)                                   # Wall A first, then Wall B in viewpoint order
+        wall_b = section(at, "Wall B \u2014 Length Measurement", "Final Room Dimensions")
+        kinds = [(k, v) for k, v in wall_b if k == "video" or v.startswith("##### Viewpoint") or v in ("iPhone Air (Left Camera)", "iPhone 17 Pro Max (Right Camera)")]
+        self.assertEqual(kinds, [item for n in (1, 2, 3) for item in (("markdown", f"##### Viewpoint {n}"),
+                                                                       ("caption", "iPhone Air (Left Camera)"), ("video", ""),
+                                                                       ("caption", "iPhone 17 Pro Max (Right Camera)"), ("video", ""))])
+        self.assertNotIn("recordings are not included in this version", text(at))
