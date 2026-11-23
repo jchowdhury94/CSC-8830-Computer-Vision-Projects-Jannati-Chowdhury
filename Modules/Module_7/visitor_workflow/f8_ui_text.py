@@ -122,8 +122,9 @@ def upload_requirements(*, n_videos: int, viewpoints, per_file_mb: float, store_
         f"- **Videos:** {count} in total, grouped by viewpoint: {groups}. Each viewpoint needs one video from the **left** camera and one from the **right** camera.",
         f"- **File type:** {ACCEPTED_FORMATS}. The file's content is checked, not its name or extension.",
         f"- **Size:** each video up to **{per_file_mb:,.0f} MB**. The server keeps at most **{store_total_mb:,.0f} MB** of uploaded videos at any time, **shared by all visitors**; there is no separate "
-        f"per-visitor limit. If nobody else has videos stored, {n_videos} videos averaging up to about {fair:,.0f} MB each fit; if the server's storage is full you are asked to try again later. "
-        "One upload runs at a time.",
+        f"per-visitor limit. It is also **one pool for both walls**: the videos of Wall A and of Wall B are stored together and count against the same {store_total_mb:,.0f} MB; it is not allocated "
+        f"separately to each wall. If nobody else has videos stored, {n_videos} videos averaging up to about {fair:,.0f} MB each fit on their own, but while Wall A's videos are still stored, Wall B's videos "
+        "must fit in what is left; if the server's storage is full you are asked to try again later. One upload runs at a time.",
         f"- **Length:** {min_duration_s:g}\u2013{max_duration_s:g} seconds per video.",
         f"- **Frame rate:** {min_fps:g}\u2013{max_fps:g} frames per second. Use the same frame rate for the left and right video of a viewpoint (a difference of more than {fps_tolerance:g} fps is flagged).",
         f"- **Resolution:** every video must have **exactly the frame size and orientation of your accepted calibration**. The validated size is {w} \u00d7 {h} px (portrait). "
