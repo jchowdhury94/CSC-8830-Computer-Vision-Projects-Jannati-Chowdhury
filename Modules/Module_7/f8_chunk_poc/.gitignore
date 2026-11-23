@@ -1,0 +1,13 @@
+# F8 PoC: never commit measurements, uploads, test artifacts or credentials
+outputs/
+.streamlit/secrets.toml
+secrets.toml
+*.env
+.env*
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.mp4
+*.mov
+*.MOV
+*.bin

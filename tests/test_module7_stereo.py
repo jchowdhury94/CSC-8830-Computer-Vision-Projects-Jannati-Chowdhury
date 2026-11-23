@@ -221,12 +221,17 @@ class PageStateTests(unittest.TestCase):
         labels = [b.label for b in at.button if b.key != "nav_arrow_button"]
         self.assertEqual(labels, ["Home", "Calibrated Stereo Object Measurement", "Room Measurement Using Stereo Videos"])
 
-    def test_part3_placeholder(self):
+    def test_part3_two_button_page_and_setup_guide(self):
         at = AppTest.from_file(str(PAGE), default_timeout=60)
         at.session_state["module7_part"] = "3_visitor"
         at.run()
         self.assertFalse(at.exception)
-        self.assertTrue(any("not implemented" in i.value.lower() for i in at.info))
+        self.assertEqual(len(at.get("file_uploader")), 0)
+        at.session_state["module7_part"] = "3_setup"
+        at.run()
+        self.assertFalse(at.exception)
+        self.assertTrue(any("runs on your own computer" in i.value.lower() for i in at.info))
+        self.assertEqual(len(at.get("file_uploader")), 0)
 
     def test_part1_without_uploads_shows_reference_experiment_button_and_no_exception(self):
         at = self._app().run()

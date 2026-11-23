@@ -133,13 +133,14 @@ class HomepageTests(unittest.TestCase):
         self.assertEqual(labels(at), ["Measure a Room Using Your Own Stereo Videos", "View My Experiment & Results"])
         self.assertEqual(len(at.info), 0)
 
-    def test_room_visitor_button_opens_the_placeholder(self):
+    def test_room_visitor_button_opens_the_two_button_page(self):
         at = fresh("3")
         button(at, "Measure a Room Using Your Own Stereo Videos").click().run()
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state["module7_part"], "3_visitor")
-        self.assertEqual(len(at.info), 1)
-        self.assertTrue(any("not implemented" in i.value.lower() for i in at.info))
+        self.assertEqual([b.key for b in at.button if (b.key or "").startswith("m7_open_room_")],
+                         ["m7_open_room_setup", "m7_open_room_run"])
+        self.assertEqual(len(at.get("file_uploader")), 0)
 
     def test_each_view_has_a_breadcrumb_and_no_module_title(self):
         expected = {"q1_home": BACK, "1": BACK_Q1, "3": BACK}

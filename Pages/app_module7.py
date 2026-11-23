@@ -1,4 +1,4 @@
-"""Module 7 - Stereo Vision: calibrated stereo object measurement (Part 1) and the Part 3 placeholder."""
+"""Module 7 - Stereo Vision: calibrated stereo object measurement (Part 1) and room measurement from stereo videos (Part 3: saved experiment results, and a guide to running the visitor application locally)."""
 
 import hashlib
 import json
@@ -19,6 +19,7 @@ ROOT_DIR = str(Path(__file__).resolve().parents[1])
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+import local_mode  # noqa: E402  (set by run_local.py only; never true on the public deployment)
 from home_navigation import back_button, nav_row  # noqa: E402
 from stereo_measure import calibration_wizard as wiz  # noqa: E402
 from stereo_measure import load_model_b, load_selection  # noqa: E402
@@ -1541,16 +1542,108 @@ def room_landing():
                               ("3_results", "m7_open_room_results", ROOM_RESULTS_BUTTON)))
 
 
-def room_visitor_placeholder():
-    """Explicit placeholder: no upload, no estimator, and the saved experiment is never run on visitors' recordings."""
+REPO_URL = "https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury"
+LOCAL_GUIDE_CLONE = f"git clone {REPO_URL}.git\ncd CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury"
+LOCAL_GUIDE_VENV_UNIX = "python3.12 -m venv .venv\nsource .venv/bin/activate"
+LOCAL_GUIDE_VENV_WINDOWS = "py -3.12 -m venv .venv\n.venv\\Scripts\\Activate.ps1"
+LOCAL_GUIDE_INSTALL = "python -m pip install -r Modules/Module_7/visitor_workflow/requirements.txt"
+LOCAL_GUIDE_RUN = "python run_local.py"
+SETUP_BUTTON = "Setup Instructions"
+RUN_BUTTON = "Run Your Experiment"
+RUN_CLOUD_NOTE = "Available when running locally. See Setup Instructions."
+
+
+def room_visitor_choice():
+    """Two-button page shared by the Cloud website and the local website.  Setup Instructions always works.  Run Your Experiment is
+    enabled only in local mode (run_local.py) while the visitor application answers on its loopback port, and then it is a plain link
+    that opens that application in a new tab: nothing is uploaded, decoded or measured by this website."""
+    st.markdown(select_css(), unsafe_allow_html=True)
+    with st.container(key="m7_sel_layout"):
+        with st.container(key="m7_sel_label"):
+            st.markdown("MODULE 7")
+        with st.container(key="m7_sel_heading"):
+            st.header(ROOM_VISITOR_BUTTON, anchor=False)
+        with st.container(key="m7_sel_panels"):
+            st.button(panel_label(SETUP_BUTTON, "Run the room measurement on your own computer"), key="m7_open_room_setup",
+                      on_click=select_part, args=("3_setup",), width="stretch")
+            subtitle = "Measure your own stereo videos (Wall A and Wall B)"
+            note = None
+            if not local_mode.is_local_mode():
+                st.button(panel_label(RUN_BUTTON, subtitle), key="m7_open_room_run", disabled=True, width="stretch")
+                note = RUN_CLOUD_NOTE
+            elif local_mode.visitor_app_running():
+                st.link_button(panel_label(RUN_BUTTON, subtitle), local_mode.visitor_url(), key="m7_open_room_run", width="stretch")
+            else:
+                st.button(panel_label(RUN_BUTTON, subtitle), key="m7_open_room_run", disabled=True, width="stretch")
+                note = (f"The visitor application is not running at {local_mode.visitor_url()}. Start everything with "
+                        "`python run_local.py`, then press Check again.")
+            if note:
+                with st.container(key="m7_room_run_note"):
+                    st.markdown(note)
+                    if local_mode.is_local_mode():
+                        st.button("Check again", key="m7_room_run_recheck")
+
+
+def room_setup_guide():
+    """Setup Instructions page.  It never uploads, decodes or measures anything: the visitor application is a separate program
+    that runs only on the visitor's own computer."""
     st.markdown(HOME_CSS + Q1_TITLE_CSS + Q3_BODY_CSS, unsafe_allow_html=True)
     with st.container(key="m7_home_layout"):
         with st.container(key="m7_home_title"):
-            st.title(ROOM_VISITOR_BUTTON, anchor=False)
+            st.title(SETUP_BUTTON, anchor=False)
         with st.container(key="m7_q3_body"):
-            st.info("**Placeholder - not implemented yet.** Measuring a room from your own stereo videos has not been designed and "
-                    "validated, so nothing can be uploaded or measured here. The saved experiment is never run on visitor "
-                    "recordings. To see my own validated room experiment, open **View My Experiment & Results**.")
+            st.info("**This feature runs on your own computer, not on this website.** To measure a room from your own stereo videos, "
+                    "run the visitor application locally using the steps below. Nothing can be uploaded or measured on this page.")
+            st.markdown("#### Why not here?")
+            st.write("The measurement works on full-resolution (4K) stereo videos. The free hosting plan used for this website does not provide "
+                     "enough memory to process them reliably, so uploads are not accepted here. Running the same application on your own "
+                     "computer has no such limit. To see my own validated room experiment, go back and open **View My Experiment & Results**.")
+            st.markdown("#### Run it locally")
+            st.markdown("**1. Get the code** (requires [Git](https://git-scm.com/downloads), or download the repository as a ZIP from "
+                        f"[GitHub]({REPO_URL}) and open a terminal in the extracted folder):")
+            st.code(LOCAL_GUIDE_CLONE, language="bash")
+            st.markdown("**2. Create and activate a virtual environment** with Python 3.12 (recommended):")
+            st.markdown("macOS or Linux:")
+            st.code(LOCAL_GUIDE_VENV_UNIX, language="bash")
+            st.markdown("Windows (PowerShell):")
+            st.code(LOCAL_GUIDE_VENV_WINDOWS, language="powershell")
+            st.markdown("**3. Install the dependencies:**")
+            st.code(LOCAL_GUIDE_INSTALL, language="bash")
+            st.markdown("**4. Start everything with one command:**")
+            st.code(LOCAL_GUIDE_RUN, language="bash")
+            st.write("This starts two separate Streamlit applications on your computer, both reachable only from it: this website at "
+                     "http://127.0.0.1:8501 and the visitor measurement application at http://127.0.0.1:8640. Open the website, go to "
+                     "**Module 7 > Room Measurement > Measure a Room Using Your Own Stereo Videos** and press **Run Your Experiment**; "
+                     "it opens the visitor application in a new tab. Press Ctrl+C in the terminal to stop both.")
+            st.markdown("**5. Measure a wall.** In the application, accept a stereo calibration (**Upload Saved Calibration**), upload the stereo videos "
+                        "of the wall, choose the frames, mark the wall boundaries, and press **Calculate Wall Dimensions**. **Wall A** (two viewpoints, four videos) "
+                        "gives the room width and height. After it, **Continue to Wall B \u2014 Room Length** (three viewpoints, six videos) and press "
+                        "**Calculate Room Length**.")
+            st.markdown("#### Before you record")
+            st.markdown("- Use **two cameras on a fixed rig** and the **same cameras and settings** (resolution, orientation, frame rate, zoom, focus, stabilization) "
+                        "as in your calibration. Do not move one camera relative to the other.\n"
+                        "- The videos must have **exactly the frame size and orientation of your accepted calibration**. Videos are never resized or rotated. "
+                        "My validated recordings are 2160 \u00d7 3840 pixels, portrait.\n"
+                        "- Each video: MP4, MOV, M4V, Matroska/WebM or AVI, 1 to 120 seconds, 1 to 480 fps, up to 1024 MB. "
+                        "H.265/HEVC videos are accepted by the file check, but decoding depends on your computer's OpenCV build.\n"
+                        "- Choose a wall with **visible corners and boundaries**, a floor with **visible texture**, and keep the room still while you record.")
+            st.markdown("#### What to expect")
+            st.write("These are the application's checks and my recommendations, not a promise of accuracy. I validated the method on one room with one pair of "
+                     "phones, and arbitrary videos may give inaccurate results or be refused with an explanation. Processing of 4K videos can take "
+                     "a long time and a lot of memory on your computer.")
+            st.markdown("#### Memory and temporary files")
+            st.write("Nothing has to be configured. The application uses your computer's memory as its budget, keeps part of it in reserve and checks at every start that enough is free right now. "
+                     "Keep at least 4 GB of memory free (the Wall A calculation used about 2.0 GB at its peak on my recordings) and close other large programs first. "
+                     "The extracted frames are kept in a marked temporary folder while a measurement is open and are removed when you press New Measurement, when your session ends, "
+                     "when the application stops, or at the next start after a crash.")
+            st.markdown("#### Troubleshooting")
+            st.markdown("- **Command not found:** install Python 3.12 and check that the virtual environment is activated.\n"
+                        "- **A package fails to install:** upgrade pip (`python -m pip install --upgrade pip`) and retry.\n"
+                        "- **Port already in use:** `run_local.py` names the busy port and starts nothing; close the program using it, or choose other ports, for example `python run_local.py --website-port 8502 --visitor-port 8641`.\n"
+                        "- **Run Your Experiment is greyed out:** you are on the public website, or the visitor application is not running; start it with `python run_local.py` and press **Check again**.\n"
+                        "- **A video is rejected:** read the message; it names the check that failed (size, length, frame rate, or a different size or orientation than the calibration).\n"
+                        "- **Not enough memory or a stopped calculation:** close other large programs so that at least 4 GB is free and press Try again; the application names the limit that was reached.")
+            st.markdown(f"Source code and full instructions: [GitHub repository]({REPO_URL}).")
 
 
 def _uncertainty_rows(results):
@@ -1815,7 +1908,10 @@ def svg_icon(path):
 ICON_CHART = svg_icon("M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z")
 ICON_CHEVRON = svg_icon("M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z")
 ICON_CAMERA = svg_icon("M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z")
-PANEL_KEYS = {"m7_open_measure": ICON_CAMERA, "m7_open_experiment": ICON_CHART}
+ICON_GUIDE = svg_icon("M19 3H8C6.9 3 6 3.9 6 5v14c0 1.1.9 2 2 2h11V3zM8 5h9v10H8c-.37 0-.7.1-1 .27V5zm0 14c-.55 0-1-.45-1-1s.45-1 1-1h9v2H8z")
+ICON_PLAY = svg_icon("M8 5v14l11-7z")
+PANEL_KEYS = {"m7_open_measure": ICON_CAMERA, "m7_open_experiment": ICON_CHART,
+              "m7_open_room_setup": ICON_GUIDE, "m7_open_room_run": ICON_PLAY}
 
 SELECT_CSS = """
 <style>
@@ -1868,6 +1964,14 @@ __PANEL_BUTTON__ p strong { display: block; font-size: 1.05rem; font-weight: 700
 __PANEL_BUTTON_BR__ { display: none; }  /* the title is a block, so the label's line break would add a blank line */
 __PANEL_BUTTON_HOVER__ { background-color: #2F343F; border-color: __ACCENT__; color: #F2F3F5; transform: translateY(-1px); }
 __PANEL_BUTTON_FOCUS__ { outline: 3px solid #FFFFFF; outline-offset: 2px; box-shadow: 0 0 0 6px __ACCENT__; }
+.st-key-m7_open_room_run a { text-decoration: none; box-sizing: border-box; }
+.st-key-m7_open_room_run button:disabled { opacity: 1; cursor: not-allowed; transform: none; background-color: #2B2F38; border: 1px dashed #5A5F6B; }
+.st-key-m7_open_room_run button:disabled:hover { background-color: #2B2F38; border-color: #5A5F6B; transform: none; }
+.st-key-m7_open_room_run button:disabled::before { background-color: #5A5F6B; }
+.st-key-m7_open_room_run button:disabled::after { opacity: 0.25; }
+.st-key-m7_open_room_run button:disabled p, .st-key-m7_open_room_run button:disabled p strong { color: #9AA0AC; }
+.st-key-m7_room_run_note { padding: 2px 4px 0; }
+.st-key-m7_room_run_note p { font-size: 0.85rem; text-align: center; margin: 0; opacity: 0.85; }
 __PANEL_ICONS__
 @media (max-width: 640px) {
     .st-key-m7_sel_layout { min-height: calc(100vh - 12rem); }
@@ -1881,9 +1985,11 @@ __PANEL_ICONS__
 
 def select_css():
     def selector(suffix):
-        return ", ".join(f".st-key-{key} button{suffix}" for key in PANEL_KEYS)
+        # st.link_button renders an <a>, so the enabled "Run Your Experiment" panel gets the same rules through an extra selector
+        return ", ".join(f".st-key-{key} button{suffix}" + (f", .st-key-{key} a{suffix}" if key == "m7_open_room_run" else "")
+                         for key in PANEL_KEYS)
 
-    icons = "\n".join(f".st-key-{key} button::before {{ background-image: {icon}; }}" for key, icon in PANEL_KEYS.items())
+    icons = "\n".join(f".st-key-{key} button::before {{ background-image: {icon}; }}" + (f"\n.st-key-{key} a::before {{ background-image: {icon}; }}" if key == "m7_open_room_run" else "") for key, icon in PANEL_KEYS.items())
     css = SELECT_CSS
     for token, value in (("__PANEL_SELECTOR__", ", ".join(f".st-key-{key}" for key in PANEL_KEYS)),
                          ("__PANEL_BUTTON_HOVER__", selector(":hover")),
@@ -1940,6 +2046,7 @@ CRUMBS = {"home": (_M7,), "q1_home": (_M7, _Q1), "1": (_M7, _Q1, ("Your Own Ster
           "experiment": (_M7, _Q1, ("My Experiment & Results", "experiment")),
           "3": (_M7, ("Room Measurement", "3")),
           "3_visitor": (_M7, ("Room Measurement", "3"), ("Your Own Stereo Videos", "3_visitor")),
+          "3_setup": (_M7, ("Room Measurement", "3"), ("Your Own Stereo Videos", "3_visitor"), ("Setup Instructions", "3_setup")),
           "3_results": (_M7, ("Room Measurement", "3"), ("My Experiment & Results", "3_results"))}
 
 init_state()
@@ -1961,9 +2068,13 @@ else:
         st.write("")
         back_button("m7_back_bottom", select_part, ("q1_home",))
     elif view == "3_visitor":
-        room_visitor_placeholder()
+        room_visitor_choice()
         st.write("")
         back_button("m7_back_bottom_room_visitor", select_part, ("3",))
+    elif view == "3_setup":
+        room_setup_guide()
+        st.write("")
+        back_button("m7_back_bottom_room_setup", select_part, ("3_visitor",))
     elif view == "3_results":
         room_results()
         st.write("")

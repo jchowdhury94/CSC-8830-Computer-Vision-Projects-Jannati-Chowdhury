@@ -1,0 +1,16 @@
+# Original stereo calibration recordings (large, private): never commit.
+data/room_measurement/calibration_videos/
+
+# Wall B three-viewpoint stereo recordings (large, private): never commit.
+data/room_measurement/wall_b_three_viewpoints/
+
+# Everything else in the recordings folder is private as well (loose files, new subfolders, hand-made annotation backups).
+data/room_measurement/
+
+# Retained validation evidence and regression fixtures (frames cut from the private recordings, annotation fixture, F2 and E2 evidence): local only.
+# Deliberately NOT /outputs/room_measurement/ as a whole: its display/ and videos/ folders and result files are published.
+/outputs/stage_*/
+/outputs/room_measurement/stage_e2_visitor_backend/
+
+# The Stage F2 evidence runner (it reads the private recordings' frames and writes the ignored evidence above): local only.
+/run_stage_*.py

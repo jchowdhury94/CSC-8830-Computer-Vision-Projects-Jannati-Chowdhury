@@ -428,23 +428,24 @@ class DisplayAssetTests(unittest.TestCase):
 
 
 @unittest.skipIf(AppTest is None, "streamlit testing is unavailable")
-class VisitorPlaceholderTests(unittest.TestCase):
-    def test_placeholder_is_labelled_and_offers_no_upload(self):
-        at = page("3_visitor")
+class VisitorLocalGuideTests(unittest.TestCase):
+    def test_guide_is_labelled_and_offers_no_upload(self):
+        at = page("3_setup")
         self.assertFalse(at.exception)
-        self.assertEqual([t.value for t in at.title], [VISITOR])
-        self.assertTrue(any("not implemented" in i.value.lower() for i in at.info))
+        self.assertEqual([t.value for t in at.title], ["Setup Instructions"])
+        self.assertTrue(any("runs on your own computer" in i.value.lower() for i in at.info))
         self.assertEqual(len(at.get("file_uploader")), 0)
         self.assertEqual(len(at.metric), 0)
         self.assertEqual(len(at.get("image")), 0)
 
-    def test_placeholder_never_runs_the_estimator_or_loads_the_saved_experiment(self):
+    def test_guide_never_runs_the_estimator_or_loads_the_saved_experiment(self):
         from room_measurement import pipeline
         with mock.patch.object(pipeline, "run_estimation", side_effect=AssertionError("estimator must not run")) as run, \
                 mock.patch.object(rd, "load_results", side_effect=AssertionError("saved results must not load")) as load, \
                 mock.patch("cv2.VideoCapture", side_effect=AssertionError("no video access")):
             at = page("3_visitor")
-        self.assertFalse(at.exception)
+            at2 = page("3_setup")
+        self.assertFalse(at.exception or at2.exception)
         run.assert_not_called()
         load.assert_not_called()
 
