@@ -190,7 +190,7 @@ def _app(nvp, per_file_mb, total_mb):
 
 
 def open_room_page(nvp, per_file_mb, total_mb):
-    at = AppTest.from_function(_app, args=(nvp, per_file_mb, total_mb), default_timeout=30); at.session_state["f8i_authed"] = True
+    at = AppTest.from_function(_app, args=(nvp, per_file_mb, total_mb), default_timeout=30)
     at.run(); assert not at.exception
     sess = at.session_state["f8i_session"]; sess.go("room"); sess.guide.room.set_confirmed(1, True); sess.guide.room.set_confirmed(2, True); at.run()
     assert not at.exception

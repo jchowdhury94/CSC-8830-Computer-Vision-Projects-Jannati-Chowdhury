@@ -824,12 +824,12 @@ def in_import_workflow(sess) -> bool:
 
 def _session_options(svc, sess, ss):
     with st.expander("Session Options"):
-        if st.button("Lock this session", key="f8i_lock", help="Cancels any calibration, deletes your uploads and asks for the passcode again."):
-            sess.reset(svc.store, svc.room_store); clear_namespace(ss); ss["f8i_authed"] = False; st.rerun()
+        if st.button("Lock this session", key="f8i_lock", help="Cancels any calibration, deletes your uploads and starts a fresh session."):
+            sess.reset(svc.store, svc.room_store); clear_namespace(ss); st.rerun()
 
 
 def render(svc, sess, ss):
-    """The whole experiment, below the passcode gate."""
+    """The whole experiment."""
     st.html(CSS)
     _header(sess, ss)
     if ss.get("f8i_msg"):
@@ -844,5 +844,5 @@ def render(svc, sess, ss):
     c = st.columns(2)
     if c[0].button("Start over (discard this session's data)", key="f8i_reset", width="stretch"):
         sess.reset(svc.store, svc.room_store); st.rerun()
-    if c[1].button("Lock this session", key="f8i_lock", width="stretch", help="Cancels any calibration, deletes your uploads and asks for the passcode again."):
-        sess.reset(svc.store, svc.room_store); clear_namespace(ss); ss["f8i_authed"] = False; st.rerun()
+    if c[1].button("Lock this session", key="f8i_lock", width="stretch", help="Cancels any calibration, deletes your uploads and starts a fresh session."):
+        sess.reset(svc.store, svc.room_store); clear_namespace(ss); st.rerun()

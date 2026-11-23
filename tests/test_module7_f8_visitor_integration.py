@@ -504,7 +504,7 @@ class TestPages:
         at = page_app(env, sess); at.run(); button(at, "Lock this session").click().run()
         fresh = at.session_state["f8i_session"]                      # the harness has no gate, so the page re-creates an EMPTY session; the entry-script tests cover the gate
         assert fresh is not sess and fresh.accepted is None and fresh.f6 is None and fresh.step == "home" and fresh.owner != sess.owner
-        assert at.session_state["f8i_authed"] is False and sess.f6 is None and sess.accepted is None and sess.contract is None
+        assert sess.f6 is None and sess.accepted is None and sess.contract is None
 
     def test_recovery_panel_reviews_a_saved_result(self, env):
         code = new_code(); env.results.save_result(code, make_doc("GOOD", code=code))
@@ -543,53 +543,39 @@ def app_at():
     return AppTest.from_file(str(APP), default_timeout=60)
 
 
-class TestUnauthorized:
-    def test_no_passcode_configured_fails_closed(self, entry):
-        at = app_at(); at.run()
-        assert any("locked" in e.value for e in at.error) and not at.text_input and not entry
-        assert "f8i_session" not in at.session_state
+class TestOpenAccess:
+    """The standalone visitor test app has no password or login screen: the real entry script opens on the home page."""
 
-    def test_short_passcode_fails_closed(self, entry, monkeypatch):
-        monkeypatch.setenv("F8_PASSCODE", "short")
-        at = app_at(); at.run(); assert any("locked" in e.value for e in at.error) and not entry
-
-    def test_gate_shown_and_nothing_behind_it(self, entry, monkeypatch):
-        monkeypatch.setenv("F8_PASSCODE", "correct-horse-battery")
+    def test_opens_directly_to_the_home_page_without_a_password(self, entry):
         at = app_at(); at.run()
-        assert len(at.text_input) == 1 and at.text_input[0].label == "Passcode" and not at.exception
-        assert "f8i_session" not in at.session_state and not entry and not at.button[1:] and "Calibrate now" not in texts(at)
-
-    def test_wrong_passcode_is_refused_and_rate_limited(self, entry, monkeypatch):
-        monkeypatch.setenv("F8_PASSCODE", "correct-horse-battery")
-        at = app_at(); at.run()
-        for _ in range(6):
-            at.text_input[0].input("wrong-guess").run(); at.button[0].click().run()
-        msgs = " ".join(e.value for e in at.error)
-        assert "Incorrect passcode" in msgs or "Too many" in msgs
-        assert "f8i_session" not in at.session_state and not entry and not (at.session_state["f8i_authed"] if "f8i_authed" in at.session_state else False)
-        assert "wrong-guess" not in texts(at) and "correct-horse-battery" not in texts(at)
-
-    def test_correct_passcode_unlocks_the_home_page_and_room_processing_stays_off(self, entry, monkeypatch, tmp_path):
-        monkeypatch.setenv("F8_PASSCODE", "correct-horse-battery")
-        at = app_at(); at.run()
-        at.text_input[0].input("correct-horse-battery").run(); at.button[0].click().run()
-        assert not at.exception and at.session_state["f8i_authed"] is True and button(at, "Calibrate My Cameras") is not None
-        assert "correct-horse-battery" not in texts(at)
-        s = at.session_state["f8i_session"]; assert s.f6 is None and s.accepted is None and S.ROOM_PROCESSING_ENABLED is False and len(entry) == 2       # F8.31A: calibration store + separate room-video store
+        assert not at.exception and not at.text_input and not at.error
+        assert button(at, "Calibrate My Cameras") is not None and button(at, "Upload Saved Calibration") is not None
+        s = at.session_state["f8i_session"]; assert s.step == "home" and s.f6 is None and s.accepted is None
+        assert S.ROOM_PROCESSING_ENABLED is False and len(entry) == 2                    # F8.31A: calibration store + separate room-video store
         assert not any(b.label == "Select room videos" and not b.disabled for b in at.button)
 
-    def test_lock_returns_to_the_gate(self, entry, monkeypatch):
+    def test_a_set_passcode_variable_changes_nothing(self, entry, monkeypatch):
         monkeypatch.setenv("F8_PASSCODE", "correct-horse-battery")
-        at = app_at(); at.run(); at.text_input[0].input("correct-horse-battery").run(); at.button[0].click().run()
-        at.session_state["f8i_session"].step = "setup"; at.run()           # Lock is on the calibration workflow pages, not on the home page
-        button(at, "Lock this session").click().run()
-        assert len(at.text_input) == 1 and at.text_input[0].label == "Passcode" and not any(b.label == "Calibrate My Cameras" for b in at.button)
+        at = app_at(); at.run()
+        assert not at.exception and not at.text_input and button(at, "Calibrate My Cameras") is not None
 
-    def test_session_refresh_requires_the_passcode_again(self, entry, monkeypatch):
-        monkeypatch.setenv("F8_PASSCODE", "correct-horse-battery")
-        a = app_at(); a.run(); a.text_input[0].input("correct-horse-battery").run(); a.button[0].click().run()
-        b = app_at(); b.run()                                         # a refresh is a NEW Streamlit session: it must not inherit the authentication
-        assert len(b.text_input) == 1 and "f8i_session" not in b.session_state
+    def test_lock_starts_a_fresh_session_on_the_home_page(self, entry):
+        at = app_at(); at.run()
+        sess = at.session_state["f8i_session"]; sess.step = "setup"; at.run()           # Lock is on the calibration workflow pages, not on the home page
+        button(at, "Lock this session").click().run()
+        fresh = at.session_state["f8i_session"]
+        assert not at.exception and not at.text_input and fresh is not sess and fresh.step == "home" and fresh.owner != sess.owner
+        assert button(at, "Calibrate My Cameras") is not None
+
+    def test_every_browser_session_is_isolated(self, entry):
+        a = app_at(); a.run(); b = app_at(); b.run()                                     # a refresh or a second visitor is a NEW Streamlit session
+        sa, sb = a.session_state["f8i_session"], b.session_state["f8i_session"]
+        assert sa is not sb and sa.owner != sb.owner and len(entry) == 2                  # one service per server process, one owner token per session
+
+    def test_no_passcode_code_remains_in_the_visitor_app(self):
+        for name in ("app_f8_integrated.py", "f8_visitor_pages.py", "f8_visitor_service.py"):
+            src = (WF / name).read_text().lower()
+            assert "passcode" not in src and "load_passcode" not in src and "f8i_authed" not in src and "attemptlimiter" not in src, name
 
 
 # ===================================================================== room processing stays disabled; structural guarantees

@@ -1,8 +1,8 @@
 """Start the LOCAL F8.18 integrated calibration experiment (isolated; not linked from any page; nothing is deployed).
 
-    F8_PASSCODE=<at least 8 characters> python Modules/Module_7/run_f8_integrated_app.py [port] [--enable-full-calibration --max-tree-rss-mb=<MB>]    ->  http://127.0.0.1:8640 (default)
+    python Modules/Module_7/run_f8_integrated_app.py [port] [--enable-full-calibration --max-tree-rss-mb=<MB>]    ->  http://127.0.0.1:8640 (default)
 
-The passcode is read from the environment of this process and is never printed.  Full calibration stays DISABLED unless ``--enable-full-calibration`` is given
+The app opens directly on its home page (no password).  Full calibration stays DISABLED unless ``--enable-full-calibration`` is given
 (it only sets F8_ENABLE_FULL_CALIBRATION=1 for the child server).  Binds to 127.0.0.1 only; dark theme with the Module 7 red accent; no usage statistics.
 Room video processing is not available in this phase.
 F8.20a: ``--enable-full-calibration`` REQUIRES ``--max-tree-rss-mb=<256..65536>`` (use the ``=`` form).  The limit applies to the app process + the calibration worker and its children
@@ -50,6 +50,5 @@ if __name__ == "__main__":
         env.pop("F8_ENABLE_FULL_CALIBRATION", None)                          # an inherited value must not silently enable full calibration
     cmd = [sys.executable, "-m", "streamlit", "run", str(APP), "--server.address", "127.0.0.1", "--server.port", str(PORT), "--server.headless", "true", "--server.maxUploadSize", "10",
            "--browser.gatherUsageStats", "false", "--client.toolbarMode", "minimal", "--theme.base", "dark", "--theme.primaryColor", "#C9363E"]
-    print(f"F8.18 integrated calibration experiment (starting): http://127.0.0.1:{PORT}  ·  full calibration {'ENABLED (memory limit ' + env['F8_MAX_TREE_RSS_MB'] + ' MB)' if env.get('F8_ENABLE_FULL_CALIBRATION') == '1' else 'disabled'}"
-          f"  ·  passcode {'set' if len(env.get('F8_PASSCODE', '').strip()) >= 8 else 'NOT set (the app will stay locked)'}")
+    print(f"F8.18 integrated calibration experiment (starting): http://127.0.0.1:{PORT}  ·  full calibration {'ENABLED (memory limit ' + env['F8_MAX_TREE_RSS_MB'] + ' MB)' if env.get('F8_ENABLE_FULL_CALIBRATION') == '1' else 'disabled'}")
     raise SystemExit(subprocess.call(cmd, env=env))

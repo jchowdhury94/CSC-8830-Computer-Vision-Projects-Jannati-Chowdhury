@@ -81,9 +81,10 @@ def test_every_third_party_import_of_the_visitor_app_is_in_the_requirements():
     assert not [p for p in seen if {"outputs", "data", "tests"} & set(p.parts)]                   # no generated output, recording folder or test file is needed at run time
 
 
-def test_entry_point_is_the_gated_app_and_the_gate_is_closed():
+def test_entry_point_opens_directly_and_the_processing_gate_is_closed():
     src = ENTRY.read_text()
-    assert "load_passcode" in src and "st.stop()" in src and "F8_PASSCODE" in src                 # fail closed without the secret
+    assert "passcode" not in src.lower() and "st.stop()" not in src and "P.render(get_service()" in src      # no login screen: the app renders its home page directly
+    assert "secret" not in (HERE / "CLOUD_TEST.md").read_text().lower().replace("| secrets | none.", "")     # the deployment notes ask for no secret
     assert re.search(r"^ROOM_PROCESSING_ENABLED = False\b", (HERE / "f8_visitor_service.py").read_text(), re.M)
     assert ENTRY.relative_to(ROOT).as_posix() == "Modules/Module_7/visitor_workflow/app_f8_integrated.py"
     assert (ROOT / "Modules/Module_7/f8_chunk_poc/frontend/index.html").exists()                  # the chunk-upload component's page

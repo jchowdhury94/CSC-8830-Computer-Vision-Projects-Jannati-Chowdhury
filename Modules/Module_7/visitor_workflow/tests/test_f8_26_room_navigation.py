@@ -113,7 +113,6 @@ def _app(accept):
 
 def _at(accept):
     at = AppTest.from_function(_app, args=(accept,), default_timeout=30)
-    at.session_state["f8i_authed"] = True
     return at
 
 
@@ -147,6 +146,5 @@ def test_page_flow_shows_four_slots_and_back_and_lock():
     sess = at.session_state["f8i_session"]
     assert sess.step == "ready" and sess.accepted is not None
     next(b for b in at.button if b.key == "f8i_lock").click(); at.run()
-    assert at.session_state["f8i_authed"] is False
     fresh = at.session_state["f8i_session"]                      # re-created empty by the next render: nothing of the accepted calibration survives
     assert fresh is not sess and fresh.accepted is None and fresh.f6 is None and sess.f6 is None and fresh.step == "home"
