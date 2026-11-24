@@ -5,7 +5,7 @@ OpenCV axes (x right, y down, z forward); the right camera is X_R = R @ X_L + T.
 """
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1] / "object_measurement_question_1"   # Question 1 data, outputs and reproducibility scripts (this package stays shared at the Module 7 root)
 
 CALIB_PHOTO_DIR = ROOT / "data" / "calibration"            # left/air_N.jpeg, right/pro_N.jpeg (N = 1..30)
 NOTEBOOK_PHOTO_DIR = ROOT / "data" / "object_measurement"  # left/air_imageN.jpeg, right/pro_imageN.jpeg (N = 1..3)

@@ -16,10 +16,10 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / "Modules" / "Module_7"
+MODULE = ROOT / "Modules" / "Module_7" / "room_measurement_question_3"      # Question 3 packages, data and outputs
 WF = MODULE / "visitor_workflow"
 F8 = MODULE / "f8_chunk_poc"
-for p in (str(MODULE), str(WF), str(F8), str(ROOT)):
+for p in (str(MODULE), str(MODULE.parent), str(WF), str(F8), str(ROOT)):
     if p not in sys.path: sys.path.insert(0, p)
 
 import calibration_runner as CR  # noqa: E402

@@ -35,46 +35,60 @@ class TwoButtonPageTests(unittest.TestCase):
     def test_cloud_run_button_is_disabled_with_note_and_no_link(self):
         at = room_page(running=True)               # even a listening port is ignored outside local mode
         self.assertFalse(at.exception)
-        self.assertEqual([b.key for b in at.button if (b.key or "").startswith("m7_open_room_")], ["m7_open_room_setup", RUN])
+        self.assertEqual([b.key for b in at.button if (b.key or "").startswith("m7_open_room_")], [RUN])
         self.assertTrue(run_button(at).disabled)
         self.assertEqual(len(at.get("link_button")), 0)
-        self.assertTrue(any("Available when running locally. See Setup Instructions." in m.value for m in at.markdown))
+        self.assertTrue(any("runs only on your own computer" in m.value for m in at.markdown))
         self.assertEqual(len(at.get("file_uploader")), 0)
 
-    def test_setup_button_is_enabled_on_cloud_and_local_and_opens_the_guide(self):
+    def test_setup_instructions_is_an_inline_expander_collapsed_by_default_on_cloud_and_local(self):
         for env in ({}, {local_mode.LOCAL_MODE_ENV: "1"}):
             at = room_page(env=env)
-            setup = next(b for b in at.button if b.key == "m7_open_room_setup")
-            self.assertFalse(setup.disabled)
-            setup.click().run()
-            self.assertEqual(at.session_state["module7_part"], "3_setup")
-            self.assertEqual([t.value for t in at.title], ["Setup Instructions"])
+            self.assertFalse(at.exception)
+            self.assertEqual(at.session_state["module7_part"], "3_visitor")                 # no separate page
+            blocks = list(at.get("expander"))
+            self.assertEqual(len(blocks), 1)
+            self.assertIn("Setup Instructions", blocks[0].label)
+            self.assertFalse(blocks[0].proto.expanded)
             self.assertTrue(any("python run_local.py" in c.value for c in at.get("code")))
+            self.assertTrue(any("runs on your own computer" in m.value.lower() for m in at.markdown))
+            self.assertEqual(len(at.get("file_uploader")), 0)
 
     def test_only_exactly_1_enables_local_mode(self):
         for value in ("", "0", "true", "yes", "11"):
             at = room_page(env={local_mode.LOCAL_MODE_ENV: value}, running=True)
             self.assertTrue(run_button(at).disabled, value)
 
-    def test_local_mode_with_running_visitor_app_offers_a_loopback_link(self):
+    def test_local_mode_with_running_visitor_app_offers_a_same_tab_loopback_link(self):
         at = room_page(env={local_mode.LOCAL_MODE_ENV: "1"}, running=True)
         self.assertFalse(at.exception)
-        links = at.get("link_button")
+        self.assertEqual(len(at.get("link_button")), 0)                                     # st.link_button always opens a new tab
+        html = [h.proto.body for h in at.get("html")]
+        links = [h for h in html if "Run Your Experiment (Local Only)" in h]
         self.assertEqual(len(links), 1)
-        self.assertEqual(links[0].proto.url, "http://127.0.0.1:8640")
+        self.assertIn('href="http://127.0.0.1:8640"', links[0])
+        self.assertNotIn("target", links[0])                                                # no target attribute: the browser stays in the same tab
         self.assertIsNone(run_button(at))
 
     def test_local_mode_without_visitor_app_is_disabled_and_explains(self):
         at = room_page(env={local_mode.LOCAL_MODE_ENV: "1"}, running=False)
         self.assertTrue(run_button(at).disabled)
         self.assertEqual(len(at.get("link_button")), 0)
-        self.assertTrue(any("not running" in m.value and "python run_local.py" in m.value for m in at.markdown))
+        self.assertTrue(any("not running" in m.value and "Setup Instructions" in m.value and "python run_local.py" in m.value for m in at.markdown))
 
     def test_visitor_url_is_always_loopback_whatever_the_environment_says(self):
         with mock.patch.dict(os.environ, {local_mode.VISITOR_PORT_ENV: "evil.example.com"}):
             self.assertEqual(local_mode.visitor_url(), "http://127.0.0.1:8640")
         with mock.patch.dict(os.environ, {local_mode.VISITOR_PORT_ENV: "8650"}):
             self.assertEqual(local_mode.visitor_url(), "http://127.0.0.1:8650")
+
+
+class WebsiteLinkTests(unittest.TestCase):
+    def test_website_url_is_always_loopback_and_validated(self):
+        with mock.patch.dict(os.environ, {local_mode.WEBSITE_PORT_ENV: "evil.example.com"}):
+            self.assertEqual(local_mode.website_url(), "http://127.0.0.1:8501/")
+        with mock.patch.dict(os.environ, {local_mode.WEBSITE_PORT_ENV: "8502"}):
+            self.assertEqual(local_mode.website_url("module-7", "3_visitor"), "http://127.0.0.1:8502/module-7?view=3_visitor")
 
 
 class LauncherTests(unittest.TestCase):
@@ -98,6 +112,7 @@ class LauncherTests(unittest.TestCase):
             env = run_local.child_env(8501, 8641)
         self.assertEqual(env["CSC8830_LOCAL_MODE"], "1")
         self.assertEqual(env["CSC8830_VISITOR_PORT"], "8641")
+        self.assertEqual(env["CSC8830_WEBSITE_PORT"], "8501")                                # the visitor application links back to the website with it
         self.assertNotIn("CSC8830_OTHER", env)
 
     def test_port_conflict_is_reported_and_nothing_is_started(self):

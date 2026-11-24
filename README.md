@@ -16,7 +16,7 @@
 
 [https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury](https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury)
 
-This repository contains Streamlit-based projects completed for CSC 8830 Computer Vision. Modules 2, 3, 4, 6, and 7 are currently available, and additional modules will be added throughout the course. The public Streamlit website is the easiest way to view the projects without local installation. Select a module from the sidebar to explore its interface and results.
+This repository contains Streamlit-based projects completed for CSC 8830 Computer Vision during Fall 2026. The projects cover Modules 2, 3, 4, 6, and 7. The public Streamlit website is the easiest way to view the projects without local installation. Choose a module on the home page to explore its interface and results.
 
 ## Current Modules
 
@@ -70,20 +70,21 @@ The original videos and high-resolution photographs are git-ignored; the page us
 
 ### Module 7 - Stereo Vision
 
-Both questions use classical computer vision only (no machine learning or deep learning).
+Module 7 measures real-world sizes with a calibrated stereo pair of phones (an iPhone Air and an iPhone 17 Pro Max), using classical computer vision only (no machine learning or deep learning). It has two questions:
 
-**Question 1 - Calibrated Stereo Object Measurement.** Calibrated stereo measurement of an object's Z-depth, width and height from two photographs, using classical OpenCV. A visitor can load a saved calibration (`.npz`) or compute one from their own checkerboard photographs, select the object's corners on both images with a draggable zoom view, and calculate the dimensions. The page also shows the author's saved experiment: an iPhone Air and iPhone 17 Pro Max calibrated from 30 checkerboard pairs, used to measure a notebook. Visitor measurements never use the author's calibration, and the original photographs are not needed to run the page.
+- **Question 1 - Calibrated Stereo Object Measurement.** Z-depth, width and height of an object from two calibrated photographs (OpenCV checkerboard stereo calibration, undistortion and triangulation). Visitors can load a saved calibration (`.npz`) or compute one from their own checkerboard photographs, select the object's corners with a draggable zoom view, and calculate the dimensions. The page also shows the author's saved experiment: a notebook measured in three stereo pairs with a calibration from 30 checkerboard pairs. Visitor measurements never use the author's calibration.
+- **Question 3 - Room Measurement Using Stereo Videos.** One experiment in two stages: Wall A (width and height from two viewpoints) and Wall B (length from three viewpoints). The estimated room is approximately **288 x 380 x 238 cm** (width x length x height); against tape measurements the mean absolute percentage error is 1.65 %. The website shows the experiment's methodology, results, playback videos and visualizations. Measuring a room from your own stereo videos runs only in a standalone application on your own computer, started with `python run_local.py` (see [Run the Module 7 room-measurement application locally](#run-the-module-7-room-measurement-application-locally)); the public website does not process visitor videos.
 
-**Question 3 - Room Measurement Using Stereo Videos** (Part 3 on the Module 7 page). The website shows the author's saved room experiment (Wall A: room width and height from two viewpoints). The website does not process visitor videos: measuring a room from your own stereo videos (Wall A, and Wall B: room length from three viewpoints) runs in a separate standalone application on your own computer, started with `python run_local.py` (see [Run the Module 7 room-measurement application locally](#run-the-module-7-room-measurement-application-locally)).
-
-See [Modules/Module_7/README.md](Modules/Module_7/README.md) for the method, workflows, results, data files and verification commands.
+Module 7 is organized by question: `Modules/Module_7/object_measurement_question_1/` (Question 1), `Modules/Module_7/room_measurement_question_3/` (Question 3) and the shared stereo calibration package `Modules/Module_7/stereo_measure/`. See [Modules/Module_7/README.md](Modules/Module_7/README.md) for the methods, workflows, results, data policy and reproduction commands.
 
 ## Project Structure
 
 ```text
-CSC_8830_Projects_Jannati_Chowdhury/
+CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury/
 ├── README.md
 ├── home.py
+├── home_navigation.py
+├── select_cards.py
 ├── run_local.py
 ├── local_mode.py
 ├── requirements.txt
@@ -110,14 +111,13 @@ CSC_8830_Projects_Jannati_Chowdhury/
 │   │   └── Part_B/
 │   └── Module_7/
 │       ├── README.md
-│       ├── stereo_measure/              Question 1
-│       ├── calibration/, selections/, reference/, display/, outputs/
-│       ├── run_measurement.py, run_calibration.py, verify_pipeline.py
-│       └── room_measurement/, visitor_workflow/, f8_chunk_poc/, annotation_ui/   Question 3
+│       ├── stereo_measure/                  shared stereo calibration package
+│       ├── object_measurement_question_1/   Question 1: calibration, results, reproducibility scripts
+│       └── room_measurement_question_3/     Question 3: estimator, visitor application, results
 └── tests/
 ```
 
-`home.py` is the single Streamlit entry point and registers each module page. This root README contains the documentation for the combined course website.
+`home.py` is the single Streamlit entry point and registers each module page. `home_navigation.py` and `select_cards.py` hold the shared navigation row and selection cards, and `run_local.py` with `local_mode.py` start the local room-measurement application. This root README documents the combined course website.
 
 ### Adding Future Modules
 
@@ -132,7 +132,7 @@ Existing modules do not need to be reorganized when future modules are added.
 
 ## Local Installation and Run Instructions
 
-With Python 3.12 installed, open a terminal in the project root. On macOS or Linux, run:
+The project was developed and tested with Python 3.13.7 on macOS (Apple silicon); other Python versions have not been verified. Open a terminal in the project root. On macOS or Linux:
 
 ```bash
 python -m venv .venv
@@ -141,67 +141,30 @@ SAM2_BUILD_CUDA=0 python -m pip install -r requirements.txt
 python -m streamlit run home.py
 ```
 
-Open the local URL printed by Streamlit, then choose a module from the sidebar. For access without local installation, use the [public Streamlit website](https://jannati-chowdhury-computer-vision-projects.streamlit.app/).
+Open the local URL printed by Streamlit and choose a module on the home page. For access without local installation, use the [public Streamlit website](https://jannati-chowdhury-computer-vision-projects.streamlit.app/), which is the main deployment of this project.
 
 ## Run the Module 7 room-measurement application locally
 
-The public website does not accept video uploads: processing full-resolution (4K) stereo videos needs more memory than the free hosting plan provides. On the website, **Module 7 > Room Measurement > Measure a Room Using Your Own Stereo Videos** shows two buttons: **Setup Instructions** (enabled) and **Run Your Experiment** (visibly disabled on the public website: "Available when running locally. See Setup Instructions."). Running locally, the same page enables **Run Your Experiment**, which opens the standalone visitor application (upload, frame selection, annotation, Wall A: room width and height, Wall B: room length) in a new browser tab.
+The Question 3 visitor workflow (measuring a room from your own stereo videos) is **local-only**: processing full-resolution (4K) stereo videos needs more memory than the free hosting plan provides, so the public website shows only the saved results and the Setup Instructions. To run it on your own computer, install the lighter Module 7 dependencies (no PyTorch or SAM 2) and start both applications with one command:
 
-1. **Get the code** (Git, or download the repository as a ZIP from GitHub and open a terminal in the extracted folder):
+```bash
+git clone https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury.git
+cd CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury
+python -m venv .venv                       # Windows PowerShell: py -m venv .venv
+source .venv/bin/activate                  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -r Modules/Module_7/room_measurement_question_3/visitor_workflow/requirements.txt
+python run_local.py                        # website http://127.0.0.1:8501, room-measurement application http://127.0.0.1:8640
+```
 
-   ```bash
-   git clone https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury.git
-   cd CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury
-   ```
-
-2. **Create and activate a virtual environment** with Python 3.12 or newer (the pinned NumPy requires 3.12; the application was tested with 3.13.7 on macOS, and 3.12 itself has not been tested). If your command is `python3` or `python3.13`, use it in place of `python3.12`. macOS or Linux:
-
-   ```bash
-   python3.12 -m venv .venv
-   source .venv/bin/activate
-   ```
-
-   Windows (PowerShell):
-
-   ```powershell
-   py -3.12 -m venv .venv
-   .venv\Scripts\Activate.ps1
-   ```
-
-3. **Install the dependencies** (classical-CV packages only; this does not need PyTorch or SAM 2, which only Module 4 uses):
-
-   ```bash
-   python -m pip install -r Modules/Module_7/visitor_workflow/requirements.txt
-   ```
-
-4. **Start everything with one command:**
-
-   ```bash
-   python run_local.py
-   ```
-
-   `run_local.py` starts two separate Streamlit applications, both reachable only from your own computer (127.0.0.1): the website (`home.py`) at <http://127.0.0.1:8501> and the visitor application (`Modules/Module_7/run_f8_integrated_app.py`) at <http://127.0.0.1:8640>. Open the website, go to **Module 7 > Room Measurement > Measure a Room Using Your Own Stereo Videos** and press **Run Your Experiment**. Press Ctrl+C in the terminal to stop both. If a port is busy, nothing is started and the busy port is named; choose other ports with `python run_local.py --website-port 8502 --visitor-port 8641`. Local mode is switched on only by this launcher (it sets `CSC8830_LOCAL_MODE=1` for the website it starts), so `python -m streamlit run home.py` alone always behaves like the public website. The visitor application can still be started alone with `python Modules/Module_7/run_f8_integrated_app.py [port]`.
-
-5. **Measure a wall.** In the visitor application, accept a stereo calibration (**Upload Saved Calibration**), upload the stereo videos, choose the frames, mark the wall boundaries and press **Calculate Wall Dimensions** (Wall A: two viewpoints, four videos). Then **Continue to Wall B - Room Length** (three viewpoints, six videos) and press **Calculate Room Length**. Computing a new calibration from checkerboard videos is off by default and needs `--enable-full-calibration --max-tree-rss-mb=3000` on the standalone launcher (see `Modules/Module_7/README.md`).
-
-To view all modules of the website without the visitor application, install the root `requirements.txt` and run `python -m streamlit run home.py` (see above); there **Run Your Experiment** stays disabled.
-
-**Videos and calibration are supplied by you:** the author's original recordings are private and are not in the repository, so you need your own stereo videos and a calibration for your own cameras (see below). The saved results of the author's experiments are tracked in the repository (see *Where the results are* in `Modules/Module_7/README.md`).
-
-**Requirements enforced by the application:** four videos (Wall A) or six (Wall B) from the left and right cameras, one per slot; MP4/M4V, MOV, Matroska/WebM or AVI; 1-120 seconds and 1-480 fps per video; at most 1024 MB per video; and exactly the frame size and orientation of the accepted calibration (videos are never resized or rotated). **Recommendations from the author's validated experiment (not enforced):** the same two cameras and settings (resolution, orientation, frame rate, zoom, focus, stabilization) as in calibration, a fixed rig, a still room, a wall with visible corners and a floor with visible texture. The validated recordings are 2160 x 3840 portrait. H.265/HEVC files pass the file check, but decoding depends on your computer's OpenCV build. Arbitrary videos may give inaccurate results or be refused; accuracy was validated on one room only.
-
-**Memory and temporary files:** nothing has to be configured. On a Mac, Windows or an unlimited Linux computer the application uses your computer's physical memory as its budget (keeping 10 % in reserve) and checks at every start that enough memory is free right now. Keep **at least 4 GB free** (the Wall A calculation used about 2.0 GB at its peak on the author's recordings; the application requires 1,024 MB for two viewpoints and 2,450 MB for three) and close other large programs first. Extracted frames live in a marked `f8_frames_...` folder in the system temporary folder and are removed by **New Measurement**, when the session ends, when the application stops, or at the next start after a crash; folders from earlier versions are never touched. Details and the optional `F8_APP_MEMORY_CEILING_MB` setting are in `Modules/Module_7/README.md`.
-
-**Troubleshooting:** *command not found* - install Python 3.12 and activate the virtual environment; *a package fails to install* - run `python -m pip install --upgrade pip` and retry; *port in use* - `run_local.py` names the busy port; pass other ports with `--website-port` and `--visitor-port`; *Run Your Experiment greyed out* - you are on the public website, or the visitor application is not running: start `python run_local.py` and press **Check again**; *a video is rejected* - the message names the failed check (size, length, frame rate, or a different size or orientation than the calibration); *out of memory or a stopped calculation* ("Not enough memory") - close other large programs so that at least 4 GB is free and press **Try again**.
+Then open the website and choose **Module 7 > Run Your Own Experiment > Room Measurement Using Stereo Videos**. **Setup Instructions** expands inline with these steps; **Run Your Experiment (Local Only)** opens the application in the same browser tab, where you choose **Calibrate My Cameras** or **Upload Saved Calibration** and continue through the same workflow. Ctrl+C stops both applications. You need your own stereo videos and a calibration for your own cameras: the author's original recordings are private and are not in the repository. Requirements, video limits, memory, troubleshooting and the reproduction commands for the author's experiments are in [Modules/Module_7/README.md](Modules/Module_7/README.md).
 
 ## Running the Tests
 
-The tests use pytest, which is the supported way to run them (several tests rely on pytest fixtures, so `python -m unittest discover` finds only part of the suite). From the project root, with the root `requirements.txt` installed:
+The tests use pytest, which is the supported way to run them (several tests rely on pytest fixtures). From the project root, with the root `requirements.txt` installed:
 
 ```bash
 python -m pip install pytest
-python -m pytest tests                              # all modules, about 1.5 minutes plus the Module 7 tests below
-python -m pytest Modules/Module_7 tests/test_module7_*.py   # complete Module 7 suite (roughly 25 minutes)
+python -m pytest tests                       # website, all modules
 ```
 
-Tests that need the original photographs or room recordings, which are git-ignored and not part of the repository, are skipped automatically when those files are absent, so the suite runs from a fresh clone (and runs those extra checks when the private files are present). The Module 7 suite alone needs only `Modules/Module_7/visitor_workflow/requirements.txt` plus pytest.
+The Module 7 package suites and the opt-in real-recording regression tests are listed in [Modules/Module_7/README.md](Modules/Module_7/README.md#9-testing). Tests that need the original photographs or room recordings, which are git-ignored and not part of the repository, are skipped automatically when those files are absent, so the suite runs from a fresh clone. A few integrity tests use `git status` to confirm that validated algorithm sources are unchanged and therefore need a Git checkout with a clean working tree.

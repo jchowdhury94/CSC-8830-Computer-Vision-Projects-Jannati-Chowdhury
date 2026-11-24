@@ -19,7 +19,7 @@ VIEWS = {
     3: ("m3_page", ("home", "visitor", "experiment")),
     4: ("module4_section", ("home", "rgb_select", "rgb_results", "rgb", "thermal_select", "thermal_results", "thermal")),
     6: ("module6_section", ("home", "a_select", "a_visitor", "a_results", "b_select", "b_visitor", "b_results")),
-    7: ("module7_part", ("home", "q1_home", "1", "experiment", "3")),  # "3" is the room-measurement placeholder
+    7: ("module7_part", ("home", "my_results", "run_own", "1", "experiment", "3_visitor", "3_results")),
 }
 
 
@@ -38,7 +38,7 @@ def run(n, view):
 DEPTH = {2: {"home": 1, "visitor": 2, "experiment": 2}, 3: {"home": 1, "visitor": 2, "experiment": 2},
          4: {"home": 1, "rgb_select": 2, "thermal_select": 2, "rgb": 3, "rgb_results": 3, "thermal": 3, "thermal_results": 3},
          6: {"home": 1, "a_select": 2, "b_select": 2, "a_visitor": 3, "a_results": 3, "b_visitor": 3, "b_results": 3},
-         7: {"home": 1, "q1_home": 2, "1": 3, "experiment": 3, "3": 2}}
+         7: {"home": 1, "my_results": 2, "run_own": 2, "1": 3, "experiment": 3, "3_visitor": 3, "3_results": 3}}
 
 
 def home_buttons(at):
@@ -98,7 +98,8 @@ class HomeButtonOnEveryViewTests(unittest.TestCase):
                    (4, "rgb_select"): "home", (4, "rgb"): "rgb_select", (4, "rgb_results"): "rgb_select",
                    (4, "thermal"): "thermal_select", (4, "thermal_results"): "thermal_select",
                    (6, "a_select"): "home", (6, "a_visitor"): "a_select", (6, "b_results"): "b_select",
-                   (7, "q1_home"): "home", (7, "1"): "q1_home", (7, "experiment"): "q1_home", (7, "3"): "home"}
+                   (7, "my_results"): "home", (7, "run_own"): "home", (7, "1"): "run_own", (7, "experiment"): "my_results",
+                   (7, "3_visitor"): "run_own", (7, "3_results"): "my_results"}
         for n, (key, views) in VIEWS.items():
             for view in views:
                 with self.subTest(module=n, view=view):
@@ -123,8 +124,8 @@ class HomeButtonOnEveryViewTests(unittest.TestCase):
                         (4, "thermal_results", 1, "module4_section", "thermal_select"),
                         (6, "b_results", 0, "module6_section", "home"), (6, "b_results", 1, "module6_section", "b_select"),
                         (6, "a_visitor", 1, "module6_section", "a_select"),
-                        (7, "experiment", 0, "module7_part", "home"), (7, "experiment", 1, "module7_part", "q1_home"),
-                        (7, "1", 1, "module7_part", "q1_home"), (7, "3", 0, "module7_part", "home")]
+                        (7, "experiment", 0, "module7_part", "home"), (7, "experiment", 1, "module7_part", "my_results"),
+                        (7, "1", 1, "module7_part", "run_own"), (7, "3_visitor", 0, "module7_part", "home")]
         for n, view, index, key, target in expectations:
             with self.subTest(module=n, view=view, crumb=index):
                 at = run(n, view)
@@ -139,7 +140,7 @@ class HomeNavigationSourceTests(unittest.TestCase):
             with self.subTest(module=n):
                 text = source(n)
                 self.assertEqual(text.count("nav_row("), 1)
-                self.assertIn("from home_navigation import back_button, nav_row", text)
+                self.assertRegex(text, r"from home_navigation import (back_button, )?nav_row")
                 self.assertIn("CRUMBS = {", text)
                 self.assertNotIn("back_to_home", text)
                 self.assertNotIn("nav_home", text)  # no per-module copies of the key or CSS

@@ -46,7 +46,7 @@ class MeasurementTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.model = load_model_b()
-        cls.saved = pd.read_csv(MODULE / "outputs" / "pair_summary.csv").set_index("pair")
+        cls.saved = pd.read_csv(MODULE / "object_measurement_question_1" / "outputs" / "pair_summary.csv").set_index("pair")
 
     def test_live_matches_measure_pair_and_saved_outputs(self):
         for pair in NOTEBOOK_PAIR_IDS:
@@ -183,7 +183,7 @@ class UploadTests(unittest.TestCase):
 
     def test_real_notebook_photos_orientation(self):
         for side, name, expected in (("left", "air_image1.jpeg", "iPhone Air"), ("right", "pro_image1.jpeg", "iPhone 17 Pro Max")):
-            path = MODULE / "data" / "object_measurement" / side / name
+            path = MODULE / "object_measurement_question_1" / "data" / "object_measurement" / side / name
             if not path.is_file():
                 self.skipTest("original photographs are not present")
             data = path.read_bytes()
@@ -192,7 +192,7 @@ class UploadTests(unittest.TestCase):
             self.assertEqual(warns, [], expected)
             self.assertEqual(sel.decode_upload(data, IMAGE_SIZE).shape[:2], (H, W))
         # swapped cameras produce a hint
-        left = (MODULE / "data" / "object_measurement" / "right" / "pro_image1.jpeg")
+        left = (MODULE / "object_measurement_question_1" / "data" / "object_measurement" / "right" / "pro_image1.jpeg")
         if left.is_file():
             _, warns = inspect_model_b(left.read_bytes(), "left")
             self.assertTrue(any("right-camera" in w for w in warns))
@@ -219,7 +219,7 @@ class PageStateTests(unittest.TestCase):
         at = AppTest.from_file(str(PAGE), default_timeout=60).run()
         self.assertFalse(at.exception)
         labels = [b.label for b in at.button if b.key != "nav_arrow_button"]
-        self.assertEqual(labels, ["Home", "Calibrated Stereo Object Measurement", "Room Measurement Using Stereo Videos"])
+        self.assertEqual(labels, ["Home", "View My Experiments & Results", "Run Your Own Experiment"])
 
     def test_part3_two_button_page_and_setup_guide(self):
         at = AppTest.from_file(str(PAGE), default_timeout=60)
@@ -227,10 +227,8 @@ class PageStateTests(unittest.TestCase):
         at.run()
         self.assertFalse(at.exception)
         self.assertEqual(len(at.get("file_uploader")), 0)
-        at.session_state["module7_part"] = "3_setup"
-        at.run()
-        self.assertFalse(at.exception)
-        self.assertTrue(any("runs on your own computer" in i.value.lower() for i in at.info))
+        self.assertEqual(len(at.get("expander")), 1)                             # Setup Instructions: inline, not a separate page
+        self.assertTrue(any("runs on your own computer" in m.value.lower() for m in at.markdown))
         self.assertEqual(len(at.get("file_uploader")), 0)
 
     def test_part1_without_uploads_shows_reference_experiment_button_and_no_exception(self):
@@ -238,17 +236,18 @@ class PageStateTests(unittest.TestCase):
         self.assertFalse(at.exception)
         # with an icon, AppTest reports the expander as a Status-type block rather than in at.expander
         blocks = [b for b in at.main if getattr(b, "type", "") in ("expander", "status")]
-        self.assertEqual(len(blocks), 1)                 # the reference now lives inside the experiment
+        self.assertEqual(len(blocks), 1)                 # the reference lives in the saved-experiment view
         self.assertIn("Calibrate Your Stereo Cameras", blocks[0].label)
         self.assertFalse(blocks[0].proto.expanded)       # collapsed by default
-        self.assertIn("View My Experiment & Results", [b.label for b in at.button])
+        self.assertNotIn("View My Experiment & Results", [b.label for b in at.button])   # results are reached from My Experiments & Results
         self.assertTrue(any("First calibrate your stereo cameras" in i.value for i in at.info))
         self.assertFalse([u for u in at.get("file_uploader") if "Camera Image" in u.label])   # visitor measurement disabled
         self.assertNotIn("Calculate Dimensions", [b.label for b in at.button])
 
     def test_reference_is_inside_collapsed_experiment_section(self):
-        at = self._app().run()
-        [b for b in at.button if b.label == "View My Experiment & Results"][0].click().run()
+        at = self._app()
+        at.session_state["module7_part"] = "experiment"
+        at.run()
         self.assertFalse(at.exception)
         blocks = [b for b in at.main if getattr(b, "type", "") in ("expander", "status")]
         ref = [b for b in blocks if "Click to View My Camera Calibration Parameters" in b.label]
@@ -260,10 +259,11 @@ class PageStateTests(unittest.TestCase):
         self.assertIn("iPhone 17 Pro Max", text)
 
     def test_experiment_without_uploads_shows_all_pairs_from_saved_files(self):
-        at = self._app().run()
-        [b for b in at.button if b.label == "View My Experiment & Results"][0].click().run()
+        at = self._app()
+        at.session_state["module7_part"] = "experiment"
+        at.run()
         self.assertFalse(at.exception)
-        saved = pd.read_csv(MODULE / "outputs" / "pair_summary.csv").set_index("pair")
+        saved = pd.read_csv(MODULE / "object_measurement_question_1" / "outputs" / "pair_summary.csv").set_index("pair")
         for pair in NOTEBOOK_PAIR_IDS:
             at.radio(key="m7_exp_pair").set_value(pair).run()
             self.assertFalse(at.exception)
@@ -271,20 +271,14 @@ class PageStateTests(unittest.TestCase):
             self.assertEqual(metrics["Width"], f"{saved.loc[pair, 'width_mm']:.2f} mm")
             self.assertEqual(metrics["Mean Z-depth"], f"{saved.loc[pair, 'mean_Z_depth_mm']:.2f} mm")
 
-    def test_close_experiment_button_is_last_and_closes_section(self):
+    def test_visitor_page_has_no_experiment_toggle_and_no_close_button(self):
         at = self._app().run()
-        [b for b in at.button if b.label == "View My Experiment & Results"][0].click().run()
-        labels = [b.label for b in at.button]
-        self.assertEqual(labels.count("Close experiment"), 1)
-        self.assertEqual(labels[-1], "Close experiment")             # after every pair table, the summary and the discussion
-        for pair in NOTEBOOK_PAIR_IDS:
-            at.radio(key="m7_exp_pair").set_value(pair).run()
-            self.assertEqual([b.label for b in at.button][-1], "Close experiment")
-        [b for b in at.button if b.label == "Close experiment"][0].click().run()
         self.assertFalse(at.exception)
-        self.assertNotIn("Close experiment", [b.label for b in at.button])
-        self.assertFalse(at.session_state["m7_show_experiment"])
-        self.assertIn("View My Experiment & Results", [b.label for b in at.button])
+        labels = [b.label for b in at.button]
+        self.assertNotIn("View My Experiment & Results", labels)
+        self.assertNotIn("Close experiment", labels)
+        self.assertNotIn("m7_experiment_btn", [b.key for b in at.button])
+        self.assertNotIn("m7_show_experiment", at.session_state)
 
     def test_invalid_upload_is_rejected_in_page(self):
         at = self._app_with_visitor_model()
@@ -336,7 +330,7 @@ class PageStateTests(unittest.TestCase):
         left = ("l.jpg", jpeg_bytes((W, H), seed=1))
         right = ("r.jpg", jpeg_bytes((W, H), seed=2))
         pair_id = hashlib.sha256((hashlib.sha256(left[1]).hexdigest() + hashlib.sha256(right[1]).hexdigest()).encode()).hexdigest()[:16]
-        sel_json = json.loads((MODULE / "selections" / "pair_1_corners.json").read_text())
+        sel_json = json.loads((MODULE / "object_measurement_question_1" / "selections" / "pair_1_corners.json").read_text())
         at = self._app_with_visitor_model()
         at.session_state["m7_file_left"], at.session_state["m7_file_right"] = left, right
         at.session_state["m7_pair_id"] = at.session_state["m7_ack"] = at.session_state["m7_dialog_opened"] = pair_id
@@ -348,7 +342,7 @@ class PageStateTests(unittest.TestCase):
         [b for b in at.button if b.label == "Confirm Right Image Selections"][0].click().run()
         [b for b in at.button if b.label == "Calculate Dimensions"][0].click().run()
         self.assertFalse(at.exception)
-        saved = pd.read_csv(MODULE / "outputs" / "pair_summary.csv").set_index("pair")
+        saved = pd.read_csv(MODULE / "object_measurement_question_1" / "outputs" / "pair_summary.csv").set_index("pair")
         metrics = {m.label: m.value for m in at.metric}
         self.assertEqual(metrics["Mean Z-depth"], f"{saved.loc[1, 'mean_Z_depth_mm']:.1f} mm")
         self.assertEqual(metrics["Estimated width"], f"{saved.loc[1, 'width_mm']:.1f} mm")

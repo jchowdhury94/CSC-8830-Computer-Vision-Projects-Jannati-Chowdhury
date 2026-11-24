@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_module7_calibration_wizard import (AppTest, PAGE, ROOT, button, filled_state, page, texts, wiz,  # noqa: E402
                                              export_calibration, load_calibration, fk)
 
-SELECTIONS = ROOT / "Modules" / "Module_7" / "selections"
+SELECTIONS = ROOT / "Modules" / "Module_7" / "object_measurement_question_1" / "selections"
 OUTPUTS = ROOT / "Modules" / "Module_7" / "outputs"
 
 
@@ -167,12 +167,9 @@ class PageResetTests(unittest.TestCase):
     def test_reset_never_touches_saved_experiment(self):
         before = snapshot(SELECTIONS, OUTPUTS, ROOT / "Modules" / "Module_7" / "calibration", ROOT / "Modules" / "Module_7" / "data")
         cal = wiz.run_calibration(filled_state())
-        at = page(filled_state(), m7_visitor_model=cal, m7_show_experiment=True)
-        experiment = at.session_state["m7_show_experiment"]
+        at = page(filled_state(), m7_visitor_model=cal)
         button(at, "Reset All").click().run()
         self.assertFalse(at.exception)
-        self.assertEqual(at.session_state["m7_show_experiment"], experiment)
-        self.assertIn("My Experiment & Results", [h.value for h in at.header])
         self.assertEqual(at.session_state["module7_part"], "1")
         self.assertEqual(snapshot(SELECTIONS, OUTPUTS, ROOT / "Modules" / "Module_7" / "calibration",
                                   ROOT / "Modules" / "Module_7" / "data"), before)

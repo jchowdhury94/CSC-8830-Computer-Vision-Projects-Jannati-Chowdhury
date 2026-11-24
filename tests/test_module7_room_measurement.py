@@ -13,8 +13,8 @@ import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / "Modules" / "Module_7"
-sys.path.insert(0, str(MODULE))
+MODULE = ROOT / "Modules" / "Module_7" / "room_measurement_question_3"      # Question 3 packages, data and outputs
+sys.path.insert(0, str(MODULE)); sys.path.insert(0, str(MODULE.parent))      # MODULE.parent: shared stereo_measure
 
 from room_measurement import calibration as C, features as Ft, frames as Fr, geometry as G, measure as M, pose as P  # noqa: E402
 
@@ -61,7 +61,7 @@ class TestCalibration(unittest.TestCase):
 
     def test_legacy_extrinsics_are_never_used_and_old_calibration_untouched(self):
         for f in ("pose.py", "measure.py", "pipeline.py", "geometry.py", "features.py", "uncertainty.py"): self.assertNotIn("legacy_extrinsics", (MODULE / "room_measurement" / f).read_text(), f)
-        self.assertTrue((MODULE / "calibration" / "model_b" / "stereo_calibration_30pairs.npz").exists())
+        self.assertTrue((MODULE.parent / "object_measurement_question_1" / "calibration" / "model_b" / "stereo_calibration_30pairs.npz").exists())
         self.assertNotEqual(C.DEFAULT_CALIBRATION_PATH.parent.name, "model_b")
 
 class TestFrameIndexing(unittest.TestCase):

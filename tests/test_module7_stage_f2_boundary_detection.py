@@ -7,8 +7,8 @@ import cv2
 import numpy as np
 import pytest
 
-MODULE = Path(__file__).resolve().parents[1] / "Modules" / "Module_7"
-sys.path.insert(0, str(MODULE))
+MODULE = Path(__file__).resolve().parents[1] / "Modules" / "Module_7" / "room_measurement_question_3"      # Question 3 packages, data and outputs
+sys.path.insert(0, str(MODULE)); sys.path.insert(0, str(MODULE.parent))      # MODULE.parent: shared stereo_measure
 
 from room_measurement import calibration as C, visitor_annotations as V, visitor_measurement as VM     # noqa: E402
 from room_measurement import stage_f2_boundary_detection as F                                         # noqa: E402

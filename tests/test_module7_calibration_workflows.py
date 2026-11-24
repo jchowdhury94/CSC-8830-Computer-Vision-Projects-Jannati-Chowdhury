@@ -102,7 +102,7 @@ class WorkflowTests(unittest.TestCase):
     def test_single_run_button_in_step_three(self):
         self.assertEqual(SOURCE.count('"Run Stereo Calibration"'), 1)
         at = page(filled_state())
-        self.assertEqual([b.label for b in at.button if "Run" in b.label], ["Run Stereo Calibration"])
+        self.assertEqual([b.label for b in at.button if "Run" in b.label and not b.key.startswith("nav")], ["Run Stereo Calibration"])
         self.assertEqual([b.key for b in at.button if b.label == "Run Stereo Calibration"], ["m7_cal_run"])
 
     def test_run_executes_calibration_exactly_once(self):
@@ -313,10 +313,11 @@ class MeasurementAndResetTests(unittest.TestCase):
     def test_model_b_experiment_unaffected(self):
         at = computed()
         button(at, "Reset All").click().run()
-        button(at, "View My Experiment & Results").click().run()
+        at.session_state["module7_part"] = "experiment"
+        at.run()
         self.assertFalse(at.exception)
         self.assertIsNone(at.session_state["m7_visitor_model"])
-        self.assertIn("Close experiment", [b.label for b in at.button])
+        self.assertIn("My Experiment & Results", [h.value for h in at.header])
 
 
 if __name__ == "__main__":

@@ -12,10 +12,10 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / "Modules" / "Module_7"
+MODULE = ROOT / "Modules" / "Module_7" / "room_measurement_question_3"      # Question 3 packages, data and outputs
 WF = MODULE / "visitor_workflow"
 F8 = MODULE / "f8_chunk_poc"
-for p in (str(MODULE), str(WF), str(F8), str(ROOT)):
+for p in (str(MODULE), str(MODULE.parent), str(WF), str(F8), str(ROOT)):
     if p not in sys.path: sys.path.insert(0, p)
 
 import f6_core as F  # noqa: E402
@@ -224,7 +224,7 @@ class TestF6Compatibility:
 
     def test_no_f6_f7_or_phase1_source_was_changed_by_the_adapter(self):
         import subprocess
-        out = subprocess.run(["git", "status", "--porcelain", "--", "Modules/Module_7/room_measurement", "Modules/Module_7/stereo_measure", "Modules/Module_7/f8_chunk_poc/calibration_worker.py",
-                              "Modules/Module_7/visitor_workflow/f7_calibration.py", "Pages", "home.py"], cwd=ROOT, capture_output=True, text=True).stdout
+        out = subprocess.run(["git", "status", "--porcelain", "--", "Modules/Module_7/room_measurement_question_3/room_measurement", "Modules/Module_7/stereo_measure", "Modules/Module_7/room_measurement_question_3/f8_chunk_poc/calibration_worker.py",
+                              "Modules/Module_7/room_measurement_question_3/visitor_workflow/f7_calibration.py", "Pages", "home.py"], cwd=ROOT, capture_output=True, text=True).stdout
         changed = [l for l in out.splitlines() if not l.startswith("??")]
         assert changed == [], changed

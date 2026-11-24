@@ -12,8 +12,8 @@ import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / "Modules" / "Module_7"
-sys.path.insert(0, str(MODULE))
+MODULE = ROOT / "Modules" / "Module_7" / "room_measurement_question_3"      # Question 3 packages, data and outputs
+sys.path.insert(0, str(MODULE)); sys.path.insert(0, str(MODULE.parent))      # MODULE.parent: shared stereo_measure
 
 from room_measurement import calibration as C, geometry as G, measure as M, visitor_annotations as V  # noqa: E402
 from room_measurement.visitor_annotations import Code, Status  # noqa: E402
