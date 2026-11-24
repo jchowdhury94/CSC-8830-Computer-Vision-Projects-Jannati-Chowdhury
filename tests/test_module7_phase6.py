@@ -138,7 +138,7 @@ class DownloadButtonTests(unittest.TestCase):
         self.assertTrue(blue)
         for selector in blue:
             self.assertIn(":not(:disabled)", selector)             # disabled stays grey
-        for key in ("m7_cal_reset_top", "m7_cal_reset_bottom", "m7_cal_run", "m7_cal_clear", "m7_experiment_btn"):
+        for key in ("m7_cal_reset_top", "m7_cal_reset_bottom", "m7_cal_run", "m7_cal_clear"):
             self.assertNotIn(f".st-key-{key}", css)
         self.assertEqual(SOURCE.count('DOWNLOAD_BLUE = "#2563EB"'), 1)  # one constant backs the download button
         self.assertIn('"Download Calibration (.npz)"', SOURCE)
@@ -156,7 +156,7 @@ class DownloadButtonTests(unittest.TestCase):
         self.assertIn("background-color: #2563EB", block)
         # neither blue rule set reaches Reset All (any of its three keys) or the other buttons
         css = SOURCE.split("DOWNLOAD_CSS = ")[1].split("PART_ONE_CSS")[0] + block
-        for key in ("m7_cal_reset_top", "m7_cal_reset_bottom", "m7_results_reset_all", "m7_cal_run", "m7_cal_clear", "m7_experiment_btn"):
+        for key in ("m7_cal_reset_top", "m7_cal_reset_bottom", "m7_results_reset_all", "m7_cal_run", "m7_cal_clear"):
             self.assertNotIn(f"st-key-{key}", css)
         # and the download rules never mention the Measure Another Image key
         download = SOURCE.split("DOWNLOAD_CSS = ")[1].split("PART_ONE_CSS")[0]
@@ -256,13 +256,15 @@ class MeasurementFlowTests(unittest.TestCase):
         button(at, "Reset All").click().run()
         self.assertIsNone(at.session_state["m7_file_left"])
         self.assertEqual(download(at), [])
-        button(at, "View My Experiment & Results").click().run()
+        at.session_state["module7_part"] = "experiment"
+        at.run()
         self.assertFalse(at.exception)
-        self.assertIn("Close experiment", [b.label for b in at.button])
+        self.assertIn("My Experiment & Results", [h.value for h in at.header])
 
     def test_experiment_available_without_visitor_calibration(self):
         at = page()
-        button(at, "View My Experiment & Results").click().run()
+        at.session_state["module7_part"] = "experiment"
+        at.run()
         self.assertFalse(at.exception)
         self.assertIsNone(at.session_state["m7_visitor_model"])
 

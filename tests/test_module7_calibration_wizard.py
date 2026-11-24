@@ -575,14 +575,17 @@ class PageTests(unittest.TestCase):
     def test_no_model_b_fallback_and_experiment_independent(self):
         at = page()
         self.assertIsNone(at.session_state["m7_visitor_model"])
-        button(at, "View My Experiment & Results").click().run()
+        at.session_state["module7_part"] = "experiment"           # the saved experiment is its own view
+        at.run()
         self.assertFalse(at.exception)
         self.assertIsNone(at.session_state["m7_visitor_model"])
         self.assertIn("My Experiment & Results", [h.value for h in at.header])
-        self.assertIn("Close experiment", [b.label for b in at.button])
+        self.assertNotIn("Close experiment", [b.label for b in at.button])
         # a visitor calibration neither changes nor is changed by the experiment
         cal = wiz.run_calibration(filled_state())
-        at2 = page(filled_state(), m7_visitor_model=cal, m7_show_experiment=True)
+        at2 = page(filled_state(), m7_visitor_model=cal)
+        at2.session_state["module7_part"] = "experiment"
+        at2.run()
         self.assertFalse(at2.exception)
         self.assertIn("My Experiment & Results", [h.value for h in at2.header])
         self.assertEqual(at2.session_state["m7_visitor_model"]["source"], wiz.SOURCE_NEW)

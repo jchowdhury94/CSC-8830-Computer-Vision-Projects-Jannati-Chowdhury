@@ -181,7 +181,7 @@ class PageTests(unittest.TestCase):
 
 class StyleScopeTests(unittest.TestCase):
     def test_css_targets_only_the_two_keyed_buttons(self):
-        css = SOURCE.split("ZOOM_BUTTON_CSS = ")[1].split("EXPERIMENT_OPEN_CSS")[0]
+        css = SOURCE.split("ZOOM_BUTTON_CSS = ")[1].split("CALIBRATION_SUMMARY_CSS")[0]
         selectors = re.findall(r"^(\.[^{]+)\{", css, re.M)
         self.assertTrue(selectors)
         self.assertTrue(all(s.startswith((".st-key-m7_zoom_accept", ".st-key-m7_zoom_cancel")) for s in selectors))

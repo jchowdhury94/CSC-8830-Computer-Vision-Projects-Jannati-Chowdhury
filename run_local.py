@@ -6,10 +6,10 @@ It starts two separate Streamlit applications, both bound to 127.0.0.1 only:
 
   * the main website (home.py)                                    -> http://127.0.0.1:8501
   * the visitor measurement application                           -> http://127.0.0.1:8640
-    (Modules/Module_7/run_f8_integrated_app.py, started unchanged with its port argument)
+    (Modules/Module_7/room_measurement_question_3/run_f8_integrated_app.py, started unchanged with its port argument)
 
 Local mode is switched on only here, through CSC8830_LOCAL_MODE=1 in the website process's own environment (see local_mode.py); this
-is what enables the "Run Your Experiment" button, which opens the visitor application in a new tab.  Ctrl+C (or SIGTERM) stops both
+is what enables the "Run Your Experiment (Local Only)" card, which opens the visitor application in the SAME tab; the visitor application's Back and Home links return to the website the same way.  Ctrl+C (or SIGTERM) stops both
 applications, including the streamlit processes the visitor launcher starts.  If a port is busy or an application fails to start,
 nothing is left running and the reason is printed.
 """
@@ -25,7 +25,7 @@ import local_mode
 
 ROOT = Path(__file__).resolve().parent
 HOME = ROOT / "home.py"
-VISITOR_LAUNCHER = ROOT / "Modules" / "Module_7" / "run_f8_integrated_app.py"
+VISITOR_LAUNCHER = ROOT / "Modules" / "Module_7" / "room_measurement_question_3" / "run_f8_integrated_app.py"
 STARTUP_TIMEOUT_S = 120.0
 WINDOWS = os.name == "nt"
 
@@ -66,6 +66,7 @@ def child_env(website_port, visitor_port):
     env = {k: v for k, v in os.environ.items() if not k.startswith("CSC8830_")}   # an inherited value never decides the mode
     env[local_mode.LOCAL_MODE_ENV] = "1"
     env[local_mode.VISITOR_PORT_ENV] = str(visitor_port)
+    env[local_mode.WEBSITE_PORT_ENV] = str(website_port)   # the visitor application links back to the website with it
     return env
 
 
@@ -137,8 +138,8 @@ def main(argv=None):
             return 1
         print(f"\nRunning locally (127.0.0.1 only):\n  Website:             http://{local_mode.LOOPBACK}:{args.website_port}\n"
               f"  Visitor application: http://{local_mode.LOOPBACK}:{args.visitor_port}\n"
-              "Open the website, go to Module 7 > Room Measurement > Measure a Room Using Your Own Stereo Videos and press "
-              "'Run Your Experiment'.\nPress Ctrl+C to stop both.", flush=True)
+              "Open the website, go to Module 7 > Run Your Own Experiment > Room Measurement Using Stereo Videos and press "
+              "'Run Your Experiment (Local Only)'.\nPress Ctrl+C to stop both.", flush=True)
         while True:
             for name, proc in (("visitor application", visitor), ("website", website)):
                 if proc.poll() is not None:

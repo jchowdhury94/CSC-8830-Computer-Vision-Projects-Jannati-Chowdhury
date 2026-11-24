@@ -3,13 +3,14 @@
 Local mode is enabled ONLY by ``python run_local.py``, which sets CSC8830_LOCAL_MODE=1 in the environment of the website process it
 starts.  Nobody can set that variable on the public Streamlit Community Cloud deployment except its owner, and the visitor application
 URL is never taken from the environment: it is always http://127.0.0.1:<port> with a port number (an invalid value falls back to 8640),
-so a setting can never produce a link to another host.
+so a setting can never produce a link to another host (the same holds for the website URL the standalone application links back to).
 """
 import os
 import socket
 
 LOCAL_MODE_ENV = "CSC8830_LOCAL_MODE"
 VISITOR_PORT_ENV = "CSC8830_VISITOR_PORT"
+WEBSITE_PORT_ENV = "CSC8830_WEBSITE_PORT"
 LOOPBACK = "127.0.0.1"
 DEFAULT_WEBSITE_PORT = 8501
 DEFAULT_VISITOR_PORT = 8640
@@ -27,6 +28,18 @@ def visitor_port():
 
 def visitor_url():
     return f"http://{LOOPBACK}:{visitor_port()}"
+
+
+def website_port():
+    """The website's port as seen by the standalone application (set by run_local.py; same validation as visitor_port)."""
+    raw = os.environ.get(WEBSITE_PORT_ENV, "")
+    return int(raw) if raw.isdigit() and 1024 <= int(raw) <= 65535 else DEFAULT_WEBSITE_PORT
+
+
+def website_url(path="", view=None):
+    """Loopback URL of the main website, for the standalone application's Back and Home links (same browser tab).  ``path`` is a page
+    path such as "module-7"; ``view`` selects the Module 7 view that page opens on (see MODULE7_RETURN_VIEWS in Pages/app_module7.py)."""
+    return f"http://{LOOPBACK}:{website_port()}/{path}" + (f"?view={view}" if view else "")
 
 
 def port_in_use(port, host=LOOPBACK, timeout=0.5):

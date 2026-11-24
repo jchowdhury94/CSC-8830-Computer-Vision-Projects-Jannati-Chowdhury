@@ -11,9 +11,9 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / "Modules" / "Module_7"
+MODULE = ROOT / "Modules" / "Module_7" / "room_measurement_question_3"      # Question 3 packages, data and outputs
 RM = MODULE / "room_measurement"
-sys.path.insert(0, str(MODULE)); sys.path.insert(0, str(ROOT / "tests"))
+sys.path.insert(0, str(MODULE)); sys.path.insert(0, str(MODULE.parent)); sys.path.insert(0, str(ROOT / "tests"))
 
 from room_measurement import visitor_annotations as VA, visitor_calibration as VC, visitor_measurement as VM  # noqa: E402
 from test_module7_visitor_calibration import model  # noqa: E402

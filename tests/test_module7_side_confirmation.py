@@ -250,9 +250,8 @@ class RefinementStillWorksTests(unittest.TestCase):
 
     def test_saved_experiment_unaffected(self):
         at = right_started(4)
-        before = at.session_state["m7_show_experiment"]
         button(at, "Confirm Right Image Selections").click().run()
-        self.assertEqual(at.session_state["m7_show_experiment"], before)
+        self.assertNotIn("m7_show_experiment", at.session_state)
         self.assertFalse(at.exception)
 
 

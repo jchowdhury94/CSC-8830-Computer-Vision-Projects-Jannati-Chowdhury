@@ -1,278 +1,159 @@
 # Module 7 – Stereo Vision
 
-Module 7 has two questions, both implemented with classical computer vision only (no machine learning or deep learning):
+## 1. Overview
 
-- **Question 1 – Calibrated Stereo Object Measurement** (this section and the sections up to [Testing](#testing)).
-- **Question 3 – Room Measurement Using Stereo Videos** (see [Question 3](#question-3--room-measurement-using-stereo-videos) and
-  [Run the visitor application locally](#run-the-visitor-application-locally)).
+Module 7 uses a calibrated pair of cameras to measure real-world sizes from stereo images and stereo video. Both questions use **classical
+computer vision only** (OpenCV and NumPy); no machine-learning or deep-learning model is used.
 
-## Question 1 – Calibrated Stereo Object Measurement
+| Question | Task | Directory |
+|---|---|---|
+| **Question 1 – Calibrated Stereo Object Measurement** | Estimate the Z-depth, width and height of a rectangular object (a notebook) from two calibrated photographs. | [`object_measurement_question_1/`](object_measurement_question_1/) |
+| **Question 3 – Room Measurement Using Stereo Videos** | Estimate a room's width, length and height from stereo videos, in two stages: Wall A (width and height) and Wall B (length). | [`room_measurement_question_3/`](room_measurement_question_3/) |
 
-Question 1 measures the Z-depth, width and height of a rectangular object from two photographs taken by a calibrated left/right
-camera pair. It uses OpenCV: checkerboard stereo calibration, undistortion, linear triangulation
-(`cv2.triangulatePoints`) and 3D Euclidean edge lengths. Nothing is rescaled to a known object size; the only metric scale comes from
-the checkerboard square size entered during calibration.
+Both experiments use the same two phones, an iPhone Air (left camera) and an iPhone 17 Pro Max (right camera), and both rely on the shared
+stereo calibration package [`stereo_measure/`](stereo_measure/).
+
+## 2. Directory Structure
+
+```text
+Modules/Module_7/
+├── README.md
+├── .gitignore                          rules that keep the private photographs and recordings out of Git
+├── stereo_measure/                     SHARED stereo calibration and measurement package
+├── object_measurement_question_1/      Question 1
+│   ├── calibration/                    model_b/ (stored calibration), corrected_corners/ (30 checkerboard pairs)
+│   ├── selections/                     approved notebook corners (pair_1/2/3_corners.json)
+│   ├── display/                        reduced photographs shown by the website
+│   ├── outputs/                        saved measurement tables and visualizations
+│   ├── reference/                      reference values used by verify_pipeline.py
+│   ├── data/                           original photographs (private, not in Git)
+│   └── run_calibration.py, run_measurement.py, verify_pipeline.py, make_display_images.py
+└── room_measurement_question_3/        Question 3
+    ├── room_measurement/               estimation, validation and visitor-measurement code (see its README)
+    ├── visitor_workflow/               standalone visitor application (upload, frames, annotation, measurement)
+    ├── f8_chunk_poc/                   chunked video upload, calibration worker and resource budget (used by the visitor application)
+    ├── annotation_ui/                  boundary-annotation helper
+    ├── calibration/room_video/         room-video calibration file (both phones, 2160 × 3840)
+    ├── outputs/room_measurement/       accepted results, display images and the ten playback videos
+    ├── data/                           original room recordings (private, not in Git)
+    └── run_room_measurement.py, run_f8_integrated_app.py
+```
+
+**Shared package.** `stereo_measure/` holds the calibration, undistortion, triangulation and corner-measurement code. Question 1 uses it
+directly, the Question 3 visitor workflow reuses its calibration routines, and Module 2's visitor calibration imports its single-photo
+helpers. It therefore stays at the Module 7 root. Its paths (`stereo_measure/config.py`) point at `object_measurement_question_1/`.
+
+Outside this directory: `Pages/app_module7.py` is the Streamlit page; `home_navigation.py` and `select_cards.py` provide the shared
+navigation row and selection cards; `run_local.py` and `local_mode.py` are the local launcher; tests are in `tests/` (repository root) and in
+the `tests/` folders of `room_measurement_question_3/`.
+
+## 3. Using the Application
+
+Open **Module 7 – Stereo Vision** (`/module-7`). Every page has a top row with a Back arrow, **Home** and a breadcrumb.
+
+```text
+Module 7
+├── View My Experiments & Results
+│   ├── Calibrated Stereo Object Measurement      the author's Question 1 experiment and results
+│   └── Room Measurement Using Stereo Videos      the author's Question 3 experiment and results
+└── Run Your Own Experiment
+    ├── Calibrated Stereo Object Measurement      calibrate (or load a calibration) and measure an object in your own photographs
+    └── Room Measurement Using Stereo Videos
+        ├── Setup Instructions                    inline, collapsed by default: how to run the experiment on your computer
+        └── Run Your Experiment (Local Only)      opens the standalone application (see section 7)
+            └── Camera Calibration
+                ├── Calibrate My Cameras          perform a new stereo camera calibration
+                └── Upload Saved Calibration      use an existing camera calibration file
+```
+
+**Local-only requirement.** The public website shows the saved results of both experiments and the Setup Instructions, but it does not
+process visitor videos: full-resolution (4K) stereo videos need more memory than the free hosting plan provides. **Run Your Experiment (Local
+Only)** is therefore disabled on the public website and enabled only when the website is started with `python run_local.py` on your own
+computer. It then opens the standalone room-measurement application **in the same browser tab**; that application's Back arrow, **Home** and
+breadcrumb links return to the corresponding website pages.
+
+**One workflow after calibration.** **Calibrate My Cameras** and **Upload Saved Calibration** are two ways of obtaining a calibration. Both lead
+to the same review-and-accept step, and after a calibration is accepted both paths continue through exactly the same room-measurement workflow:
+video upload, frame selection, wall-boundary annotation, Wall A, Wall B and the final results.
+
+## 4. Question 1 – Calibrated Stereo Object Measurement
+
+### 4.1 Objective and approach
+
+Question 1 measures the Z-depth, width and height of a rectangular object from two photographs taken by a calibrated left/right camera pair.
+It uses checkerboard stereo calibration, lens-distortion removal, linear triangulation (`cv2.triangulatePoints`) and 3D Euclidean edge
+lengths. Nothing is rescaled to a known object size; the only metric scale comes from the checkerboard square size used in calibration.
 
 Question 1 has two sides:
 
-- **An interactive Streamlit page** (`Pages/app_module7.py`) in which a visitor loads or computes their own stereo calibration and
-  measures a rectangle in their own photographs.
-- **The author's saved experiment (Model B):** an iPhone Air (left) and an iPhone 17 Pro Max (right) calibrated from 30
-  checkerboard pairs (8×6 inner corners, 20 mm squares) and used to measure a 305 × 215 mm notebook (including the red spine) in three
-  stereo pairs. Its method, results and verification scripts are described below.
+- **The author's saved experiment ("Model B").** An iPhone Air (left) and an iPhone 17 Pro Max (right) were calibrated from 30 checkerboard
+  pairs (8 × 6 inner corners, 20 mm squares) and used to measure a 305 × 215 mm notebook (including the red spine) in three stereo pairs.
+  It is shown under **View My Experiments & Results**.
+- **An interactive visitor workflow** under **Run Your Own Experiment**, in which a visitor loads or computes their own stereo calibration and
+  measures a rectangle in their own photographs. **Visitor measurements never use Model B**: without a loaded or computed calibration,
+  measurement is unavailable.
 
-**Visitor measurements never use Model B.** The app does not fall back to the author's calibration: without a loaded or computed
-visitor calibration, measurement is unavailable. Model B is used only by the saved-experiment view, the command-line scripts and
-regression tests.
+### 4.2 Method (Model B)
 
-## Using the app
+1. **Calibration.** `cv2.calibrateCamera` per camera (k1, k2 only; `FIX_K3 | ZERO_TANGENT_DIST`), then `cv2.stereoCalibrateExtended` with
+   `FIX_INTRINSIC` on all 30 pairs. This gives K and D for each camera and the stereo R and T (baseline 226.09 mm).
+2. **Corners.** Four approved corners (top-left, top-right, bottom-right, bottom-left) per photograph, in original-resolution pixels
+   (`selections/`).
+3. **Triangulation.** Each pixel is undistorted with its camera's K and D; the two viewing rays are intersected with P1 = [I | 0] and
+   P2 = [R | T] (no rectification), giving X, Y, Z in millimetres in the left-camera frame.
+4. **Z-depth.** The Z coordinate of each triangulated corner (distance along the left optical axis).
+5. **Size.** Euclidean edge lengths √(dX² + dY² + dZ²); width is the mean of the top and bottom edges, height the mean of the left and right
+   edges.
+6. **Validation.** Errors against 305 × 215 mm, used only for reporting.
 
-The page is registered in `home.py` as **Module 7 - Stereo Vision** (`/module-7`). Its home screen offers two parts, which the page
-labels Part 1 and Part 3 (the questions of the same number):
+### 4.3 Results (Model B)
 
-| Part (page label) | Content |
-|---|---|
-| **Part 1 – Calibrated Stereo Object Measurement** (Question 1) | Documented in this section. |
-| **Part 3 – Room Measurement Using Stereo Videos** (Question 3) | The author's saved room experiment is shown on the website. **Measure a Room Using Your Own Stereo Videos** shows two buttons, **Setup Instructions** and **Run Your Experiment** (enabled only locally): the visitor workflow runs in a separate local application started with `python run_local.py` (see [Question 3](#question-3--room-measurement-using-stereo-videos)). |
-
-A **Module 7 Home** button returns to the part selector. Part 1 is organised as calibration, then object photographs, then corner
-selection, then results.
-
-### 1. Calibration: two workflows
-
-Two large buttons choose how to obtain a calibration; selecting one runs nothing.
-
-- **Load Saved Calibration** – load a `.npz` file exported earlier (see [Calibration NPZ files](#calibration-npz-files)).
-- **Calibrate New Camera Setup** – compute a calibration from checkerboard photographs.
-
-**Calibrate New Camera Setup**
-
-1. *Checkerboard settings.* Enter the **inner corners** (columns and rows; the points where four squares meet, so a board of 9 × 7
-   squares has 8 × 6 inner corners; 3 to 40 each) and the **square size in mm** (0.5 to 1000). The square size sets the metric scale of
-   every later 3D measurement. Changing the settings clears photos analysed under the old ones, with a warning.
-2. *Upload stereo pairs.* Choose the number of pairs (8 to 50, default 8) and upload a left and a right JPEG or PNG for each. Each photo is
-   analysed as it is uploaded and the board is detected and refined to sub-pixel accuracy. A pair can be removed (**Remove … photo**,
-   **Remove all calibration photos**) or excluded from, and later included again in, the calibration. Lowering the pair count hides the
-   last slots but keeps their photos.
-3. *Run.* **Run Stereo Calibration** needs at least **8 valid pairs**. Guidance in the app recommends 15–30 pairs, with the board tilted,
-   at varied distances, and covering the corners and edges of the frame.
-
-Photographs are analysed within the session only and are not saved.
-
-**Photo validation.** Each file must be a decodable JPEG or PNG of at most 30 MB and 50 megapixels, with both sides at least 480 px.
-EXIF orientation is applied. Board detection must give a regular grid: corner rows and columns must be near-straight, sub-pixel
-refinement shifts must be small, and the corner ordering must be unambiguous. A board entered with swapped rows and columns is
-reported as such. Left and right corner orderings are matched per pair using the epipolar geometry, and pairs that cannot be matched
-confidently are flagged rather than silently used.
-
-**Quality checks.** After calibration the app shows the per-camera and stereo reprojection RMS, the epipolar residual, the baseline,
-per-pair residuals with outlier flags, the recovered board distances, and, for each camera, the distortion model chosen by
-cross-validation (`radial2`, `radial3` or `full`, simplest model within 10% of the best held-out error). Warnings are heuristic and
-never block the result. They cover RMS or epipolar errors that are large for the image resolution, an implausible principal point or
-fx/fy ratio, a baseline below 1% of the board distance, reconstructed square sizes more than 2% from the entered size, too few tilted
-views, poor frame coverage, little variation in distance, and fewer than 15 pairs.
-
-### Calibration NPZ files
-
-A finished calibration can be saved with **Download Calibration (.npz)** and loaded later with **Load Saved Calibration (.npz)**. The
-file (format version 1, defined in `stereo_measure/calibration_io.py`) holds the intrinsics, distortion coefficients, `R`, `T`, image
-sizes, checkerboard settings, quality metrics, warnings and camera metadata. It is small (the loader accepts at most 1 MB).
-
-The loader is deliberately strict:
-
-- It never unpickles data (`allow_pickle=False`) and inspects the zip container before reading it.
-- Every field must have the expected dtype, shape and range, and distortion coefficients must obey their declared model.
-- Derived geometry (baseline, essential and fundamental matrices) is **recomputed** from `K`, `D`, `R`, `T`; a stored baseline that
-  disagrees with `|T|` is rejected.
-
-**Limitation:** a file that passes validation is well-formed and self-consistent. That does not prove the calibration is accurate or
-authentic, and a loaded calibration is marked as not authenticity-verified. A loaded file also does not carry the original photographs,
-so the per-pair views of a freshly computed calibration are not available for it.
-
-### 2. Object photographs
-
-With a calibration active, upload a left and a right photograph of the object (JPEG or PNG). Each is checked against the calibration:
-
-- An **image size** that differs from the calibration is an error, because the intrinsics are valid only at the calibrated resolution.
-- **Camera metadata** (model, lens, focal length, orientation, from EXIF) that differs from the calibration is a *warning*. Matching
-  metadata does not prove the physical rig is unchanged, and swapped left/right photos are flagged when the metadata suggests them.
-
-### 3. Corner selection and refinement
-
-Select the four object corners in this order on **each** image: **top-left, top-right, bottom-right, bottom-left**. Start with the left
-image, then the right. Once the photographs are accepted, an instruction dialog for the current side explains the order; **Start Corner Selection** in it begins the selection (reopen it with **Show corner-selection instructions**). The optional **Actual Size** fields (width and height in mm) let a visitor enter the object's real size so the results also show the error against it; if left blank, only the estimate is reported.
-
-1. Click near the corner on the photograph.
-2. A **zoomed view** of that region opens. Drag the marker to the exact corner; releasing the pointer records the position, mapped back to
-   original-resolution pixel coordinates (`stereo_measure/corner_drag.py` and its tiny static frontend in `corner_drag_frontend/`).
-3. **Accept Corner** keeps it; **Cancel** discards the pending corner and any unaccepted drag. **Undo last point**, **Reset left**,
-   **Reset right** and **Reset both** correct earlier choices.
-4. After four accepted corners, review the markers and press **Confirm Left Image Selections**, then repeat for the right image and press
-   **Confirm Right Image Selections**. Accepting a left corner again withdraws earlier confirmations.
-
-### 4. Depth, width and height
-
-**Calculate Dimensions** becomes available after both sides are confirmed. For each corner pair the app undoes each camera's lens
-distortion, triangulates in the left-camera frame (X right, Y down, Z forward, in mm), and reports:
-
-- the **Z-depth** of each corner: its Z coordinate, i.e. the distance along the left optical axis (not the straight-line distance);
-- the four **3D edge lengths** √(dX² + dY² + dZ²), the **width** (mean of top and bottom edges) and the **height** (mean of left and
-  right edges);
-- the reconstructed 3D coordinates (left-camera frame) and annotated stereo images, plus the errors against the optional actual size.
-
-Non-blocking warnings flag a non-convex quadrilateral, very unequal opposite edges (ratio above 1.25), a large epipolar distance, or depth
-far outside the range of the calibration's board distances. Their thresholds scale with the calibration's own residuals and image size,
-and are heuristics, not guarantees. The size reported is only as accurate as the calibration, the corner picks and the camera geometry.
-
-### 5. Results, Measure Another Image and Reset All
-
-- **Measure Another Image** discards the current object photographs, corners and results but **keeps the active calibration**.
-- **Reset All** returns the whole visitor workflow (calibration photos, settings, loaded or computed calibration, uploads, selections) to
-  its first-visit state. It affects the visitor session only; Model B, the saved selections and the experiment view are never modified.
-- **Clear Calibration** removes the active calibration and the uploads, selections and results that depend on it.
-
-### 6. My Experiment & Results
-
-The **View My Experiment & Results** button shows the author's saved Model B experiment: its setup, calibration quality, the saved
-corner selections, depths, edge lengths, errors against the known 305 × 215 mm size, and figures (with **Notebook stereo pair** 1–3 to
-choose from and **Close experiment** to return). It reads only files that are committed to Git –
-`calibration/model_b/`, `selections/`, `outputs/`, `display/` and `reference/` – and does **not** need the original photographs, so it
-works on Streamlit Community Cloud.
-
-## Model B method
-
-1. **Calibration** – `cv2.calibrateCamera` per camera (k1, k2 only; `FIX_K3 | ZERO_TANGENT_DIST`), then
-   `cv2.stereoCalibrateExtended` with `FIX_INTRINSIC` on all 30 pairs → K, D for each camera and the stereo R, T (baseline 226.09 mm).
-2. **Corners** – four approved corners (TL, TR, BR, BL) per photo, original-resolution pixels (`selections/`).
-3. **Triangulation** – each pixel is undistorted with its own K, D; the two viewing rays are intersected with
-   P1 = [I | 0], P2 = [R | T] (`cv2.triangulatePoints`, no rectification) → X, Y, Z in mm in the left-camera frame.
-4. **Z-depth** – the Z coordinate of each triangulated corner (distance along the left optical axis). It is an output of the intersection.
-5. **Size** – 3D Euclidean edge lengths √(dX²+dY²+dZ²); width = mean of top and bottom edges, height = mean of left and right edges.
-6. **Validation** – errors against 305 × 215 mm, used only for reporting.
-
-The visitor workflow applies the same triangulation and size computation to the visitor's own calibration.
-
-## Final results (Model B)
-
-| Pair | Mean Z (mm) | Width (mm) | Height (mm) | Width err | Height err |
+| Pair | Mean Z (mm) | Width (mm) | Height (mm) | Width error | Height error |
 |---|---|---|---|---|---|
 | 1 | 789.4 | 301.9 | 212.0 | −3.1 mm (−1.01%) | −3.0 mm (−1.37%) |
 | 2 | 779.0 | 300.5 | 208.9 | −4.5 mm (−1.49%) | −6.1 mm (−2.82%) |
 | 3 | 767.0 | 299.9 | 213.1 | −5.1 mm (−1.66%) | −1.9 mm (−0.88%) |
 
 Pairs 1 and 2 use the original approved corners; pair 3 uses a refined bottom-right corner. All points have positive depth in both cameras.
-All six dimensions are short of the known size, by between 0.9% and 2.8%. The reasons were not isolated in this experiment.
+All six dimensions are shorter than the known size, by between 0.9% and 2.8%; the reasons were not isolated in this experiment. The saved
+figures, tables, corner selections and the calibration reference are shown on the results page, which reads only files committed to Git
+(`calibration/model_b/`, `selections/`, `outputs/`, `display/`, `reference/`) and does not need the original photographs.
 
-## Project structure
+### 4.4 Visitor workflow
 
-```text
-Modules/Module_7/
-├── README.md
-├── stereo_measure/                  package used by the app, the scripts and the tests
-│   ├── config.py                    paths and constants (pattern, square size, image size, pair ids)
-│   ├── calibration.py               Model B calibration from the corrected corners
-│   ├── triangulation.py             undistortion, triangulation, right-camera coordinates
-│   ├── measurement.py               notebook measurement for the saved pairs (Model B)
-│   ├── live.py                      measurement from user-supplied corners with any calibration, warning thresholds
-│   ├── user_calibration.py          visitor calibration: photo validation, board detection, pair matching, quality checks
-│   ├── calibration_wizard.py        pure-Python state and rules behind the calibration wizard
-│   ├── calibration_io.py            validated NPZ export and import
-│   ├── selection.py                 upload checks, coordinate mapping, zoom windows, overlays
-│   ├── corner_drag.py               draggable-marker Streamlit component (Python side)
-│   ├── corner_drag_frontend/        index.html for that component (no build step)
-│   └── visualization.py             figures for the saved results
-├── run_measurement.py               measure the 3 notebook pairs with Model B → outputs/
-├── run_calibration.py               re-derive Model B from the corrected corners and compare with the stored model
-├── verify_pipeline.py               check everything against reference/expected_model_b_results.json
-├── make_display_images.py           create the reduced display/ images from the original photographs
-├── calibration/
-│   ├── model_b/                     stereo_calibration_30pairs.npz (stored Model B parameters)
-│   └── corrected_corners/           {left,right}_NN_corners.csv for pairs 1–30
-├── selections/                      final approved notebook corners (pair_1/2/3_corners.json)
-├── reference/                       saved results used for verification
-├── display/                         reduced images shown by the app (committed)
-├── outputs/                         CSV/JSON results and visualizations (outputs/room_measurement/: Question 3 saved experiment)
-├── room_measurement/                Question 3: estimation, validation and visitor measurement code (see Question 3)
-├── visitor_workflow/                Question 3: the standalone visitor application and its worker processes
-├── f8_chunk_poc/                    Question 3: chunked video upload, calibration worker and resource budget
-├── annotation_ui/                   Question 3: boundary-annotation helper
-├── run_room_measurement.py          Question 3: re-run the saved Wall A experiment
-├── run_f8_integrated_app.py         Question 3: start the visitor application on its own
-└── data/                            original photographs and recordings (git-ignored; see below)
-    ├── calibration/{left,right}/        air_N.jpeg / pro_N.jpeg, N = 1–30
-    ├── object_measurement/{left,right}/ air_imageN.jpeg / pro_imageN.jpeg, N = 1–3
-    └── room_measurement/                original room recordings (Question 3)
-```
+The visitor workflow follows five steps; selecting a calibration option runs nothing by itself.
 
-Question 1 is the `stereo_measure/` package and the top-level scripts, `calibration/model_b/`, `selections/`, `reference/` and `display/`;
-Question 3 is the directories marked above together with `calibration/room_video/`. The repository root also holds `run_local.py` and
-`local_mode.py` (the local launcher). The page itself is `Pages/app_module7.py`; the tests are `tests/test_module7_*.py` in the repository
-root and the `tests/` folders inside `Modules/Module_7/`.
+1. **Calibration.** *Load Saved Calibration* loads a `.npz` file exported earlier; *Calibrate New Camera Setup* computes one from checkerboard
+   photographs. For a new calibration, enter the checkerboard's inner corners (3–40 each) and square size (0.5–1000 mm), upload 8–50 left/right
+   pairs (JPEG or PNG; at least 8 valid pairs are needed, 15–30 are recommended, with the board tilted and at varied distances), and run the
+   calibration. Photographs are analysed in the session only and are not saved.
+2. **Object photographs.** Upload a left and a right photograph. An image size that differs from the calibration is an error; differing camera
+   metadata is a warning.
+3. **Corner selection.** Select the four corners in the order top-left, top-right, bottom-right, bottom-left on each image. Each click opens a
+   zoomed view in which the marker is dragged to the exact corner; corners are mapped back to original-resolution pixels. Optional actual-size
+   fields allow the result to report an error.
+4. **Depth, width and height.** The app undoes each camera's lens distortion, triangulates in the left-camera frame and reports the corner
+   Z-depths, the four edge lengths, the width and height, and the 3D coordinates. Non-blocking warnings flag a non-convex quadrilateral, very
+   unequal opposite edges, a large epipolar distance, or depth outside the calibration's range.
+5. **Results and reset.** *Measure Another Image* keeps the calibration; *Reset All* returns the visitor session to its first-visit state;
+   *Clear Calibration* removes the calibration and everything that depends on it. None of these modify Model B or the saved experiment.
 
-## Tracked and ignored data
+**Calibration quality checks.** A new calibration reports per-camera and stereo reprojection RMS, the epipolar residual, the baseline,
+per-pair residuals with outlier flags, recovered board distances and the distortion model chosen by cross-validation. Warnings are heuristic
+and never block the result.
 
-| Kept in Git (needed to run the app and the checks) | Git-ignored (kept locally) |
-|---|---|
-| `calibration/model_b/`, `calibration/corrected_corners/` | `data/calibration/{left,right}/*.jpeg` (60 original checkerboard photographs) |
-| `selections/`, `reference/`, `outputs/` | `data/object_measurement/{left,right}/*.jpeg` (6 original notebook photographs, about 22 MB) |
-| `display/` (reduced images used by the app) | `results/corner_detection/` and `results/stage1_5_validation/` images |
-| `.gitkeep` placeholders in `data/calibration/{left,right}/` | |
-| `calibration/room_video/room_video_recipe_a_calibration.json` (Question 3 calibration) | `data/room_measurement/` (original 2160 × 3840 room recordings) |
-| `outputs/room_measurement/` (Question 3 results, display images and 720 × 1280 reduced display videos, about 4 MB) | |
+**Calibration NPZ files.** A finished calibration can be downloaded as `.npz` (format defined in `stereo_measure/calibration_io.py`; at most
+1 MB when loaded). The loader never unpickles data, checks every field's type, shape and range, and recomputes the derived geometry from K, D,
+R and T. A file that passes validation is well-formed and self-consistent; that does not prove the calibration is accurate or authentic.
 
-The deployed app and the default checks need only the left-hand column. The original photographs are required only to regenerate
-`display/` (`make_display_images.py`), to re-run board detection from scratch, and for the tests marked as needing them. The original room
-recordings are required only to re-run the Question 3 experiment from scratch and for the tests that read them.
+## 5. Question 3 – Room Measurement Using Stereo Videos
 
-## Running the scripts
+### 5.1 Objective and experimental setup
 
-From `Modules/Module_7/` (use the repository's Python 3.12 environment):
-
-```bash
-python run_measurement.py --overwrite       # re-measure the 3 pairs; rewrites outputs/ (refuses to overwrite without --overwrite)
-python run_calibration.py                   # reproducibility check against the stored Model B (differences ~1e-6, floating-point level)
-python run_calibration.py --save PATH.npz   # also write the fresh calibration
-python verify_pipeline.py                   # all checks, using only tracked files
-python verify_pipeline.py --skip-calibration  # as above but without recomputing the calibration (faster)
-python verify_pipeline.py --full            # local use: additionally require the 60 + 6 original photographs
-```
-
-`verify_pipeline.py` checks that the Model B file is unchanged (SHA-256), that the 30 corrected-corner pairs, selections and display
-images are present, that each notebook pair reproduces the saved depths, edge lengths, width and height, that the saved `outputs/`
-tables match a fresh measurement, and (unless skipped) that recalibrating from the corrected corners reproduces Model B. Missing
-original photographs are reported as `SKIP` and never fail the default run; `--full` turns them into required checks. The exit code is 1
-if any check fails.
-
-## Testing
-
-The tests use pytest (several rely on pytest fixtures, so `python -m unittest discover` would run only part of the suite). From the
-repository root:
-
-```bash
-python -m pip install pytest
-python -m pytest Modules/Module_7 tests/test_module7_*.py     # complete Module 7 suite, roughly 25 minutes
-python -m pytest tests/test_module7_stereo.py                 # for example, a single file
-```
-
-The suite covers Question 1 (calibration, NPZ I/O, the wizard, corner mapping and dragging, the measurement logic, reset behaviour and the
-Streamlit page via `streamlit.testing`) and Question 3 (the visitor workflow, workers, memory budget and temporary-file cleanup, and
-synthetic-data checks of the estimation code). Tests that need the git-ignored original photographs or room recordings are skipped, with a
-message, when those files are absent, so the suite runs from a fresh clone of the tracked files. The expensive regression tests on the private Wall B
-recordings run only when the recordings are present and `M7_REAL_VIDEO_TESTS=1` is set. The Module 7 suite needs only
-`visitor_workflow/requirements.txt` and pytest; the tests of the other modules (`python -m pytest tests`) need the root `requirements.txt`.
-
-## Question 3 – Room Measurement Using Stereo Videos
-
-Question 3 estimates the dimensions of a room from stereo videos, using classical computer vision only (OpenCV and NumPy: SIFT features,
-robust epipolar geometry, triangulation, plane and line fitting, rigid registration). No machine-learning or deep-learning model is used
-anywhere in it. It has two measurements:
-
-- **Wall A – room width and height**, from two viewpoints (four videos: left and right camera at each viewpoint).
-- **Wall B – room length**, from three viewpoints (six videos).
-
-It is an approximate, educational experiment, not a precision room-measurement system.
-
-### Setup of the author's experiment
+Question 3 is **one room-measurement experiment conducted in two stages**: **Wall A** estimates the room's width and height from two
+viewpoints (four videos), and **Wall B** estimates its length from three viewpoints (six videos). Together the room was recorded from five
+viewpoints, giving ten video recordings that form five stereo pairs. It is an approximate, educational experiment, not a precision
+room-measurement system.
 
 | | |
 |---|---|
@@ -280,114 +161,228 @@ It is an approximate, educational experiment, not a precision room-measurement s
 | Right camera | iPhone 17 Pro Max, 1× rear camera |
 | Video | 2160 × 3840 (portrait), 30 fps |
 | Physical baseline | 225 mm, held fixed in the estimator |
-| Calibration | `calibration/room_video/room_video_recipe_a_calibration.json` ("Recipe A"): intrinsics and distortion of both phones at 2160 × 3840, fitted from checkerboard corners in calibration videos. The stereo extrinsics stored in that file are kept for provenance only; the rig pose is re-estimated from the wall videos. |
+| Calibration | `room_measurement_question_3/calibration/room_video/room_video_recipe_a_calibration.json`: intrinsics and 5-term distortion of both phones at 2160 × 3840, fitted from checkerboard corners (8 × 6 inner corners, 20 mm squares) in calibration videos. The stereo extrinsics stored in that file are kept for provenance only; the rig pose is re-estimated from the wall videos. |
 
-### Method
+### 5.2 Methodology
 
-The estimation is described step by step in [`room_measurement/README.md`](room_measurement/README.md). In summary: SIFT features are
-matched between the left and right videos and across viewpoints; the shared stereo pose is estimated by robust (Tukey) epipolar and
-four-view track reprojection costs with the baseline fixed; the floor plane is fitted robustly to triangulated points; the wall boundaries
-are located from the **manually placed annotation lines** (the visitor marks the wall's boundaries and corners; automatic sub-pixel edge
-search then refines the lines); corners are inferred from the intersection of the vertical-edge planes with the floor and ceiling lines; and
-the viewpoints are registered rigidly (RANSAC) on cross-view matches. Wall B repeats the stereo pose, floor plane and corner steps for each
-of the three viewpoints and measures the 3D distance between the two outer bottom corners after registering them into the middle viewpoint's frame
-(`room_measurement/three_view_wall_b.py`). No measured room dimension or camera height enters any fit.
+The website's **How It Works — Methodology** section presents the same eleven steps with their equations.
 
-### Accepted experimental results
+1. **Stereo Video Acquisition and Frame Selection.** Frames are extracted from the recordings; each frame set holds a left and a right image
+   for every viewpoint. *Wall A:* five frame sets from different parts of the videos, chosen for sharpness with the Laplacian-variance measure.
+   *Wall B:* frames 60, 150 and 240 of all six videos, giving three frame sets.
+2. **Camera Model and Calibration.** Both cameras are calibrated from checkerboard videos (focal lengths, principal points, lens distortion);
+   the cameras' relative pose is a rotation R and translation T with the measured 225 mm baseline, under the projection model s·x̃ = K(RX + T).
+3. **SIFT Feature Detection and Matching.** SIFT features are matched with Lowe's ratio test and mutual matching. *Wall A:* ratio 0.75 between
+   stereo images and 0.85 between viewpoints, giving 805 four-image feature tracks. *Wall B:* ratio 0.75 between stereo images and 0.90 between
+   neighbouring viewpoints.
+4. **Epipolar Geometry and Stereo Pose Estimation.** The essential matrix E = [T]ₓR relates corresponding points. An eight-point estimate is
+   refined with Sampson distance and a Tukey biweight, with the baseline fixed. *Wall A:* one shared stereo pose is estimated and refined from
+   18,600 stereo matches and the four-view tracks (robust residual scale 0.27 px, 95.4% inliers). *Wall B:* a separate stereo pose is estimated
+   for each of the three viewpoints.
+5. **3D Triangulation.** Matched points are triangulated with the Direct Linear Transform; only points with depth between 0.8 m and 20 m and
+   reprojection and epipolar errors below 1.5 pixels are kept. These points support the floor plane and the registration; they are not used
+   directly as wall corners.
+6. **Floor-Plane Estimation.** Reconstructed points near the bottom of each image give an initial plane by principal component analysis,
+   refined by iteratively reweighted least squares: nᵀX + d = 0 with ‖n‖ = 1.
+7. **Wall-Boundary Annotation and Line Fitting.** *Wall A:* approximate vertical wall edges and ceiling edges are marked manually; image
+   gradients and robust line fitting refine them to sub-pixel precision. *Wall B:* two points are marked manually along each required vertical
+   wall edge and define the boundary lines directly; the middle viewpoint is used for registration and needs no annotations.
+8. **Geometric Corner Estimation.** Each boundary line is back-projected to a plane; the intersection of the left- and right-camera planes
+   gives the vertical wall edge, and its intersection with the floor plane gives the bottom corner. *Wall A:* bottom and top corners are
+   estimated (the top corner from the viewing ray through the ceiling intersection and the vertical edge). *Wall B:* only the two bottom end
+   corners are needed. Partially hidden corners are thereby estimated without being seen in both cameras.
+9. **Multi-View Registration Using RANSAC.** Each viewpoint's points are in their own coordinate system. RANSAC (1,500 iterations, three-point
+   samples, 40 mm inlier threshold) finds reliable matching 3D points and singular value decomposition gives the rotation and translation that
+   align the viewpoints. *Wall A:* viewpoint 1 is aligned with viewpoint 2. *Wall B:* viewpoints 1 and 3 are aligned with viewpoint 2.
+10. **Room Dimension Estimation.** In the common frame, dimensions are Euclidean distances. *Wall A:* the width is the distance between the two
+    registered bottom corners and the height is the mean of the two corner heights. *Wall B:* the length is the distance between the two end
+    corners after alignment with the middle viewpoint. Final values average the successful frame sets.
+11. **Measurement Uncertainty and Consistency.** *Wall A:* four independent sources (frame selection and matching, the pose-estimation
+    method, boundary placement and, as an assumed perturbation, the camera intrinsics) are combined in quadrature, σ = √(Σσₖ²), and reported as
+    an approximate 95% interval, estimate ± 1.96σ. *Wall B:* the three frame sets show frame-to-frame consistency (a spread of about 2.1 cm);
+    because they share one set of annotations this is not a measurement uncertainty, and **no confidence interval is calculated for Wall B**.
 
-*Where the results are:* the Wall A files `outputs/room_measurement/estimation_result.json` and `validation.json` (with the display images and reduced videos beside them), and the Wall B file [`outputs/room_measurement/wall_b_accepted_results.json`](outputs/room_measurement/wall_b_accepted_results.json). The original recordings are excluded from Git, are not part of the repository and must be supplied by anyone who wants to re-run the experiment; the Wall B file lists the input files by name only.
+The estimation code is in `room_measurement_question_3/room_measurement/` (see its [README](room_measurement_question_3/room_measurement/README.md)).
+No measured room dimension or camera height enters any estimation step; the tape measurements are compared with the estimates only afterwards.
 
-**Wall A (the author's experiment, shown under *View My Experiment & Results* on the website).** The estimate was written first and compared
-with the measured size afterwards (`outputs/room_measurement/estimation_result.json` and `validation.json`):
+### 5.3 Results
 
-| | Estimate | Measured size | Error | 95 % interval |
-|---|---|---|---|---|
-| Room width | 2879.6 mm (287.96 cm) | 2900 mm | −20.4 mm (−0.70 %) | 2655.7 – 3103.5 mm |
-| Room height | 2380.2 mm (238.02 cm) | 2400 mm | −19.8 mm (−0.82 %) | 2187.7 – 2572.8 mm |
+The estimates were written first and compared with the tape-measured dimensions afterwards. The actual width, length and height were measured
+with a tape measure.
 
-Both measured sizes lie inside the interval. The interval is dominated by the uncertainty of the camera intrinsics (about 107 mm of the 114 mm
-1σ in width and 94 of 98 mm in height), whose assumed perturbation sizes were not measured. The small spread between frame sets (a few mm) is an
-artefact of sharing one pose and one set of annotations and is not the measurement uncertainty.
+| Dimension | Estimated | Actual | Absolute error | Percentage error |
+|---|---:|---:|---:|---:|
+| Width (Wall A) | 287.96 cm | 290.00 cm | 2.04 cm | 0.70% |
+| Length (Wall B) | 380.23 cm | 393.70 cm | 13.47 cm | 3.42% |
+| Height (Wall A) | 238.02 cm | 240.00 cm | 1.98 cm | 0.82% |
 
-**Wall B (the author's offline experiment).** The three frame sets (frames 60, 150 and 240 of the three-viewpoint recordings) gave room lengths of
-**3790.9 mm, 3812.0 mm and 3804.0 mm** (379.09, 381.20 and 380.40 cm; mean 380.2 cm), computed from the author's hand-placed annotations. These
-values are recorded in [`outputs/room_measurement/wall_b_accepted_results.json`](outputs/room_measurement/wall_b_accepted_results.json) and used as regression references in the test suite (tolerance ±5 mm, an algorithm-regression tolerance that says how closely a re-run must reproduce these values; it is **not** a claim that the method is accurate to ±5 mm in the real room); the website's saved-experiment view shows Wall A only. A tape-measured Wall B length of 3937 mm is recorded in the repository (in a test docstring, and in the JSON file); the mean stereo estimate is about 3.4 % (135 mm) shorter than it. The conditions of that tape measurement are not documented, so this is a transparency comparison and not a controlled physical-accuracy validation, and no explanation of the difference was established. No uncertainty analysis was computed for Wall B, and the Wall B
-application reports no confidence interval and no percentage error.
+Overall (n = 3): **MAE 5.83 cm, MAPE 1.65%, RMSE 7.95 cm.** The approximate room dimensions are **288 × 380 × 238 cm** (width × length × height).
+All three estimates are slightly shorter than the tape measurements.
 
-### Later verification of the visitor application
+- **Wall A uncertainty.** The approximate 95% intervals are 265.6–310.3 cm for the width and 218.8–257.3 cm for the height, and both tape
+  measurements lie inside them. The camera-intrinsics term dominates (1σ of 10.7 cm in width and 9.4 cm in height, against 1.9, 1.9 and 3.0 cm
+  for the three other width sources and 1.7, 1.6 and 1.7 cm for height); its perturbation sizes were assumed, not measured. Systematic annotation
+  errors, additional lens-model errors and camera movement between unsynchronised frames are not included.
+- **Wall B consistency.** The three frame sets (frames 60, 150 and 240) gave 379.09, 381.20 and 380.40 cm (mean 380.23 cm). The saved values
+  are the regression references of the test suite, which reproduces them to within ±5 mm per frame set; that tolerance measures algorithmic
+  reproducibility and is not a claim about accuracy in the room.
 
-After the application was completed, both walls were run once through the visitor application in a browser, with the author's recordings and
-the Recipe A calibration, and the boundaries entered through the application's frame view. These numbers are a check of the application,
-**not** the accepted experimental results above:
+### 5.4 Limitations
 
-| | Visitor application | Accepted experiment |
-|---|---|---|
-| Wall A width × height | about 285.4 × 235.6 cm | 287.96 × 238.02 cm |
-| Wall B length, frames 60 / 150 / 240 | 377.99 / 388.79 / 383.92 cm (mean 383.6 cm) | 379.09 / 381.20 / 380.40 cm (mean 380.2 cm) |
+- The left (iPhone Air) camera cannot see the ceiling corners, so the top corners are inferred from the right camera's rays only; one bottom
+  corner is partly hidden and is inferred from the stereo-derived vertical line and the floor plane. The inference assumes vertical walls and a
+  planar floor.
+- The camera intrinsics dominate the uncertainty; an alternative calibration fit of the same cameras moved the Wall A width by about −9%
+  (recorded in `estimation_result.json`). The relative stereo yaw is only weakly observable from epipolar geometry, so a low epipolar residual
+  does not by itself prove a correct metric reconstruction.
+- Results depend on boundary-annotation precision, and the frame sets of one rig placement are correlated captures, not independent
+  experiments.
+- Accuracy was validated on one room with one pair of phones. Other recordings may give inaccurate results or be refused with an explanation.
 
-The Wall A differences (about 2.6 cm in width and 2.4 cm in height) are small compared with that experiment's stated uncertainty. The Wall B
-frame sets differ by up to 7.6 cm from the references. This is the **sensitivity to annotation precision**: replaying the author's exact
-annotation coordinates through the same code reproduces the references exactly, while coordinates snapped to the application's click grid
-reproduce the application's numbers to within about 1 mm per frame set. A change of a few pixels in a boundary line therefore moves the
-result by centimetres at this wall distance.
+### 5.5 Visitor-Workflow Validation (Separate from the Accepted Results)
 
-### Limitations
+This subsection is **not part of the accepted experimental results** above. The author ran both walls once through the standalone visitor
+application on the same recordings and the room-video calibration, entering the boundaries manually through the application's frame view. That
+single, manually recorded run gave about 285.4 × 235.6 cm for Wall A and 377.99, 388.79 and 383.92 cm (mean 383.6 cm) for the Wall B frame
+sets, against 287.96 × 238.02 cm and 379.09, 381.20 and 380.40 cm (mean 380.23 cm) in the accepted results. The run was not scripted, so
+**these application figures cannot be independently reproduced from the tracked files**; they are recorded only as a transparency check of the
+visitor workflow.
 
-- The left (iPhone Air) camera cannot see the ceiling corners, so top corners are inferred from the right camera's rays only; one bottom corner
-  is obstructed and is inferred from the stereo-derived vertical line and the floor plane. The inference assumes vertical walls and a planar floor.
-- The camera intrinsics dominate the uncertainty; a different calibration fit moves the width by several percent. A relative stereo yaw of 0.1° is
-  worth about 80 mm of width and is only weakly observable, so a low epipolar residual does not by itself prove a correct metric reconstruction.
-- The result depends on the annotation precision (see above). Accuracy was validated on one room with one pair of phones; other recordings may give
-  inaccurate results or be refused with an explanation.
+Replaying the saved Wall B annotation coordinates through the same code reproduces the accepted Wall B values (the opt-in real-recording test in Section 8 checks this to within ±5 mm per frame set). Boundary-annotation precision is a plausible contributor to the differences observed in the manually recorded visitor run. However, the exact cause and magnitude of those differences were not independently established.
 
-### Website and local application
+### 5.6 Visitor workflow (local only)
 
-The deployed Streamlit website does **not** process visitor videos: full-resolution (4K) stereo videos need more memory than the free hosting plan
-provides. The website shows the author's saved Wall A experiment, a **Setup Instructions** page, and a **Run Your Experiment** button that is disabled
-on the public website. The upload, frame selection, annotation and measurement of a visitor's own videos run only in the standalone local application
-described next.
+The standalone application runs on your own computer, after you accept a calibration (either option in section 3):
 
-## Run the visitor application locally
+1. **Videos.** Upload four videos for Wall A (two viewpoints) or six for Wall B (three viewpoints), one per left/right camera slot. Supported:
+   MP4/M4V, MOV, Matroska/WebM or AVI (checked by content); 1–120 s and 1–480 fps; at most 1024 MB each (`F8_ROOM_MAX_FILE_MB` can change the
+   limit, up to 2048). Videos must have exactly the frame size and orientation of the accepted calibration; they are never resized or rotated.
+2. **Frames and boundaries.** Choose the frame sets and mark the wall boundaries on them.
+3. **Calculate.** *Calculate Wall Dimensions* measures Wall A; *Continue to Wall B — Room Length* and *Calculate Room Length* measure Wall B. The
+   final page shows the combined room dimensions only when both walls have an accepted result.
 
-The website (`home.py`) never accepts videos and starts no measurement worker: the free hosting plan cannot reliably process 4K stereo videos. On the website, **Measure a Room Using Your Own Stereo Videos** opens a page with two buttons, the same on the public website and locally: **Setup Instructions** (always enabled) and **Run Your Experiment** (disabled on the public website with the note "Available when running locally. See Setup Instructions."; enabled locally while the visitor application is running, where it opens that application in a new tab and starts no processing by itself). The complete visitor workflow (video upload with chunked transfer, frame selection, boundary annotation, Wall A and Wall B measurement, results) is the standalone Streamlit application `visitor_workflow/app_f8_integrated.py`. One command starts the website and the visitor application together:
+Recording advice (from the author's experiment, not enforced): the same cameras and settings as in calibration (resolution, orientation, frame
+rate, zoom, focus, stabilisation), a fixed rig, a still room, a wall with visible corners and a floor with visible texture.
+
+**Resources.** Each measurement runs in a separate worker, stopped after 300 s of run time or 1,800 CPU-seconds, and it starts only if enough
+memory is free (at least 1,024 MB for two viewpoints, 2,450 MB for three). Keep about 4 GB free; the Wall A calculation used about 2.0 GB at its
+peak on the author's recordings. The memory budget can be capped with `F8_APP_MEMORY_CEILING_MB`. Extracted frames are kept in a marked
+temporary folder (roughly 60–100 MB per measurement) and removed by **New Measurement**, when the session ends or the application stops, or at
+the next start after a crash. Computing a calibration from your own checkerboard videos (**Calibrate My Cameras**) is disabled unless you
+start the application with an explicit memory limit, for example
+`python Modules/Module_7/room_measurement_question_3/run_f8_integrated_app.py --enable-full-calibration --max-tree-rss-mb=3000`
+(256–65536, in the `=` form); **Upload Saved Calibration** needs no such option.
+
+## 6. Experimental Data and Privacy
+
+| In Git (needed to run the website and the default checks) | Private, kept locally and excluded by `.gitignore` |
+|---|---|
+| `object_measurement_question_1/calibration/`, `selections/`, `display/`, `outputs/`, `reference/` | `object_measurement_question_1/data/`: the 60 original checkerboard photographs and the 6 original notebook photographs |
+| `room_measurement_question_3/calibration/room_video/` | `room_measurement_question_3/data/`: the original 2160 × 3840 room recordings and the hand-made annotation files |
+| `room_measurement_question_3/outputs/room_measurement/`: accepted results, display images and the ten 720 × 1280 playback videos (about 10 MB) | `room_measurement_question_3/outputs/stage_*/` and similar intermediate evidence |
+| Source code, reproducibility scripts and regression tests required for the published experiments and application | Caches, virtual environments, operating-system metadata |
+
+The original photographs and recordings are required only to reproduce the experiments from scratch (section 8). The website and the visitor
+workflow run without them; the visitor workflow uses the visitor's own videos and keeps photographs and calibrations in the session only.
+
+## 7. Installation and Local Execution
+
+All commands run from the repository root. Python environment used for development and testing: **Python 3.13.7 on macOS (Apple silicon)**,
+in a virtual environment.
 
 ```bash
 git clone https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury.git
 cd CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury
-python3.12 -m venv .venv                 # Windows PowerShell: py -3.12 -m venv .venv
-source .venv/bin/activate                # Windows PowerShell: .venv\Scripts\Activate.ps1
-python -m pip install -r Modules/Module_7/visitor_workflow/requirements.txt
-python run_local.py                      # website http://127.0.0.1:8501, visitor application http://127.0.0.1:8640
+python -m venv .venv                       # Windows PowerShell: py -m venv .venv
+source .venv/bin/activate                  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -r Modules/Module_7/room_measurement_question_3/visitor_workflow/requirements.txt
+python run_local.py                        # website http://127.0.0.1:8501, room-measurement application http://127.0.0.1:8640
 ```
 
-`run_local.py` (repository root) starts two separate Streamlit applications bound to `127.0.0.1`: `home.py` and `Modules/Module_7/run_f8_integrated_app.py <port>`. It refuses to start when a port is busy (naming it; `--website-port` and `--visitor-port` choose others), reports a failed start-up, and stops both applications and their child processes on Ctrl+C or SIGTERM. Local mode is enabled only by the launcher, through `CSC8830_LOCAL_MODE=1` in the environment of the website it starts (see `local_mode.py`); the visitor application's address is always `http://127.0.0.1:<port>`. Running `python -m streamlit run home.py` yourself therefore behaves like the public website, with **Run Your Experiment** disabled. The visitor application alone: `python Modules/Module_7/run_f8_integrated_app.py [port]`.
+`run_local.py` starts two separate Streamlit applications, both bound to `127.0.0.1`: the website (`home.py`) and the room-measurement
+application (`room_measurement_question_3/run_f8_integrated_app.py`). Then open the website, choose **Module 7 > Run Your Own Experiment >
+Room Measurement Using Stereo Videos** and press **Run Your Experiment (Local Only)**. Ctrl+C stops both. If a port is busy nothing is
+started and the port is named (`--website-port` and `--visitor-port` choose others). Local mode is enabled only by this launcher
+(`CSC8830_LOCAL_MODE=1`), so `python -m streamlit run home.py` alone behaves like the public website, with the card disabled.
 
-Tested: the macOS (Apple silicon) commands above, from a fresh copy of the repository in a new virtual environment with Python 3.13.7 (`python run_local.py` started both applications, both answered their health checks, and Ctrl+C stopped both). The pinned packages need Python 3.12 or newer (`.python-version` says 3.12; the application was tested with 3.13.7, and 3.12 itself has not been tested); the Windows and Linux commands follow standard Python conventions and have not been tested. No FFmpeg or system packages are needed (OpenCV bundles its own decoder), and no secrets or private files are required; the validated calibration file `calibration/room_video/room_video_recipe_a_calibration.json` is part of the repository.
+**Requirements files.**
 
-Both walls (Wall A and Wall B) are enabled in this application. The measurement runs in a separate worker that is stopped after 300 seconds of run time or 1800 CPU-seconds, and it starts only if enough memory is free; if a limit is reached, the application names it.
+| File | For |
+|---|---|
+| `requirements.txt` (repository root) | The whole website, including the other modules (Module 4 adds PyTorch and SAM 2). |
+| `Modules/Module_7/room_measurement_question_3/visitor_workflow/requirements.txt` | The standalone room-measurement application and the Module 7 tests: Streamlit 1.64.0, NumPy 2.5.3, OpenCV (headless) 5.0.0.93, pandas 3.0.5, Pillow 12.3.0, streamlit-image-coordinates 0.4.1 and their pinned support packages; classical computer vision only. |
 
-**Memory (what to expect on your own computer).** Nothing needs to be configured. When no container limit applies (a Mac, Windows, or a Linux computer that is not inside a limited container) the application uses your computer's physical memory as its budget, keeps 10 % of it (at least 256 MB) in reserve, and checks again at every start that enough memory is free *right now*, because other programs may be using part of it. On the author's recordings the Wall A calculation used about 2.0 GB at its peak; the application requires at least 1,024 MB for two viewpoints and 2,450 MB for three (Wall B), and refuses to start, with a clear message, when less is free. As a guide, keep **at least 4 GB of memory free** (a computer with 8 GB or more is comfortable) and close other large programs first. Inside a container with a readable memory limit, that limit is used instead (as on Streamlit Community Cloud). If the limit of an environment cannot be read at all, a conservative 2,048 MB budget applies; the optional `F8_APP_MEMORY_CEILING_MB=<MB>` (512 to 262144) then states the memory the application may use, and anywhere else it can only *lower* the budget, never raise it above what the computer has (for example `F8_APP_MEMORY_CEILING_MB=4096 python run_local.py`).
+**Python versions.** The tests and the website were run with Python 3.13.7. `.python-version` lists 3.12 and the root `requirements.txt`
+mentions selecting 3.12 for Streamlit Community Cloud, but this repository has not been tested with those versions, so only 3.13.7 is
+verified. The Python version of the public deployment is a setting in Streamlit Community Cloud and is not recorded in the repository.
 
-**Temporary files.** While a measurement is open, the extracted frames (roughly 60 to 100 MB per measurement) are kept in your system's temporary folder in a `f8_frames_...` folder that the application marks as its own. It is removed when you press **New Measurement** or start over, when your session ends (the application releases an abandoned session the next time anyone opens the page), when the application stops, and, if the application was killed, at the next start (only folders that carry the application's own marker and whose owner process no longer exists are removed). Folders of that name that were created by earlier versions have no marker and are never touched; you may delete them yourself. Uploaded videos are removed when the application stops.
+**Troubleshooting.** *Run Your Experiment (Local Only) is disabled*: you are on the public website, or the application is not running; run
+`python run_local.py` and press **Check again**. *A video is rejected*: the message names the failed check (size, length, frame rate, or a size
+or orientation different from the calibration). *Not enough memory*: close other large programs so about 4 GB is free, then press **Try again**.
 
-**Calibration.** The default route is **Upload Saved Calibration** with a calibration file made for your own cameras (the repository's validated file is accepted with capture mode *video* but only fits a matching rig). Computing a calibration from your own checkerboard videos is disabled unless you start the application with an explicit memory limit for the calibration worker, for example `python Modules/Module_7/run_f8_integrated_app.py --enable-full-calibration --max-tree-rss-mb=3000`. The worker peaked at about 770 MB on the author's 3.6-minute recordings, so 2500-3000 MB is a reasonable limit; it must be between 256 and 65536 and given in the `=` form.
+## 8. Reproducibility
 
-**Recording requirements.** Enforced by the application: four videos for Wall A (two viewpoints) or six for Wall B (three viewpoints), one per left/right camera slot; MP4/M4V, MOV, Matroska/WebM or AVI (checked by file content); 1-120 seconds and 1-480 fps; at most 1024 MB per video (`F8_ROOM_MAX_FILE_MB` can lower or raise it, to at most 2048); and exactly the frame size and orientation of the accepted calibration, since videos are never resized or rotated. A left/right frame-rate difference over 1 fps is flagged. Recommended, from the author's validated experiment, and not enforced: the same cameras and settings (resolution, orientation, frame rate, zoom, focus, stabilization) as in calibration, a fixed rig, a still room, a wall with visible corners and a textured floor; the validated recordings are 2160 x 3840 portrait. H.265/HEVC videos pass the file check, but whether they decode depends on your OpenCV build. These checks do not guarantee an accurate result, and accuracy was validated on one room only.
+The saved results are tracked in Git and the website displays them without recomputation. Reproducing an experiment from scratch needs the
+**private original photographs and recordings**, which are intentionally excluded from GitHub. Without them, only the checks that use tracked
+files can run. Commands:
 
-**Tests.** From the repository root, with `pytest` installed: `python -m pytest Modules/Module_7 tests/test_module7_*.py` (see [Testing](#testing)).
-
-**Troubleshooting.** *Command not found*: install Python 3.12 and activate the virtual environment. *A package fails to install*: `python -m pip install --upgrade pip`, then retry. *Port in use*: `run_local.py` names the busy port; pass `--website-port` / `--visitor-port`. *Run Your Experiment greyed out*: you are on the public website, or the visitor application is not running; use `python run_local.py` and press **Check again**. *A video is rejected*: the message names the check (size, length, frame rate, or a size or orientation different from the calibration). *Out of memory or a stopped calculation* ("Not enough memory"): close other large programs so that at least 4 GB is free, then press **Try again**; the message names the limit that was reached (see **Memory** above). *Calibration button disabled*: start with `--enable-full-calibration --max-tree-rss-mb=<MB>` or use **Upload Saved Calibration**.
-
-## Python and deployment
-
-Use Python 3.12 (see `.python-version` and the comments in the root `requirements.txt`; select Python 3.12 in the Streamlit Community
-Cloud app settings). From the repository root:
+**Question 1** (from `Modules/Module_7/object_measurement_question_1/`). To reproduce Question 1 with your own photographs, first create the
+folders `data/calibration/left/`, `data/calibration/right/`, `data/object_measurement/left/` and `data/object_measurement/right/` under that
+directory and add the photographs there, named `air_N.jpeg` / `pro_N.jpeg` (calibration, N = 1–30) and `air_imageN.jpeg` / `pro_imageN.jpeg`
+(notebook, N = 1–3); they are not in Git:
 
 ```bash
-SAM2_BUILD_CUDA=0 python -m pip install -r requirements.txt
-python -m streamlit run home.py
+python verify_pipeline.py                 # checks the stored calibration (SHA-256), the saved corner selections and display images, and
+                                          # that each notebook pair reproduces the saved depths, edge lengths, width and height; uses tracked files
+python verify_pipeline.py --full          # additionally requires the 60 + 6 original photographs
+python run_calibration.py                 # re-derives Model B from the 30 corrected-corner pairs and compares it with the stored model (~1e-6)
+python run_measurement.py --out DIR       # re-measures the three pairs into DIR (refuses to write into a non-empty DIR without --overwrite)
+python make_display_images.py             # rebuilds display/ from the original photographs
 ```
 
-Question 1 and the website pages of Question 3 need `numpy`, `opencv-python-headless`, `pandas`, `Pillow`, `streamlit` and `streamlit-image-coordinates`, all in the
-root `requirements.txt` (the other packages there serve Module 4). The deployed app runs entirely from files committed to Git; it does not
-need the original photographs and keeps visitor photographs and calibrations in the session only (nothing is stored by the app unless the visitor downloads a calibration `.npz`). The local Question 3 visitor application has its own pinned requirements file, `visitor_workflow/requirements.txt` (classical computer-vision packages only).
+**Question 3, Wall A** (needs the private wall recordings in `room_measurement_question_3/data/room_measurement/calibration_videos/`):
+
+```bash
+python Modules/Module_7/room_measurement_question_3/run_room_measurement.py --out DIR            # full run including uncertainty
+python Modules/Module_7/room_measurement_question_3/run_room_measurement.py --out DIR --quick    # fewer uncertainty replicates
+```
+
+It writes `estimation_result.json` first and only then compares with the measured size (`validation.json`). Existing results are not
+overwritten without `--overwrite`.
+
+**Question 3, Wall B** (needs the private recordings and annotation file in `room_measurement_question_3/data/room_measurement/wall_b_three_viewpoints/`).
+Wall B is reproduced by the opt-in regression tests, which replay the saved annotations through the production code path and compare each
+frame set with the accepted values:
+
+```bash
+M7_REAL_VIDEO_TESTS=1 python -m pytest \
+  Modules/Module_7/room_measurement_question_3/visitor_workflow/tests/test_f8_35_real_three_view.py \
+  Modules/Module_7/room_measurement_question_3/room_measurement/tests/test_three_view_real_data.py
+```
+
+## 9. Testing
+
+The tests use pytest (several rely on its fixtures). From the repository root, with the visitor requirements installed plus `pytest`:
+
+```bash
+python -m pip install pytest
+python -m pytest tests                                                          # website and Module 7 page tests
+python -m pytest Modules/Module_7/room_measurement_question_3/visitor_workflow/tests
+python -m pytest Modules/Module_7/room_measurement_question_3/room_measurement/tests
+python -m pytest Modules/Module_7/room_measurement_question_3/f8_chunk_poc/tests
+```
+
+The suites cover Question 1 (calibration, NPZ input/output, the wizard, corner mapping and dragging, measurement logic, reset behaviour and the
+Streamlit page), Question 3 (the visitor workflow, workers, memory budget, temporary-file cleanup, estimation code on synthetic data), the main-website navigation and the launcher. Tests that need the private photographs or recordings are skipped when those
+files are absent. The expensive real-recording tests run only with `M7_REAL_VIDEO_TESTS=1`. A few integrity tests use `git status` to confirm that the
+validated algorithm sources are unchanged, so they require a Git checkout with a clean working tree.
+
+## 10. Deployment and Limitations
+
+- **Public website.** The main site (`home.py`, with `Pages/app_module7.py`) is deployed on Streamlit Community Cloud at
+  <https://jannati-chowdhury-computer-vision-projects.streamlit.app/> using the root `requirements.txt`. It runs entirely from files committed to
+  Git, keeps visitor photographs and calibrations in the session only, and needs none of the private data. It shows both experiments' results,
+  playback videos and visualizations, and the Setup Instructions.
+- **Question 3 visitor workflow.** It is intentionally local-only and is not part of the public deployment (section 3).
+- **Scientific limitations.** See sections 4.3 and 5.4: the experiments are approximate and educational, were validated on one setup, and the
+  reported uncertainty covers only the sources listed in section 5.3.

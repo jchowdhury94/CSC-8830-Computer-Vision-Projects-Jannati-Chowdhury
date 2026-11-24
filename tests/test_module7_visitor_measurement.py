@@ -18,8 +18,8 @@ import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / "Modules" / "Module_7"
-sys.path.insert(0, str(MODULE)); sys.path.insert(0, str(ROOT / "tests"))
+MODULE = ROOT / "Modules" / "Module_7" / "room_measurement_question_3"      # Question 3 packages, data and outputs
+sys.path.insert(0, str(MODULE)); sys.path.insert(0, str(MODULE.parent)); sys.path.insert(0, str(ROOT / "tests"))
 
 from room_measurement import calibration as C, frames as Fr, lines as L, visitor_annotations as V, visitor_frame_selection as FS, visitor_measurement as VM  # noqa: E402
 from room_measurement.pipeline import to_jsonable  # noqa: E402

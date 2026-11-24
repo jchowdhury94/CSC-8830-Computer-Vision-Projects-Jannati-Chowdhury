@@ -467,8 +467,8 @@ class RealCalibrationPairsTests(unittest.TestCase):
     def test_model_b_file_untouched(self):
         import hashlib
         import json
-        ref = json.loads((MODULE / "reference" / "expected_model_b_results.json").read_text())
-        sha = hashlib.sha256((MODULE / "calibration" / "model_b" / "stereo_calibration_30pairs.npz").read_bytes()).hexdigest()
+        ref = json.loads((MODULE / "object_measurement_question_1" / "reference" / "expected_model_b_results.json").read_text())
+        sha = hashlib.sha256((MODULE / "object_measurement_question_1" / "calibration" / "model_b" / "stereo_calibration_30pairs.npz").read_bytes()).hexdigest()
         self.assertEqual(sha, ref["model_b_npz_sha256"])
 
 

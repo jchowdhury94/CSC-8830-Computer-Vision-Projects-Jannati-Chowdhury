@@ -1,0 +1,112 @@
+{
+ "schema": "csc8830.module7.wall_b_display_videos.v1",
+ "codec": "H.264 (libx264) main, yuv420p, faststart",
+ "crf": 25,
+ "audio": "removed",
+ "videos": {
+  "wall_b_viewpoint1_left_air.mp4": {
+   "viewpoint": 1,
+   "camera": "left (iPhone Air)",
+   "source": "left_air_2_1.MOV",
+   "frames": 336,
+   "fps": 30.0,
+   "duration_s": 11.2,
+   "size": [
+    720,
+    1280
+   ],
+   "bytes": 744555,
+   "source_size_portrait": [
+    3840,
+    2160
+   ]
+  },
+  "wall_b_viewpoint1_right_pro.mp4": {
+   "viewpoint": 1,
+   "camera": "right (iPhone 17 Pro Max)",
+   "source": "right_pro_2_1.MOV",
+   "frames": 357,
+   "fps": 30.0,
+   "duration_s": 11.9,
+   "size": [
+    720,
+    1280
+   ],
+   "bytes": 1355915,
+   "source_size_portrait": [
+    3840,
+    2160
+   ]
+  },
+  "wall_b_viewpoint2_left_air.mp4": {
+   "viewpoint": 2,
+   "camera": "left (iPhone Air)",
+   "source": "left_air_2_2.MOV",
+   "frames": 330,
+   "fps": 30.0,
+   "duration_s": 11.0,
+   "size": [
+    720,
+    1280
+   ],
+   "bytes": 517338,
+   "source_size_portrait": [
+    3840,
+    2160
+   ]
+  },
+  "wall_b_viewpoint2_right_pro.mp4": {
+   "viewpoint": 2,
+   "camera": "right (iPhone 17 Pro Max)",
+   "source": "right_pro_2_2.MOV",
+   "frames": 348,
+   "fps": 30.0,
+   "duration_s": 11.6,
+   "size": [
+    720,
+    1280
+   ],
+   "bytes": 1006953,
+   "source_size_portrait": [
+    3840,
+    2160
+   ]
+  },
+  "wall_b_viewpoint3_left_air.mp4": {
+   "viewpoint": 3,
+   "camera": "left (iPhone Air)",
+   "source": "left_air_2_3.MOV",
+   "frames": 314,
+   "fps": 30.0,
+   "duration_s": 10.467,
+   "size": [
+    720,
+    1280
+   ],
+   "bytes": 726314,
+   "source_size_portrait": [
+    3840,
+    2160
+   ]
+  },
+  "wall_b_viewpoint3_right_pro.mp4": {
+   "viewpoint": 3,
+   "camera": "right (iPhone 17 Pro Max)",
+   "source": "right_pro_2_3.MOV",
+   "frames": 327,
+   "fps": 30.0,
+   "duration_s": 10.9,
+   "size": [
+    720,
+    1280
+   ],
+   "bytes": 836992,
+   "source_size_portrait": [
+    3840,
+    2160
+   ]
+  }
+ },
+ "total_bytes": 5188067,
+ "note": "Re-encoded playback copies of the six Wall B recordings (all frames, same timing and upright portrait orientation, downscaled); the originals are private, excluded from Git and untouched."
+}

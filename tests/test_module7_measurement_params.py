@@ -376,7 +376,7 @@ class PipelineCompatibilityTests(unittest.TestCase):
             self.assertLess(abs(a["summary"]["width_mm"] / 210 - 1), 0.03)
 
     def test_model_b_notebook_measurements_are_exactly_as_before(self):
-        saved = pd.read_csv(MODULE / "outputs" / "pair_summary.csv").set_index("pair")
+        saved = pd.read_csv(MODULE / "object_measurement_question_1" / "outputs" / "pair_summary.csv").set_index("pair")
         for pair in NOTEBOOK_PAIR_IDS:
             ref = measure_pair(self.model_b, pair)
             res = live.measure_points(self.model_b, ref["left_px"], ref["right_px"], (305.0, 215.0))

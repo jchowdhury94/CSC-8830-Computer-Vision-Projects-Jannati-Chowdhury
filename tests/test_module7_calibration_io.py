@@ -456,8 +456,8 @@ class RealCalibrationRoundTripTests(unittest.TestCase):
             np.testing.assert_allclose(a["X"], b["X"], rtol=0, atol=1e-9)
 
     def test_model_b_untouched_and_not_used(self):
-        ref = json.loads((MODULE / "reference" / "expected_model_b_results.json").read_text())
-        sha = hashlib.sha256((MODULE / "calibration" / "model_b" / "stereo_calibration_30pairs.npz").read_bytes()).hexdigest()
+        ref = json.loads((MODULE / "object_measurement_question_1" / "reference" / "expected_model_b_results.json").read_text())
+        sha = hashlib.sha256((MODULE / "object_measurement_question_1" / "calibration" / "model_b" / "stereo_calibration_30pairs.npz").read_bytes()).hexdigest()
         self.assertEqual(sha, ref["model_b_npz_sha256"])
         self.assertNotEqual(self.loaded["baseline_mm"], self.model_b["baseline_mm"])
 

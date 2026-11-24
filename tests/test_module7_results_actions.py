@@ -153,9 +153,8 @@ class BehaviourTests(unittest.TestCase):
     def test_saved_experiment_unchanged(self):
         for action in ("m7_another_image", "m7_results_reset_all"):
             at = measured()
-            before = at.session_state["m7_show_experiment"]
             next(b for b in at.button if b.key == action).click().run()
-            self.assertEqual(at.session_state["m7_show_experiment"], before)
+            self.assertNotIn("m7_show_experiment", at.session_state)
             self.assertFalse(at.exception)
 
 
