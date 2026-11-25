@@ -127,7 +127,8 @@ class Module3HomepageTests(unittest.TestCase):
         self.assertEqual([h.value for h in app.header],
                          ["Gaussian Blur \u2014 Spatial & Frequency Domain",
                           "1. Experimental Setup", "2. Gaussian Kernel Generation",
-                          "3. Spatial-Domain Gaussian Filtering", "4. Frequency-Domain Gaussian Filtering",
+                          "3. Spatial-Domain Gaussian Filtering (Convolution)",
+                          "4. Frequency-Domain Gaussian Filtering (Fourier Transform)",
                           "5. Convolution Theorem (Theory & Experimental Validation)", "6. Conclusion"])
         self.assertEqual([s.value for s in app.subheader], ["Mathematical Demonstration", "Experimental Evidence & Validation"])
         self.assertEqual(len(app.image), 5)   # original once; spatial and frequency results twice each
@@ -163,9 +164,14 @@ class Module3HomepageTests(unittest.TestCase):
             self.assertNotIn(removed, joined)
         text = " ".join(m.value for m in app.markdown)
         self.assertIn("The convolution theorem states that convolution in the spatial domain is equivalent to multiplication in "
-                      "the frequency domain.", " ".join(m.value for m in app.markdown))
+                      "the Fourier (frequency) domain.", text)
         self.assertIn("experimentally supporting the convolution theorem.", text)
-        self.assertIn("support the convolution theorem and demonstrate the equivalence", text)
+        self.assertIn("The right-hand side represents Fourier-domain filtering.", text)
+        self.assertIn("equivalence of Gaussian filtering using spatial-domain convolution and Fourier-domain multiplication", text)
+        self.assertIn("spatial-domain filtering (convolution) and frequency-domain filtering (Fourier transform)", text)
+        self.assertIn("using spatial-domain convolution and Fourier-domain multiplication", text)
+        self.assertIn("Fast Fourier Transform (FFT)", text)
+        self.assertIn("Inverse Fast Fourier Transform (IFFT)", text)
 
     def test_experiment_page_has_no_bottom_back_and_top_navigation_returns_home(self):
         app = new_app()
@@ -252,6 +258,19 @@ class Module3VisitorWorkflowTests(unittest.TestCase):
         self.assertEqual(fmt(8.668103e-14), "8.668103 \u00d7 10\u207b\u00b9\u2074")
         self.assertEqual(fmt(0.0), "0.000000 \u00d7 10\u2070")
         self.assertEqual(fmt(123.456), "1.234560 \u00d7 10\u00b2")
+
+    def test_fourier_terminology_in_visitor_steps(self):
+        app = upload(open_visitor())
+        press(app, "m3_generate_kernel")
+        text = " ".join(m.value for m in app.markdown)
+        self.assertIn("Spatial-domain filtering uses convolution with the Gaussian kernel.", text)
+        self.assertIn("Fast Fourier Transform (FFT)", text)
+        self.assertIn("Inverse Fast Fourier Transform (IFFT)", text)
+        press(app, "m3_apply_filters")
+        captions = [img.caption for element in app.image for img in element.proto.imgs]
+        self.assertIn("Spatial-Domain Result (Convolution)", captions)
+        self.assertIn("Frequency-Domain Result (Fourier Transform)", captions)
+        self.assertIn("spatial-domain convolution and Fourier-domain multiplication", " ".join(m.value for m in app.markdown))
 
     def test_invalid_file_keeps_later_steps_hidden(self):
         app = upload(open_visitor(), content=b"not an image", name="bad.png")

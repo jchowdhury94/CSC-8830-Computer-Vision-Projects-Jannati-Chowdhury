@@ -49,8 +49,8 @@ Calibration photographs, measurement photographs, and supporting scripts remain 
 ### Module 3 - Gaussian Blur: Spatial & Frequency Domain
 
 - **Spatial Gaussian filtering:** Builds a normalized Gaussian kernel and applies explicit spatial convolution, filtering each color channel independently with reflected image boundaries.
-- **Frequency-domain Gaussian filtering:** Transforms the image and kernel with the Fast Fourier Transform, multiplies the transforms, and applies the inverse transform. The image uses the same reflected boundaries, the arrays are zero-padded enough to give linear convolution, and the output is cropped to the original size so both methods are directly comparable.
-- **Convolution theorem:** The results page shows mathematically that convolution in space equals multiplication in the frequency domain, and validates it experimentally.
+- **Frequency-domain Gaussian filtering:** Transforms the image and kernel with the Fast Fourier Transform (FFT), multiplies the transforms in the Fourier domain, and applies the Inverse FFT (IFFT). The image uses the same reflected boundaries, the arrays are zero-padded enough to give linear convolution, and the output is cropped to the original size so both methods are directly comparable.
+- **Convolution theorem:** The results page shows mathematically that convolution in space equals multiplication in the Fourier (frequency) domain, and validates it experimentally.
 - **Implementation:** `Pages/app_module3.py` is the Streamlit interface; the filtering functions are in `Modules/Module_3/image_filtering.py`.
 
 **Module 3 homepage.** Two stacked buttons: **View My Experiments & Results** and **Apply Gaussian Blur to Your Own Image**.
@@ -74,7 +74,7 @@ The two outputs are visually indistinguishable, and these differences are extrem
 1. **Upload Your Image.** Supported formats are JPG, JPEG and PNG, up to the server's upload limit (Streamlit's default of 200 MB per file; the page displays the configured value). The image, file name, size and pixel dimensions are shown.
 2. **Configure Gaussian Filter.** Kernel size: odd values from 1 × 1 to 15 × 15. Sigma: 0.1 to 5.0 in steps of 0.1. The defaults are 1 × 1 and sigma 0.1, which is an identity filter that leaves the image unchanged, as a starting baseline. **Reset** restores these defaults, and **Generate Gaussian Kernel** continues.
 3. **Gaussian Kernel.** The normalized numerical kernel and its kernel sum (calculated from the full-precision kernel), with a short explanation. **Apply Both Filters** runs the spatial and frequency-domain filters on the same image and kernel. Images above 4 megapixels show a warning that the spatial filter may take longer.
-4. **Filtering Results.** The spatial-domain and frequency-domain results side by side.
+4. **Filtering Results.** The spatial-domain (convolution) and frequency-domain (Fourier transform) results side by side.
 5. **Compare & Validate Results.** The Maximum Absolute Difference and Mean Absolute Difference (MAE), calculated by the website from the unrounded outputs of your own image. Unlike the documented table above, these values are computed live. The explanation reflects the calculated difference and warns if it is larger than floating-point rounding would explain.
 
 Changing the image, kernel size or sigma hides the dependent steps until they are generated again, and the filters never rerun on unrelated interactions. **Reset All** returns to Step 1 with the defaults. Kernel size and sigma are remembered when you leave the page and return, but the uploaded image and results are not kept.

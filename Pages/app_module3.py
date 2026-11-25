@@ -219,8 +219,9 @@ def experiment_page():
         # ---- objective and summary
         with st.container(key="m3_res_objective"):
             st.markdown("##### Objective")
-            st.write("I implemented Gaussian image blurring using spatial and frequency-domain filtering and experimentally "
-                     "demonstrated their equivalence using the convolution theorem.")
+            st.write("I implemented Gaussian image blurring using spatial-domain filtering (convolution) and frequency-domain "
+                     "filtering (Fourier transform), and experimentally demonstrated their equivalence using the convolution "
+                     "theorem.")
         for column, card in zip(st.columns(2), (("Kernel Size", size_text, "Gaussian kernel"),
                                                 ("Sigma", f"{EXPERIMENT_SIGMA:.1f}", "standard deviation of the Gaussian"))):
             with column:
@@ -260,7 +261,7 @@ def experiment_page():
 
         # ---- 3. spatial-domain filtering
         with st.container(key="m3_res_sec_3"):
-            st.header("3. Spatial-Domain Gaussian Filtering", anchor=False)
+            st.header("3. Spatial-Domain Gaussian Filtering (Convolution)", anchor=False)
             st.write("In spatial filtering, the Gaussian kernel moves across the image. Each output pixel is calculated as a "
                      "weighted sum of its neighboring pixels.")
             st.latex(r"g(x, y) = \sum_{u}\sum_{v} h(u, v)\, f(x-u,\; y-v)")
@@ -272,9 +273,10 @@ def experiment_page():
 
         # ---- 4. frequency-domain filtering
         with st.container(key="m3_res_sec_4"):
-            st.header("4. Frequency-Domain Gaussian Filtering", anchor=False)
-            st.write("In frequency-domain filtering, the image and Gaussian kernel are transformed into the Fourier domain. Their "
-                     "transforms are multiplied, and the inverse Fourier transform produces the blurred image.")
+            st.header("4. Frequency-Domain Gaussian Filtering (Fourier Transform)", anchor=False)
+            st.write("In frequency-domain filtering, the image and Gaussian kernel are transformed into the Fourier domain using "
+                     "the Fast Fourier Transform (FFT). Their transforms are multiplied, and the Inverse Fast Fourier Transform "
+                     "(IFFT) produces the blurred image.")
             st.latex(r"F = \mathcal{F}\{f\}")
             st.latex(r"H = \mathcal{F}\{h\}")
             st.latex(r"g = \mathcal{F}^{-1}\{F \cdot H\}")
@@ -291,7 +293,7 @@ def experiment_page():
             st.header("5. Convolution Theorem (Theory & Experimental Validation)", anchor=False)
             st.subheader("Mathematical Demonstration", anchor=False)
             st.write("The convolution theorem states that convolution in the spatial domain is equivalent to multiplication in the "
-                     "frequency domain.")
+                     "Fourier (frequency) domain.")
             st.write("Spatial-domain filtering is")
             st.latex(r"g_{\mathrm{s}} = f * h")
             st.write("Taking the Fourier transform of both sides gives")
@@ -300,7 +302,7 @@ def experiment_page():
             st.latex(r"\mathcal{F}\{g_{\mathrm{s}}\} = \mathcal{F}\{f\} \cdot \mathcal{F}\{h\}")
             st.write("Applying the inverse Fourier transform gives")
             st.latex(r"g_{\mathrm{s}} = \mathcal{F}^{-1}\{\mathcal{F}\{f\} \cdot \mathcal{F}\{h\}\}")
-            st.write("The right-hand side is frequency-domain filtering. With consistent boundary handling, sufficient padding and "
+            st.write("The right-hand side represents Fourier-domain filtering. With consistent boundary handling, sufficient padding and "
                      "output alignment, the two outputs are therefore mathematically equivalent:")
             st.latex(r"\boxed{\,g_{\mathrm{s}} = g_{\mathrm{f}}\,}")
             st.markdown(
@@ -309,8 +311,8 @@ def experiment_page():
                 "- $g_{\\mathrm{s}}$: spatial-domain output\n"
                 "- $g_{\\mathrm{f}}$: frequency-domain output (the subscript $\\mathrm{f}$ stands for frequency)\n"
                 "- $*$: convolution\n"
-                "- $\\mathcal{F}$: Fourier transform, and $\\mathcal{F}^{-1}$: inverse Fourier transform\n"
-                "- $\\cdot$: element-wise multiplication in the frequency domain"
+                "- $\\mathcal{F}$: Fourier transform, and $\\mathcal{F}^{-1}$: inverse Fourier transform (computed with the FFT and IFFT)\n"
+                "- $\\cdot$: element-wise multiplication in the Fourier domain"
             )
 
             st.subheader("Experimental Evidence & Validation", anchor=False)
@@ -332,13 +334,14 @@ def experiment_page():
             st.caption("These values are the results documented in my original experiment.")
             st.write("The two outputs are visually indistinguishable, and the documented numerical differences are extremely close "
                      "to zero. These small differences are consistent with floating-point rounding.")
-            st.write("The experimental results therefore support the convolution theorem and demonstrate the equivalence of "
-                     "spatial and frequency-domain Gaussian filtering for the tested image and parameters.")
+            st.write("The experimental results therefore support the convolution theorem. These results demonstrate the "
+                     "equivalence of Gaussian filtering using spatial-domain convolution and Fourier-domain multiplication for the "
+                     "tested image and filter parameters.")
 
         # ---- 6. conclusion
         with st.container(key="m3_res_conclusion"):
             st.header("6. Conclusion", anchor=False)
-            st.markdown("Gaussian image blurring was successfully implemented using spatial convolution and frequency-domain "
+            st.markdown("Gaussian image blurring was successfully implemented using spatial-domain convolution and Fourier-domain "
                         "multiplication. Both methods produced visually identical results with negligible numerical differences, "
                         "experimentally supporting the convolution theorem.")
 
@@ -456,6 +459,9 @@ def visitor_page():
                  "and fall off with distance, and a larger sigma spreads them over a wider neighborhood. The kernel is normalized "
                  "so that its weights sum to 1, which preserves constant intensity regions and prevents unintended intensity "
                  "scaling.")
+        st.write("Spatial-domain filtering uses convolution with the Gaussian kernel. Frequency-domain filtering uses the Fast "
+                 "Fourier Transform (FFT) to transform the image and kernel, multiplies their transforms, and uses the Inverse "
+                 "Fast Fourier Transform (IFFT) to obtain the blurred image.")
         if image.shape[0] * image.shape[1] > LARGE_IMAGE_PIXELS:
             st.warning("This is a large image. The spatial filter processes every pixel and may take considerably longer than "
                        "the frequency-domain filter.")
@@ -463,7 +469,7 @@ def visitor_page():
             ss.pop("module3_spatial_result", None)
             ss.pop("module3_frequency_result", None)
             try:
-                with st.spinner("Applying spatial and frequency-domain Gaussian filtering..."):
+                with st.spinner("Applying spatial convolution and Fourier-domain filtering..."):
                     spatial = gaussian_blur(image, kernel_size, sigma)
                     frequency = gaussian_blur_frequency(image, kernel_size, sigma)
             except Exception as error:                        # nothing partial is stored when either method fails
@@ -478,9 +484,9 @@ def visitor_page():
         st.subheader("Step 4: Filtering Results", anchor=False)
         spatial_column, frequency_column = st.columns(2)
         with spatial_column:
-            st.image(to_display(spatial), caption="Spatial-Domain Result", width="stretch")
+            st.image(to_display(spatial), caption="Spatial-Domain Result (Convolution)", width="stretch")
         with frequency_column:
-            st.image(to_display(frequency), caption="Frequency-Domain Result", width="stretch")
+            st.image(to_display(frequency), caption="Frequency-Domain Result (Fourier Transform)", width="stretch")
 
         # ---- Step 5: compare and validate (raw float64 outputs, before display rounding)
         absolute_difference = np.abs(spatial - frequency)
@@ -496,7 +502,7 @@ def visitor_page():
         st.caption(f"Both methods used the same uploaded image, a {kernel_size} × {kernel_size} Gaussian kernel, "
                    f"sigma = {sigma:.1f}, and reflected image boundaries (FFT zero-padding for linear convolution).")
         if maximum < AGREEMENT_THRESHOLD:
-            st.write("The convolution theorem predicts that spatial convolution and frequency-domain multiplication give the same "
+            st.write("The convolution theorem predicts that spatial-domain convolution and Fourier-domain multiplication give the same "
                      "result. Here the largest difference is far below one intensity level, so the outputs agree to within "
                      "floating-point rounding, consistent with that prediction.")
         else:
