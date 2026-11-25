@@ -98,6 +98,7 @@ class MeasurementFormulaTests(unittest.TestCase):
 
 
 VISITOR = {"camera_matrix": np.diag([1000.0, 1000.0, 1.0]), "distortion_coefficients": np.zeros((1, 5))}
+STARTED = {"started": True, "finished": False, "results": [], "next_uid": 1}   # an experiment that has been started
 
 
 def labels(at):
@@ -144,7 +145,7 @@ class HomePageTests(unittest.TestCase):
         at = run_page()
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state["m2_page"], "home")
-        self.assertEqual(labels(at), ["Go back", "Home", "Calibrate Your Camera & Measure an Object", "View My Experiment & Results"])
+        self.assertEqual(labels(at), ["Go back", "Home", "View My Experiments & Results", "Run Your Own Experiment"])
         self.assertEqual([t.value for t in at.title], ["Module 2"])
         self.assertEqual(header_texts(at), ["Camera Calibration & 2D Object Measurement"])
 
@@ -172,14 +173,14 @@ class VisitorWorkflowTests(unittest.TestCase):
         self.assertNotIn("My Experiment & Results", header_texts(at))
         for label in ("Load Saved Calibration", "Calibrate New Camera", "Reset All", "Module 2"):
             self.assertIn(label, labels(at))
-        self.assertNotIn("View My Experiment & Results", labels(at))
+        self.assertNotIn("View My Experiments & Results", labels(at))
         self.assertEqual(len(at.table), 0)
         self.assertIsNone(at.session_state["m2_visitor_calibration"])
         self.assertNotIn("m2_scroll_to_experiment", at.session_state)
         self.assertNotIn("m2_scroll_to", at.session_state)                 # heading scroll was removed (it hid Back / Home)
 
     def test_valid_measurement_requirements_are_a_compact_expander(self):
-        at = visitor_run()
+        at = visitor_run({"m2_visitor_calibration": VISITOR, "m2_exp": dict(STARTED)})
         expander = next(e for e in at.expander if e.label == "What a valid measurement requires")
         text = " ".join(m.value for m in expander.markdown)
         for phrase in ("same camera, lens and settings", "fronto-parallel", "camera-to-object distance Z", "top-left"):
@@ -188,7 +189,7 @@ class VisitorWorkflowTests(unittest.TestCase):
     def test_measurement_controls_are_disabled_without_a_visitor_calibration(self):
         at = visitor_run()
         self.assertEqual(len(at.text_input) + len(at.number_input) + len(at.get("file_uploader")), 0)
-        self.assertTrue(any("First load a saved calibration" in i.value for i in at.info))
+        self.assertTrue(any("Load or calibrate your camera" in i.value for i in at.info))
 
     def test_workflow_buttons_only_select_a_workflow(self):
         at = visitor_run()
@@ -204,9 +205,13 @@ class VisitorWorkflowTests(unittest.TestCase):
     def test_measurement_controls_appear_only_with_a_visitor_calibration(self):
         at = visitor_run({"m2_visitor_calibration": VISITOR})
         self.assertFalse(at.exception)
+        self.assertEqual(len(at.text_input), 0)                                 # Step 3 waits for Start Experiment
+        self.assertEqual([n.label for n in at.number_input], ["Number of measurements"])
+        self.assertIn("Start Experiment", labels(at))
+        at = visitor_run({"m2_visitor_calibration": VISITOR, "m2_exp": dict(STARTED)})
         self.assertEqual(len(at.text_input), 1)
-        self.assertEqual(len(at.number_input), 3)
-        self.assertFalse(any("First load a saved calibration" in i.value for i in at.info))
+        self.assertEqual(len(at.number_input), 4)                               # plan + width, height, distance
+        self.assertFalse(any("Load or calibrate your camera" in i.value for i in at.info))
 
     def test_no_visitor_calibration_fallback_exists(self):
         for page in ("home", "visitor", "experiment"):
@@ -237,7 +242,7 @@ class VisitorWorkflowTests(unittest.TestCase):
         self.assertEqual([t.value for t in at.title], ["Calibrate Your Camera & Measure an Object"])
         self.assertNotIn("Calibrate Your Camera & Measure an Object", header_texts(at))
         self.assertIn("Step 1: Calibrate Your Camera", [s.value for s in at.subheader])
-        self.assertIn("Step 2: Measure an Object", [s.value for s in at.subheader])
+        self.assertIn("Step 2: Configure Your Experiment", [s.value for s in at.subheader])
         for at_ in (visitor_run(), visitor_run({"m2_cal_workflow": "load"}), visitor_run({"m2_cal_workflow": None})):
             self.assertNotIn("Choose how to set up your camera.", [c.value for c in at_.caption])
 
@@ -255,41 +260,47 @@ class ExperimentViewTests(unittest.TestCase):
         at = open_experiment(run_page())
         self.assertFalse(at.exception)
         self.assertEqual(at.session_state["m2_page"], "experiment")
-        self.assertIn("My Experiment & Results", header_texts(at))
-        self.assertNotIn("Calibrate Your Camera & Measure an Object", header_texts(at))
+        self.assertEqual([t.value for t in at.title], ["My Experiment & Results"])
+        self.assertIn("Camera Calibration & 2D Object Measurement", header_texts(at))
+        self.assertNotIn("Back", labels(at))                                   # top navigation only: no bottom Back button
         self.assertNotIn("Load Saved Calibration", labels(at))
         self.assertNotIn("Reset All", labels(at))
         self.assertEqual(len(at.text_input) + len(at.number_input) + len(at.get("file_uploader")), 0)   # no duplicate controls
         self.assertNotIn("m2_scroll_to", at.session_state)                                             # heading scroll was removed
 
     def test_back_buttons_return_home(self):
-        for key in ("navbtn_0", "m2_back_bottom"):
+        for key in ("navbtn_0",):
             at = open_experiment(run_page())
             at.button(key=key).click()
             at.run()
             self.assertEqual(at.session_state["m2_page"], "home")
-            self.assertEqual(labels(at), ["Go back", "Home", "Calibrate Your Camera & Measure an Object", "View My Experiment & Results"])
+            self.assertEqual(labels(at), ["Go back", "Home", "View My Experiments & Results", "Run Your Own Experiment"])
             self.assertNotIn("My Experiment & Results", header_texts(at))
 
     def test_visitor_state_survives_navigation(self):
-        at = visitor_run({"m2_visitor_calibration": VISITOR, "m2_object_name": "Box", "m2_actual_width": 12.5, "m2_cal_workflow": "load"})
+        at = visitor_run({"m2_visitor_calibration": VISITOR, "m2_exp": dict(STARTED), "m2_object_name": "Box", "m2_actual_width": 12.5,
+                          "m2_cal_workflow": "load"})
         at.button(key="navbtn_0").click()
         at.run()
         at = open_experiment(at)
         self.assertIs(at.session_state["m2_visitor_calibration"], VISITOR)
-        at.button(key="m2_back_bottom").click()
+        at.button(key="navbtn_0").click()
         at.run()
         at = open_visitor(at)
         self.assertEqual(at.session_state["m2_visitor_calibration"]["camera_matrix"][0, 0], 1000.0)
         self.assertEqual(at.text_input[0].value, "Box")
-        self.assertEqual(at.number_input[0].value, 12.5)
+        self.assertEqual(next(n for n in at.number_input if n.label == "Actual Width (cm)").value, 12.5)
         self.assertEqual(at.session_state["m2_cal_workflow"], "load")
 
     def test_saved_calibration_values_are_displayed_from_the_npz(self):
-        cells = table_cells(open_experiment(run_page()))
-        for expected in ("4068.29", "4065.16", "2117.68", "2873.31", "0.22384", "-0.84856", "0.00151", "-0.00256", "0.95771",
-                         "3.0875", "2.358"):
+        at = open_experiment(run_page())
+        cells = table_cells(at)
+        for expected in ("4068.29", "4065.16", "2117.68", "2873.31", "0.22384", "-0.84856", "0.00151", "-0.00256", "0.95771"):
             self.assertIn(expected, cells, expected)
+        metrics = {m.label: m.value for m in at.metric}
+        self.assertEqual(metrics["RMS reprojection error"], "3.0875 px")
+        self.assertEqual(metrics["Mean reprojection error"], "2.358 px")
+        self.assertEqual(len(at.expander), 0)                                  # the calibration reference dropdown was removed
 
     def test_all_20_trials_and_original_statistics_are_displayed(self):
         at = open_experiment(run_page())

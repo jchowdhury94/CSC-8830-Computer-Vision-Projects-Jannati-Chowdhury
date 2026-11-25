@@ -452,6 +452,8 @@ class SessionStateTests(unittest.TestCase):
 
     def test_activation_unlocks_measurement_with_the_visitors_calibration_only(self):
         at = activated_page()
+        self.assertEqual(len(at.text_input), 0)                                 # measurement waits for Start Experiment
+        at = click(at, "m2_start")
         self.assertEqual(len(at.text_input), 1)
         self.assertEqual([n.label for n in at.number_input if "(cm)" in n.label],
                          ["Actual Width (cm)", "Actual Height (cm)", "Camera-to-Object Distance (cm)"])
@@ -473,9 +475,10 @@ class SessionStateTests(unittest.TestCase):
         legacy = cf.parse_calibration(NPZ.read_bytes())
         at = visitor_page({"m2_load_pending": legacy, "m2_load_name": "camera_calibration.npz", "m2_cal_workflow": "load"})
         self.assertNotIn("Activate Calibration", labels(at))
-        self.assertTrue(any("Missing image resolution" in w.value for w in at.warning))
-        width, height = [n for n in at.number_input if "Calibration image" in n.label]
-        width.set_value(4284); height.set_value(5712)
+        self.assertIn("**Calibration Image Resolution**", [m.value for m in at.markdown])
+        at.radio[0].set_value("Enter Resolution Manually").run()
+        width, height = [n for n in at.text_input if n.label in ("Image width (px)", "Image height (px)")]
+        width.set_value("4284"); height.set_value("5712")
         at.run()
         at = click(at, "m2_legacy_apply")                                       # without the confirmation box
         self.assertTrue(at.session_state["m2_load_pending"]["needs_image_size"])
@@ -536,7 +539,7 @@ class SessionStateTests(unittest.TestCase):
         self.assertIsNotNone(at.session_state["m2_visitor_calibration"])
 
     def test_active_calibration_survives_view_navigation(self):
-        at = activated_page()
+        at = click(activated_page(), "m2_start")
         token = at.session_state["m2_visitor_calibration"]["camera_matrix"].copy()
         at = click(at, "navbtn_0")
         self.assertEqual(at.session_state["m2_page"], "home")
@@ -630,6 +633,170 @@ class ExperimentIntegrityTests(unittest.TestCase):
         # Pages/app_module7.py gained only the Home button when the sidebar was removed.
         self.assertEqual([l for l in out.splitlines() if "room_measurement" not in l and "__pycache__" not in l
                           and not l.endswith("Pages/app_module7.py")], [])
+
+
+def record(uid, name, distance, width=20.0, height=10.0):
+    """A saved visitor measurement: 1000 x 500 px between the corners with fx = fy = 1000."""
+    return {"uid": uid, "Object": name, "Image": f"IMG{uid}.jpeg", "Distance_cm": distance, "Actual_Width_cm": width, "Actual_Height_cm": height,
+            "Estimated_Width_cm": 19.5, "Width_Error_cm": 0.5, "Width_Error_Percent": 2.5,
+            "Estimated_Height_cm": 10.2, "Height_Error_cm": 0.2, "Height_Error_Percent": 2.0,
+            "points": [(100, 100), (1100, 100), (1100, 600), (100, 600)], "fx": 1000.0, "fy": 1000.0}
+
+
+def experiment_page(results, planned=20, finished=True):
+    exp = {"started": True, "finished": finished, "results": list(results), "next_uid": len(results) + 1}
+    return visitor_page({"m2_visitor_calibration": dict(COMPUTED), "m2_exp": exp, "m2_planned": planned})
+
+
+class ExperimentWorkflowTests(unittest.TestCase):
+    def test_step_two_defaults_and_start(self):
+        at = visitor_page({"m2_visitor_calibration": dict(COMPUTED)})
+        self.assertIn("Step 2: Configure Your Experiment", [h.value for h in at.subheader])
+        self.assertEqual(at.number_input[0].value, 20)
+        self.assertEqual(len(at.text_input), 0)
+        at = click(at, "m2_start")
+        self.assertTrue(at.session_state["m2_exp"]["started"])
+        self.assertIn("Measurement 1 of 20", [m.value for m in at.markdown if m.value.startswith("#### ")][0])
+        self.assertEqual(len(at.text_input), 1)
+
+    def test_results_appear_after_the_first_save_and_use_visitor_data_only(self):
+        at = experiment_page([record(1, "Box", 250), record(2, " box ", 150)])
+        self.assertFalse(at.exception)
+        metrics = {m.label: m.value for m in at.metric}
+        self.assertEqual(metrics["Measurements Completed"], "2")
+        self.assertEqual(metrics["Distinct Objects"], "1")                      # names are normalized
+        self.assertEqual(metrics["Mean Width Percentage Error"], "2.50%")
+        self.assertEqual(metrics["Mean Height Percentage Error"], "2.00%")
+        table = next(t.value for t in at.table if "Estimated width (cm)" in t.value.columns)
+        self.assertEqual(len(table), 2)
+        stats = next(t.value for t in at.table if "Statistic" in t.value.columns)
+        self.assertEqual(list(stats["Width"]), ["0.50 cm", "2.50 %", "0.00 %", "0.50 cm"])
+        self.assertFalse(any("requirement" in i.value for i in at.info))        # no validation notice in Step 4
+        self.assertEqual([d.proto.label for d in at.get("download_button")], ["Download Results (CSV)"])
+
+    def test_full_validation_requirement_is_separate_from_plan_completion(self):
+        at = experiment_page([record(i, f"Object {i % 5}", 250) for i in range(1, 21)], planned=20)
+        self.assertTrue(any("Full validation requirement met" in s.value for s in at.success))
+        self.assertTrue(any("complete (20 of 20" in m.value for m in at.markdown))
+        at = experiment_page([record(i, "Box", 100) for i in range(1, 21)], planned=20)       # plan complete, distances too short
+        self.assertFalse(any("requirement met" in s.value for s in at.success))
+        self.assertFalse(any("requirement" in i.value for i in at.info))
+
+    def test_results_stay_hidden_until_requested_and_hide_again_on_resume(self):
+        at = experiment_page([record(1, "Box", 250), record(2, "Box", 220)], planned=3, finished=False)
+        self.assertFalse(at.metric)                                             # no summary cards, table, chart or statistics yet
+        self.assertEqual(len(at.table), 0)
+        self.assertNotIn("Step 4: Experiment Results", [h.value for h in at.subheader])
+        self.assertIn("Finish Early & View Results", labels(at))
+        at = click(at, "m2_finish")
+        self.assertIn("Step 4: Experiment Results", [h.value for h in at.subheader])
+        self.assertNotIn("m2_scroll_anchor", at.session_state)                  # the one-shot scroll request was consumed
+        self.assertTrue(any("m2-results-anchor" in str(h.value) for h in at.get("html")))
+        self.assertIn("Continue Measuring", labels(at))
+        self.assertNotIn("Resume Measuring", labels(at))                         # one mechanism only
+        at = click(at, "m2_continue")
+        self.assertNotIn("Step 4: Experiment Results", [h.value for h in at.subheader])
+        self.assertFalse(at.metric)
+        self.assertEqual(len(at.session_state["m2_exp"]["results"]), 2)
+
+    def test_continue_measuring_resumes_or_extends_the_plan_and_keeps_everything(self):
+        at = experiment_page([record(1, "Box", 250), record(2, "Box", 220)], planned=5, finished=True)
+        self.assertEqual(at.button(key="m2_continue").proto.type, "primary")
+        at = click(at, "m2_continue")                                           # plan not reached: resume it
+        self.assertEqual((at.session_state["m2_planned"], at.session_state["m2_exp"]["finished"], len(at.session_state["m2_exp"]["results"])), (5, False, 2))
+        self.assertIn("Measurement 3 of 5", [m.value for m in at.markdown if m.value.startswith("#### ")][0])
+        self.assertFalse(at.metric)                                             # Step 4 hidden again
+        self.assertIsNotNone(at.session_state["m2_visitor_calibration"])
+        self.assertTrue(any("m2-object-anchor" in str(h.value) for h in at.get("html")))
+        at = click(experiment_page([record(i, "Box", 250) for i in range(1, 4)], planned=3, finished=True), "m2_continue")   # plan complete: one more
+        self.assertEqual(at.session_state["m2_planned"], 4)
+        self.assertIn("Measurement 4 of 4", [m.value for m in at.markdown if m.value.startswith("#### ")][0])
+
+    def test_summary_cards_all_have_a_note_so_they_are_equal_in_height(self):
+        at = experiment_page([record(1, "Box", 250)])
+        self.assertEqual(len(at.metric), 4)
+        notes = [c.value for c in at.caption if c.value in ("of 20 planned", "by object name", "across 1 measurement")]
+        self.assertEqual(len(notes), 4)
+
+    def test_completed_plan_offers_calculate_or_add_another(self):
+        at = experiment_page([record(i, "Box", 250) for i in range(1, 4)], planned=3, finished=False)
+        self.assertIn("Measurements Completed", [m.value[5:] for m in at.markdown if m.value.startswith("#### ")])
+        self.assertTrue(any("All planned measurements have been saved" in m.value for m in at.markdown))
+        self.assertEqual(at.button(key="m2_calc_results").proto.type, "primary")
+        self.assertFalse(at.metric)
+        at2 = click(experiment_page([record(i, "Box", 250) for i in range(1, 4)], planned=3, finished=False), "m2_add_more")
+        self.assertEqual(at2.session_state["m2_planned"], 4)
+        self.assertIn("Measurement 4 of 4", [m.value for m in at2.markdown if m.value.startswith("#### ")][0])
+        self.assertFalse(at2.metric)
+        at3 = click(experiment_page([record(i, "Box", 250) for i in range(1, 4)], planned=3, finished=False), "m2_calc_results")
+        self.assertTrue(at3.session_state["m2_exp"]["finished"])
+        self.assertEqual({m.label: m.value for m in at3.metric}["Measurements Completed"], "3")
+
+    def test_select_object_reuses_or_clears_the_object_information(self):
+        at = experiment_page([record(1, "Box", 250, 23.3, 15.5)], planned=3, finished=False)
+        box = at.selectbox(key="m2_same_object")
+        self.assertEqual(box.label, "Select Object")
+        self.assertEqual(box.options, ["New Object", "Box"])
+        box.select("Box")
+        at.run()
+        self.assertEqual((at.text_input[0].value, at.session_state["m2_actual_width"], at.session_state["m2_actual_height"]), ("Box", 23.3, 15.5))
+        at.selectbox(key="m2_same_object").select("New Object")
+        at.run()
+        self.assertEqual((at.text_input[0].value, at.session_state["m2_actual_width"], at.session_state["m2_actual_height"]), ("", None, None))
+
+    def test_delete_asks_first_and_renumbers(self):
+        at = experiment_page([record(1, "A", 250), record(2, "B", 250), record(3, "C", 250)])
+        at = click(at, "m2_row_delete")
+        self.assertEqual(len(at.session_state["m2_exp"]["results"]), 3)         # nothing deleted yet
+        self.assertIn("m2_delete_yes", [b.key for b in at.button])
+        at = click(at, "m2_delete_yes")
+        results = at.session_state["m2_exp"]["results"]
+        self.assertEqual([r["Object"] for r in results], ["B", "C"])
+        table = next(t.value for t in at.table if "Estimated width (cm)" in t.value.columns)
+        self.assertEqual(list(table.index), [1, 2])
+
+    def test_edit_recalculates_from_the_saved_corners(self):
+        at = experiment_page([record(1, "Box", 250)])
+        at = click(at, "m2_row_edit")
+        next(n for n in at.number_input if n.label == "Camera-to-Object Distance (cm)" and n.key == "m2_edit_distance_1").set_value(100.0)
+        next(t for t in at.text_input if t.key == "m2_edit_name_1").set_value("Crate")
+        at.run()
+        at = click(at, "m2_edit_save")
+        saved = at.session_state["m2_exp"]["results"][0]
+        self.assertEqual((saved["Object"], saved["Distance_cm"]), ("Crate", 100.0))
+        self.assertEqual((saved["Estimated_Width_cm"], saved["Estimated_Height_cm"]), (100.0, 50.0))   # 1000 px and 500 px at 100 cm, f = 1000
+        self.assertEqual(saved["Width_Error_Percent"], 400.0)
+        self.assertIsNone(at.session_state["m2_row_action"])
+
+    def test_restart_and_change_calibration_need_confirmation_and_keep_the_right_state(self):
+        at = experiment_page([record(1, "Box", 250)])
+        self.assertNotIn("m2_cal_mode_load", [b.key for b in at.button])        # calibration is locked while results exist
+        at = click(at, "m2_restart")
+        self.assertEqual(len(at.session_state["m2_exp"]["results"]), 1)
+        at = click(at, "m2_confirm_no_restart")
+        self.assertEqual(len(at.session_state["m2_exp"]["results"]), 1)
+        at = click(at, "m2_change_cal")
+        self.assertEqual(len(at.session_state["m2_exp"]["results"]), 1)
+        at = click(at, "m2_confirm_yes_change_cal")
+        self.assertEqual(at.session_state["m2_exp"]["results"], [])
+        self.assertFalse(at.session_state["m2_exp"]["started"])
+        self.assertIsNotNone(at.session_state["m2_visitor_calibration"])        # still active; the visitor may now change it
+        self.assertIn("m2_cal_mode_load", [b.key for b in at.button])
+
+    def test_reset_all_needs_confirmation_only_when_results_exist(self):
+        at = click(experiment_page([record(1, "Box", 250)]), "m2_reset_all")
+        self.assertEqual(len(at.session_state["m2_exp"]["results"]), 1)
+        at = click(at, "m2_confirm_yes_reset_all")
+        self.assertEqual(at.session_state["m2_exp"]["results"], [])
+        self.assertIsNone(at.session_state["m2_visitor_calibration"])
+        at = click(experiment_page([]), "m2_reset_all")                         # nothing to lose: immediate
+        self.assertIsNone(at.session_state["m2_visitor_calibration"])
+
+    def test_visitor_results_never_touch_the_original_files(self):
+        at = experiment_page([record(1, "Box", 250)])
+        at = click(at, "m2_restart")
+        self.assertEqual(sha256(NPZ), NPZ_SHA256)
+        self.assertEqual(sha256(CSV), CSV_SHA256)
 
 
 if __name__ == "__main__":
