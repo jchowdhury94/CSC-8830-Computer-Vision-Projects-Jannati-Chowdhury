@@ -1,5 +1,5 @@
 """Selection-card design shared by the Module 7 pages of the website (Pages/app_module7.py) and of the standalone room measurement
-application (Modules/Module_7/visitor_workflow): a centered heading and stacked dark-gray cards with a red icon tile, a title, a
+application (Modules/Module_7/room_measurement_question_3/visitor_workflow): a centered heading and stacked dark-gray cards with a red icon tile, a title, a
 subtitle and a chevron.  A card is a Streamlit button, a same-tab link (``card_link``) or an expander summary; the CSS is keyed by the
 st.container key that wraps the card, so both applications draw the identical card.  Display only: no navigation logic lives here.
 """

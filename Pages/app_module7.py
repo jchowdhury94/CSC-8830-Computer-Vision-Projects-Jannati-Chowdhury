@@ -1517,9 +1517,9 @@ ROOM_CSS = """
 
 REPO_URL = "https://github.com/jchowdhury94/CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury"
 LOCAL_GUIDE_CLONE = f"git clone {REPO_URL}.git\ncd CSC-8830-Computer-Vision-Projects-Jannati-Chowdhury"
-LOCAL_GUIDE_VENV_UNIX = "python3.12 -m venv .venv\nsource .venv/bin/activate"
-LOCAL_GUIDE_VENV_WINDOWS = "py -3.12 -m venv .venv\n.venv\\Scripts\\Activate.ps1"
-LOCAL_GUIDE_INSTALL = "python -m pip install -r Modules/Module_7/visitor_workflow/requirements.txt"
+LOCAL_GUIDE_VENV_UNIX = "python3.13 -m venv .venv\nsource .venv/bin/activate"
+LOCAL_GUIDE_VENV_WINDOWS = "py -3.13 -m venv .venv\n.venv\\Scripts\\Activate.ps1"
+LOCAL_GUIDE_INSTALL = "python -m pip install -r Modules/Module_7/room_measurement_question_3/visitor_workflow/requirements.txt"
 LOCAL_GUIDE_RUN = "python run_local.py"
 SETUP_BUTTON = "Setup Instructions"
 SETUP_SUBTITLE = "How to run the experiment on your computer"
@@ -1562,6 +1562,22 @@ def room_visitor_choice():
                         st.button("Check again", key="m7_room_run_recheck")
 
 
+# Links inside the Setup Instructions text are ordinary inline links: the shared selection-card rules (select_cards.py) style every <a>
+# below the card wrapper as a card, so they are undone here, for the Markdown links of this panel only.
+_SETUP_LINK = ".st-key-m7_open_room_setup [data-testid=\"stExpanderDetails\"] [data-testid=\"stMarkdownContainer\"] a"
+SETUP_LINK_CSS = f"""<style>
+{_SETUP_LINK}, {_SETUP_LINK}:visited {{
+    display: inline; width: auto; min-height: 0; height: auto; padding: 0; margin: 0; gap: 0; border: 0; border-radius: 0;
+    background: none; background-color: transparent; box-shadow: none; transform: none; transition: none;
+    color: inherit; font-weight: inherit; text-decoration: underline; text-underline-offset: 2px;
+}}
+{_SETUP_LINK}::before, {_SETUP_LINK}::after {{ content: none; display: none; }}
+{_SETUP_LINK}:hover, {_SETUP_LINK}:focus-visible {{
+    background: none; background-color: transparent; border: 0; transform: none; box-shadow: none; outline: none; text-decoration-thickness: 2px;
+}}
+</style>"""
+
+
 def room_setup_instructions():
     """Content of the Setup Instructions expander.  It never uploads, decodes or measures anything: the visitor application is a separate
     program that runs only on the visitor's own computer."""
@@ -1572,10 +1588,13 @@ def room_setup_instructions():
              "enough memory to process them reliably, so uploads are not accepted here. Running the same application on your own "
              "computer has no such limit. To see my own validated room experiment, go back to **My Experiments & Results** and open **Room Measurement Using Stereo Videos**.")
     st.markdown("#### Run it locally")
-    st.markdown("**1. Get the code** (requires [Git](https://git-scm.com/downloads), or download the repository as a ZIP from "
-                f"[GitHub]({REPO_URL}) and open a terminal in the extracted folder):")
+    st.markdown(SETUP_LINK_CSS, unsafe_allow_html=True)
+    st.markdown("**1. Get the code**")
+    st.markdown("**Option A: clone with Git** (requires [Git](https://git-scm.com/downloads)):")
     st.code(LOCAL_GUIDE_CLONE, language="bash")
-    st.markdown("**2. Create and activate a virtual environment** with Python 3.12 (recommended):")
+    st.markdown("**Option B: download a ZIP** instead of running the commands above. Download the repository as a ZIP from "
+                f"[GitHub]({REPO_URL}), extract it, and open a terminal in the extracted folder.")
+    st.markdown("**2. Create and activate a virtual environment** with Python 3.13. The application was developed and tested with Python 3.13.7 on macOS (Apple silicon); other Python versions and operating systems, including Windows, have not been verified:")
     st.markdown("macOS or Linux:")
     st.code(LOCAL_GUIDE_VENV_UNIX, language="bash")
     st.markdown("Windows (PowerShell):")
@@ -1610,7 +1629,7 @@ def room_setup_instructions():
              "The extracted frames are kept in a marked temporary folder while a measurement is open and are removed when you press New Measurement, when your session ends, "
              "when the application stops, or at the next start after a crash.")
     st.markdown("#### Troubleshooting")
-    st.markdown("- **Command not found:** install Python 3.12 and check that the virtual environment is activated.\n"
+    st.markdown("- **Command not found:** install Python 3.13 (the tested version is 3.13.7) and check that the virtual environment is activated.\n"
                 "- **A package fails to install:** upgrade pip (`python -m pip install --upgrade pip`) and retry.\n"
                 "- **Port already in use:** `run_local.py` names the busy port and starts nothing; close the program using it, or choose other ports, for example `python run_local.py --website-port 8502 --visitor-port 8641`.\n"
                 "- **Run Your Experiment (Local Only) is greyed out:** you are on the public website, or the visitor application is not running; start it with `python run_local.py` and press **Check again**.\n"
@@ -2031,7 +2050,7 @@ def room_results():
             results = room_data.load_results()
         except room_data.ResultsUnavailable as error:
             st.error(f"Room measurement results are unavailable. {error} The saved results are read from "
-                     "Modules/Module_7/outputs/room_measurement/.")
+                     "Modules/Module_7/room_measurement_question_3/outputs/room_measurement/.")
             return
         with st.container(key="m7_room_intro"):
             st.write("This page reports one room measurement experiment, carried out in two measurement stages on the same room: Wall A, from two "
