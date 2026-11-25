@@ -6,6 +6,7 @@ measure an object) and a separate, read-only "My Experiment & Results" view. The
 """
 import csv
 import hashlib
+import io
 import sys
 from pathlib import Path
 
@@ -43,10 +44,6 @@ experiment_camera_matrix = calibration["camera_matrix"]
 experiment_distortion_coefficients = calibration["distortion_coefficients"]
 rms_error = calibration["rms_error"]
 
-# Gets the experiment's calibrated focal lengths
-experiment_fx = experiment_camera_matrix[0, 0]
-experiment_fy = experiment_camera_matrix[1, 1]
-
 
 # Calculates the real-world length between two image points
 def calculate_length(point1, point2, distance, fx, fy):
@@ -67,7 +64,6 @@ RESULTS_PATH = MODULE_DIR / "measurement_results.csv"
 ACCENT = "#C9363E"
 MEAN_REPROJECTION_ERROR_PX = 2.358   # from my original calibration report; it is not stored in the NPZ file
 CALIBRATION_PHOTOS_CAPTURED = 20     # the NPZ stores only the accepted count (successful_images)
-CALIB_EXPANDER_LABEL = "**My Camera Calibration Reference**  \n:small[Click to View My Smartphone Calibration Parameters]"
 # st.session_state["m2_visitor_calibration"] is the active visitor calibration (supplied or computed by the visitor); it never
 # falls back to my saved experiment calibration. Measurement is enabled exactly while a visitor calibration is active.
 SCROLL_TO_PHOTO_JS = """
@@ -81,7 +77,7 @@ setTimeout(function () {
 </script>
 """
 # Widget values Streamlit drops while the visitor widgets are not rendered (home page or experiment view).
-VISITOR_INPUT_KEYS = ("m2_object_name", "m2_actual_width", "m2_actual_height", "m2_distance")
+VISITOR_INPUT_KEYS = ("m2_object_name", "m2_actual_width", "m2_actual_height", "m2_distance", "m2_planned")
 
 
 def _svg_mask(path):
@@ -91,8 +87,6 @@ def _svg_mask(path):
 
 
 # Same Material Symbols icons and styling as the Module 7 page, scoped by widget keys (st-key-<key>).
-CAMERA_MASK = _svg_mask("M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6"
-                        "c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z")
 CHEVRON_MASK = _svg_mask("M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z")
 
 MODULE_TITLE = "Module 2 — Camera Calibration & Object Measurement"
@@ -104,7 +98,7 @@ HEADING_CSS = """
 .st-key-m2_headings { gap: 0.25rem; }
 /* Home page: mirrors Module 3's homepage. Title, subtitle and nav are separate containers; the layout's own gap is
    zeroed so the explicit padding-top below is the only space between them (44px title -> subtitle, 64px subtitle -> buttons). */
-.st-key-m2_home_layout { gap: 0; padding-top: 1rem; }  /* the nav row above already supplies the top space */
+.st-key-m2_home_layout { gap: 0; padding-top: 1rem; }  /* equals the 16px gap Module 7's injected style block adds above its title */
 .st-key-m2_home_title, .st-key-m2_home_subtitle { gap: 0; }
 .st-key-m2_home_title, .st-key-m2_home_subtitle, .st-key-m2_home_nav { flex-shrink: 0; }
 /* Streamlit's markdown wrapper carries a -16px bottom margin that would eat into the explicit gaps. */
@@ -119,7 +113,7 @@ HEADING_CSS = """
     font-size: clamp(1.1rem, 4.6vw, 32px); font-weight: 600; color: inherit; opacity: 0.85; line-height: 1.2;
     text-align: center; padding: 0; margin: 0;
 }
-@media (min-width: 641px) { .st-key-m2_home_subtitle h2 { white-space: nowrap; } }
+@media (min-width: 801px) { .st-key-m2_home_subtitle h2 { white-space: nowrap; } }
 .st-key-m2_headings h1 {
     font-size: clamp(1.15rem, 3.2vw + 0.3rem, 1.9rem); line-height: 1.25; text-align: left;
     padding: 0.25rem 0 0; margin: 0; overflow-wrap: anywhere;
@@ -134,36 +128,6 @@ HEADING_CSS = """
 }
 """
 
-EXPANDER_CSS = f"""
-.st-key-m2_calib_ref details {{
-    border: 2px solid {ACCENT} !important; border-radius: 14px; overflow: hidden;
-}}
-.st-key-m2_calib_ref details > summary {{
-    position: relative; padding: 1.15rem 3.6rem; cursor: pointer; width: 100%; box-sizing: border-box;
-}}
-.st-key-m2_calib_ref details > summary:hover {{ background: color-mix(in srgb, {ACCENT} 12%, transparent); }}
-.st-key-m2_calib_ref details > summary:focus-visible {{ outline: 3px solid {ACCENT}; outline-offset: -5px; }}
-.st-key-m2_calib_ref details > summary [data-testid="stMarkdownContainer"] p {{ margin: 0; line-height: 1.55; }}
-.st-key-m2_calib_ref details > summary strong {{ font-size: 1.35rem; font-weight: 700; }}
-/* Streamlit's single icon slot swaps the left icon for a chevron when open; hide it and draw both icons here. */
-.st-key-m2_calib_ref details > summary [data-testid="stExpanderIcon"],
-.st-key-m2_calib_ref details > summary [data-testid="stExpanderToggleIcon"],
-.st-key-m2_calib_ref details > summary [data-testid="stIconMaterial"],
-.st-key-m2_calib_ref details > summary > span > span:first-child {{ display: none; }}
-.st-key-m2_calib_ref details > summary::before, .st-key-m2_calib_ref details > summary::after {{
-    content: ""; position: absolute; top: 50%; width: 1.9rem; height: 1.9rem; margin-top: -0.95rem;
-    background-color: {ACCENT}; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-    -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain;
-}}
-.st-key-m2_calib_ref details > summary::before {{
-    left: 1.2rem; {CAMERA_MASK}
-}}
-.st-key-m2_calib_ref details > summary::after {{
-    right: 1.2rem; transition: transform 0.2s ease; {CHEVRON_MASK}
-}}
-.st-key-m2_calib_ref details[open] > summary::after {{ transform: rotate(180deg); }}
-.st-key-m2_calib_ref [data-testid="stExpanderDetails"] {{ padding: 0.5rem 1.35rem 1.25rem; }}
-"""
 NAV_KEYS = ("m2_open_visitor", "m2_open_experiment")
 _BUTTON_TEMPLATE = f"""
 {{k}}, {{k}} [data-testid="stButton"] {{ width: 100%; }}
@@ -196,7 +160,7 @@ MODE_CSS = f"""
 .st-key-m2_cal_mode_run button[kind="primary"], .st-key-m2_cal_mode_load button[kind="primary"] {{ background-color: {ACCENT}; color: #FFFFFF; }}
 .st-key-m2_cal_mode_run button:focus-visible, .st-key-m2_cal_mode_load button:focus-visible {{ outline: 3px solid {ACCENT}; outline-offset: 2px; }}
 """
-# Load Saved Calibration extras: the details expander header and the Clear Calibration button (scoped by container/button key).
+# Load Saved Calibration extras: the details expander header and the file-removal (×) button (scoped by container/button key).
 LOADED_CSS = f"""
 .st-key-m2_loaded_notes details {{
     border: 1px solid color-mix(in srgb, {ACCENT} 55%, transparent) !important; border-radius: 10px; overflow: hidden;
@@ -207,32 +171,78 @@ LOADED_CSS = f"""
 .st-key-m2_loaded_notes details > summary:hover {{ background: color-mix(in srgb, {ACCENT} 18%, #1E2127); }}
 .st-key-m2_loaded_notes details > summary:focus-visible {{ outline: 2px solid {ACCENT}; outline-offset: -3px; }}
 .st-key-m2_loaded_notes details > summary [data-testid="stMarkdownContainer"] p {{ font-weight: 700; font-size: 1.05rem; margin: 0; }}
-.st-key-m2_clear_loaded button {{
-    background-color: transparent; border: 2px solid {ACCENT}; border-radius: 10px; color: {ACCENT};
+[class*="st-key-m2_cal_legacy_w_"] [data-testid="InputInstructions"], [class*="st-key-m2_cal_legacy_h_"] [data-testid="InputInstructions"] {{ display: none; }}
+.st-key-m2_npz_label p {{ font-size: 0.875rem; margin: 0; }}
+.st-key-m2_loaded_file [data-testid="stHorizontalBlock"] {{
+    align-items: center; min-height: 4.5rem; padding: 0.5rem 1rem;
+    background: color-mix(in srgb, currentColor 5%, transparent); border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-radius: 0.5rem;
 }}
-.st-key-m2_clear_loaded button p {{ color: {ACCENT}; font-weight: 700; }}
+.st-key-m2_res_section, .st-key-m2_npz_box {{
+    background: color-mix(in srgb, currentColor 5%, transparent); border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    border-radius: 12px; padding: 1.25rem 1.25rem 1rem; gap: 0.9rem;
+}}
+.st-key-m2_res_title p {{ font-size: 1.4rem; font-weight: 700; margin: 0; }}
+.st-key-m2_res_section [data-testid="stTextInputRootElement"], .st-key-m2_res_section [data-testid="stFileUploaderDropzone"],
+.st-key-m2_npz_box [data-testid="stFileUploaderDropzone"] {{
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}}
+.st-key-m2_clear_loaded button {{
+    background-color: transparent; border: 1px solid transparent; border-radius: 50%; color: inherit;
+    min-height: 2.25rem; width: 2.25rem; padding: 0;
+}}
 .st-key-m2_clear_loaded button:hover {{ background-color: color-mix(in srgb, {ACCENT} 14%, transparent); border-color: {ACCENT}; color: {ACCENT}; }}
 .st-key-m2_clear_loaded button:focus-visible {{ outline: 3px solid {ACCENT}; outline-offset: 2px; }}
-@media (max-width: 640px) {{ .st-key-m2_clear_loaded, .st-key-m2_clear_loaded button {{ width: 100%; }} }}
 """
-# Home buttons: the nav container becomes a row of two equal ~110px rectangles that stack on narrow screens.
-HOME_CARD_CSS = """
-.st-key-m2_home_nav { flex-direction: row; flex-wrap: wrap; gap: 24px; }
-.st-key-m2_open_visitor, .st-key-m2_open_experiment { flex: 1 1 280px; width: auto; min-width: 0; max-width: 100%; }
-.st-key-m2_open_visitor button, .st-key-m2_open_experiment button {
+# Home buttons: same stacked, centered layout and values as the Module 7 homepage (Pages/app_module7.py HOME_CSS + M7_STACK_CSS).
+BLUE, BLUE_DARK = "#1D5FD1", "#174DA8"   # Module 7's blue; white text on these is above 6:1
+HOME_CARD_CSS = f"""
+.st-key-m2_home_nav {{ flex-direction: column; flex-wrap: nowrap; gap: 24px; max-width: 560px; width: 100%; margin: 0 auto; }}
+.st-key-m2_open_visitor, .st-key-m2_open_experiment {{ flex: 0 0 auto; width: 100%; min-width: 0; max-width: 100%; }}
+.st-key-m2_open_visitor button, .st-key-m2_open_experiment button {{
     height: 110px; min-height: 110px; padding: 0.75rem 1.25rem; border-radius: 12px;
     display: flex; align-items: center; justify-content: center; text-align: center;
-}
-.st-key-m2_open_visitor button p, .st-key-m2_open_experiment button p {
-    font-size: 21px; font-weight: 700; line-height: 1.3; text-align: center; text-wrap: balance;
-}
-.st-key-m2_open_visitor button::after, .st-key-m2_open_experiment button::after { content: none; display: none; }
-@media (max-width: 640px) {
-    .st-key-m2_home_nav { flex-direction: column; flex-wrap: nowrap; gap: 16px; }
-    .st-key-m2_open_visitor, .st-key-m2_open_experiment { flex: 0 0 auto; width: 100%; }
-}
+}}
+.st-key-m2_open_visitor button p, .st-key-m2_open_experiment button p {{
+    font-size: 18px; font-weight: 500; line-height: 1.3; text-align: center; text-wrap: balance;   /* Module 7 homepage buttons use weight 500 */
+}}
+.st-key-m2_open_visitor button::after, .st-key-m2_open_experiment button::after {{ content: none; display: none; }}
+.st-key-m2_open_experiment button {{ background-color: {BLUE}; border-color: {BLUE}; }}
+.st-key-m2_open_experiment button:hover {{ background-color: {BLUE_DARK}; border-color: {BLUE_DARK}; }}
+.st-key-m2_open_experiment button:active {{ background-color: #123F8F; border-color: #123F8F; }}
+.st-key-m2_open_experiment button:focus-visible {{ box-shadow: 0 0 0 6px {BLUE}; }}
+@media (max-width: 640px) {{ .st-key-m2_home_nav {{ gap: 16px; }} }}
 """
-PAGE_CSS = "<style>" + HEADING_CSS + MODE_CSS + EXPANDER_CSS + BUTTON_CSS + HOME_CARD_CSS + LOADED_CSS + "</style>"
+RESULTS_CSS = """
+.st-key-m2_res_head { gap: 0; padding-bottom: 28px; }
+.st-key-m2_res_head h1 {
+    font-size: clamp(2.5rem, 8vw, 60px); font-weight: 800; line-height: 1.1; text-align: center; padding: 0; margin: 0;
+    color: inherit; overflow-wrap: anywhere;
+}
+.st-key-m2_res_head h2 {
+    font-size: clamp(1.4rem, 4.6vw, 2.4rem); font-weight: 600; line-height: 1.2; text-align: center; padding: 0; margin: 0;
+    color: inherit; opacity: 0.85; overflow-wrap: anywhere;
+}
+.st-key-m2_res_title { padding-bottom: 28px; }
+.st-key-m2_res_body h2 { text-align: center; font-size: clamp(1.7rem, 5.2vw, 2.4rem); font-weight: 800; line-height: 1.2; padding: 1.5rem 0 0.25rem; overflow-wrap: anywhere; }
+.st-key-m2_res_body h3 { text-align: center; font-size: clamp(1.4rem, 4.5vw, 1.9rem); font-weight: 700; padding-top: 1.5rem; }
+.st-key-m2_res_body h4 { text-align: left; font-size: 1.15rem; padding: 1.1rem 0 0.2rem; }
+.st-key-m2_res_body h5 { text-align: left; font-weight: 700; margin: 0; padding: 0.5rem 0 0.25rem; }
+.st-key-m2_res_body [data-testid="stMetricValue"] { font-size: 2rem; }
+.st-key-m2_res_body [data-testid="stMetric"] { text-align: left; }
+.st-key-m2_res_body [data-testid="stMetricLabel"] p, .st-key-m2_res_body [data-testid="stMetricLabel"] [data-testid="stMarkdownContainer"] {
+    white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+.st-key-m2_res_body [data-testid="stTable"] { overflow-x: auto; }
+.st-key-m2_res_body img { max-width: 100%; height: auto; }
+/* each numbered section is set off by a thin divider; the conclusion shares Module 7's shaded, bordered panel look */
+[class*="st-key-m2_res_sec_"] { border-top: 1px solid color-mix(in srgb, currentColor 16%, transparent); margin-top: 1.5rem; padding-top: 0.5rem; }
+.st-key-m2_res_conclusion {
+    background: color-mix(in srgb, currentColor 5%, transparent); border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+    border-radius: 16px; padding: 0.5rem 28px 28px; margin-top: 2rem;
+}
+@media (max-width: 640px) { .st-key-m2_res_conclusion { padding: 0.25rem 14px 18px; } }
+"""
+PAGE_CSS = "<style>" + HEADING_CSS + MODE_CSS + BUTTON_CSS + HOME_CARD_CSS + LOADED_CSS + RESULTS_CSS + "</style>"
 
 
 # Reads and checks the existing validation trials (read-only)
@@ -273,6 +283,11 @@ def init_state():
     ss.setdefault("m2_npz_gen", 0)                  # suffix of the NPZ uploader key; bumped so the same file can be chosen again
     ss.setdefault("m2_reset_count", 0)              # suffix of every calibration widget key; bumped by Reset All
     ss.setdefault("m2_unit_shown", "mm")
+    ss.setdefault("m2_exp", new_experiment())       # the visitor's experiment: plan, saved measurements (session only)
+    ss.setdefault("m2_planned", 20)                 # planned number of measurements
+    ss.setdefault("m2_img_gen", 0)                  # suffix of the measurement-image uploader key; bumped for each new trial
+    ss.setdefault("m2_confirm", None)               # pending confirmation: None / "restart" / "change_cal" / "reset_all"
+    ss.setdefault("m2_row_action", None)            # edit/delete in progress in the results table: None / "edit" / "delete"
 
 
 # Clears the temporary result and its confirmation
@@ -330,10 +345,6 @@ def go_to(page):
         for key, value in ss["m2_saved_inputs"].items():
             ss[key] = value
     ss["m2_page"] = page
-
-
-def matrix_table(matrix, digits):
-    return st.table([[f"{value:.{digits}f}" for value in row] for row in matrix])
 
 
 def kv_table(index_name, rows, columns):
@@ -549,13 +560,22 @@ def apply_detected_size():
         ss["m2_load_error"] = f"The detected resolution was not applied: {error}"
 
 
+def parse_pixels(text, label):
+    """A typed pixel count: digits only (no sign, decimal point or spaces). The range check stays in cf.with_image_size."""
+    text = (text or "").strip()
+    if not (text.isascii() and text.isdigit()):
+        raise cf.CalibrationFileError(f"{label} must be a whole number of pixels (digits only).")
+    return int(text)
+
+
 def apply_legacy_size():
     ss = st.session_state
     gen = ss["m2_npz_gen"]
-    width, height = ss.get(fk(f"legacy_w_{gen}")), ss.get(fk(f"legacy_h_{gen}"))
     try:
         if not ss.get(fk(f"legacy_ok_{gen}")):
             raise cf.CalibrationFileError("Tick the confirmation box first.")
+        width = parse_pixels(ss.get(fk(f"legacy_w_{gen}")), "The image width")
+        height = parse_pixels(ss.get(fk(f"legacy_h_{gen}")), "The image height")
         set_legacy_size(cf.with_image_size(legacy_base(), width, height))
         ss["m2_load_error"] = None
     except (cf.CalibrationFileError, TypeError, ValueError) as error:
@@ -677,38 +697,47 @@ def size_text(model):
     return f"{model['image_width']} × {model['image_height']} px"
 
 
+RES_AUTO = "Detect Automatically from Calibration Image"
+RES_MANUAL = "Enter Resolution Manually"
+
+
+def on_resolution_method():
+    """Switching method forgets whatever the other method had collected, so nothing unconfirmed can be applied later."""
+    ss = st.session_state
+    remove_legacy_photo()
+    for name in ("legacy_w", "legacy_h", "legacy_ok"):
+        ss.pop(fk(f"{name}_{ss['m2_npz_gen']}"), None)
+
+
 def legacy_resolution(pending):
-    """Older files have no image size: detect it from an original calibration photograph (primary) or enter it manually (fallback).
-    The whole section is shown only while the loaded file still lacks a resolution."""
+    """Older files have no image size: detect it from an original calibration photograph or enter it manually.
+    The whole section is shown only while the loaded file still lacks a resolution; only the chosen method's controls are drawn."""
     ss = st.session_state
     gen = ss["m2_npz_gen"]
-    st.warning("Missing image resolution. Choose one option below.")
-    option_a, option_b = st.columns(2)
-    with option_a.container(border=True):
-        st.markdown("**Upload Calibration Image**")
-        st.caption("Detect resolution automatically")
-        st.file_uploader("Upload Calibration Image", type=["jpg", "jpeg", "png"], key=f"m2_cal_photo_{ss['m2_reset_count']}_{gen}",
-                         on_change=on_legacy_photo, label_visibility="collapsed")
-        if ss["m2_legacy_photo_error"]:
-            st.error(ss["m2_legacy_photo_error"])
-        photo = ss["m2_legacy_photo"]
-        if photo is not None:
-            st.markdown(f"**{photo['name']}**  \nDetected: **{photo['width']} × {photo['height']} px**")
-            st.checkbox("I confirm this photograph was used for the original calibration and has not been resized or cropped since "
-                        "that calibration.", key=fk(f"photo_ok_{gen}"))
-            st.button("Use Detected Resolution", key="m2_photo_apply", on_click=apply_detected_size)
-    with option_b.container(border=True):
-        st.markdown("**Enter Resolution Manually**")
-        st.caption("Specify width and height")
-        with st.expander("Show manual entry"):
-            st.write("Enter the exact pixel size of the photographs the calibration was computed from, after EXIF rotation.")
+    with st.container(key="m2_res_section"):
+        with st.container(key="m2_res_title"):
+            st.markdown("**Calibration Image Resolution**")
+        st.write("Your saved calibration file does not include the original image resolution. Select how you would like to provide it.")
+        method = st.radio("Resolution method", [RES_AUTO, RES_MANUAL], key=fk(f"res_method_{gen}"), on_change=on_resolution_method,
+                          label_visibility="collapsed")
+        if method == RES_AUTO:
+            st.file_uploader("Upload an Original Calibration Image", type=["jpg", "jpeg", "png"],
+                             key=f"m2_cal_photo_{ss['m2_reset_count']}_{gen}", on_change=on_legacy_photo)
+            if ss["m2_legacy_photo_error"]:
+                st.error(ss["m2_legacy_photo_error"])
+            photo = ss["m2_legacy_photo"]
+            if photo is not None:
+                st.markdown(f"**{photo['name']}**  \nDetected: **{photo['width']} × {photo['height']} px**")
+                st.checkbox("I confirm this photograph was used for the original calibration and has not been resized or cropped since "
+                            "that calibration.", key=fk(f"photo_ok_{gen}"))
+                st.button("Use Detected Resolution", key="m2_photo_apply", on_click=apply_detected_size)
+        else:
+            st.write("Enter the original calibration image dimensions in pixels, after EXIF rotation.")
             c = st.columns(2)
-            c[0].number_input("Calibration image width (px)", min_value=cf.IMAGE_SIDE_LIMITS[0], max_value=cf.IMAGE_SIDE_LIMITS[1],
-                              value=None, step=1, placeholder="width", key=fk(f"legacy_w_{gen}"))
-            c[1].number_input("Calibration image height (px)", min_value=cf.IMAGE_SIDE_LIMITS[0], max_value=cf.IMAGE_SIDE_LIMITS[1],
-                              value=None, step=1, placeholder="height", key=fk(f"legacy_h_{gen}"))
-            st.checkbox("I confirm these are the exact dimensions of the photographs used for this calibration, and that I will "
-                        "measure with the same camera, lens and settings.", key=fk(f"legacy_ok_{gen}"))
+            c[0].text_input("Image width (px)", placeholder="width", key=fk(f"legacy_w_{gen}"))
+            c[1].text_input("Image height (px)", placeholder="height", key=fk(f"legacy_h_{gen}"))
+            st.checkbox("I confirm these are the original calibration image dimensions and that I will use the same camera, lens, "
+                        "and settings.", key=fk(f"legacy_ok_{gen}"))
             st.button("Apply Image Size", key="m2_legacy_apply", on_click=apply_legacy_size)
 
 
@@ -743,9 +772,14 @@ def loaded_notes(model):
 
 
 def loaded_file_card():
-    """Compact summary that replaces the uploader once a file is loaded; the name comes from session state, so it survives reruns."""
-    st.markdown(f":material/description: **{st.session_state['m2_load_name']}**")
-    st.caption(":material/check_circle: File uploaded and validated")
+    """Replaces the uploader's dropzone, inside the same container and under the same label: icon, filename, status and a ×."""
+    with st.container(key="m2_loaded_file"):
+        info, remove = st.columns([12, 1], vertical_alignment="center")
+        with info:
+            st.markdown(f":material/description: **{st.session_state['m2_load_name']}**")
+            st.caption(":material/check_circle: File uploaded and validated")
+        remove.button(":material/close:", key="m2_clear_loaded", on_click=ask_confirm, args=("remove_file",),
+                      help="Remove this file and clear its calibration", type="tertiary")
 
 
 def photo_summary(pending):
@@ -759,20 +793,19 @@ def photo_summary(pending):
         st.button("Remove Image", key="m2_photo_remove", on_click=remove_legacy_photo)
 
 
-def clear_calibration_button():
-    st.button("Clear Calibration", key="m2_clear_loaded", on_click=clear_loaded_calibration,
-              help="Remove this file and reset the Load Saved Calibration workflow.")
-
-
 def load_workflow():
     ss = st.session_state
     pending = ss["m2_load_pending"]
-    if pending is None:
-        st.file_uploader("Upload Calibration File (.npz)", type=["npz"], key=f"m2_cal_npz_{ss['m2_reset_count']}_{ss['m2_npz_gen']}",
-                         on_change=on_calibration_file)
-        st.caption("The file is validated before it can be activated.")
-    else:
-        loaded_file_card()
+    with st.container(key="m2_npz_box"):            # one container for both states, so it looks the same before and after upload
+        if pending is None:
+            st.file_uploader("Upload Calibration File (.npz)", type=["npz"],
+                             key=f"m2_cal_npz_{ss['m2_reset_count']}_{ss['m2_npz_gen']}", on_change=on_calibration_file)
+            st.caption("The file is validated before it can be activated.")
+        else:
+            with st.container(key="m2_npz_label"):
+                st.markdown("Upload Calibration File (.npz)")
+            loaded_file_card()
+    confirm_box("remove_file")
     if ss["m2_load_error"]:
         st.error(ss["m2_load_error"])
     if pending is None:
@@ -786,7 +819,6 @@ def load_workflow():
             with st.container(key="m2_loaded_notes"), st.expander("Calibration Details & Important Notes"):
                 loaded_notes(pending)
                 calibration_details(pending)
-    clear_calibration_button()                  # always the last control of Step 1
 
 
 # ---------------------------------------------------------------- Workflow B: calibrate a new camera
@@ -989,25 +1021,362 @@ def geometry_assumptions():
         )
 
 
-def measurement_section():
+# ---------------------------------------------------------------- visitor experiment (Steps 2-4)
+
+VALIDATION_MIN_MEASUREMENTS = 20     # a complete validation experiment: at least this many measurements ...
+VALIDATION_MIN_DISTANCE_CM = 200     # ... at camera-to-object distances greater than this
+MAX_PLANNED = 100
+NEW_OBJECT = "New Object"
+EXPORT_COLUMNS = [CSV_COLUMNS[0], "Object"] + CSV_COLUMNS[1:]
+CONFIRMS = {
+    "restart": ("Restart the experiment? This deletes your {n} saved measurement{s} and keeps your calibration.", "Restart Experiment"),
+    "change_cal": ("Change the calibration? This restarts the experiment and deletes your {n} saved measurement{s}.", "Restart and Change Calibration"),
+    "remove_file": ("Remove the calibration file? This clears its calibration, restarts the experiment and deletes your {n} saved measurement{s}.", "Remove File and Restart"),
+    "reset_all": ("Reset everything? This deletes your calibration and your {n} saved measurement{s}.", "Yes, Reset Everything"),
+}
+
+
+def request_scroll(anchor_id):
+    """Asks the next run to scroll to an anchor element: the existing one-shot scroll script, pointed at another anchor."""
+    st.session_state["m2_scroll_anchor"] = anchor_id
+
+
+def new_experiment():
+    return {"started": False, "finished": False, "results": [], "next_uid": 1}
+
+
+def normalized(name):
+    return " ".join(str(name).split()).casefold()
+
+
+def compute_measurement(points, distance, actual_width, actual_height, fx, fy):
+    """Estimated size and errors from four corners (top-left, top-right, bottom-right, bottom-left); values rounded to 2 decimals
+    like the validation CSV. The same equations as the original experiment."""
+    top_left, top_right, bottom_right, bottom_left = points
+    top_width = calculate_length(top_left, top_right, distance, fx, fy)
+    bottom_width = calculate_length(bottom_left, bottom_right, distance, fx, fy)
+    estimated_width = (top_width + bottom_width) / 2
+    left_height = calculate_length(top_left, bottom_left, distance, fx, fy)
+    right_height = calculate_length(top_right, bottom_right, distance, fx, fy)
+    estimated_height = (left_height + right_height) / 2
+    width_error = abs(estimated_width - actual_width)
+    height_error = abs(estimated_height - actual_height)
+    return {
+        "Estimated_Width_cm": round(float(estimated_width), 2), "Width_Error_cm": round(float(width_error), 2),
+        "Width_Error_Percent": round(float(width_error / actual_width * 100), 2),
+        "Estimated_Height_cm": round(float(estimated_height), 2), "Height_Error_cm": round(float(height_error), 2),
+        "Height_Error_Percent": round(float(height_error / actual_height * 100), 2),
+    }
+
+
+def visitor_rows():
+    """The saved measurements as numbered rows (the same column names as the validation CSV, plus Object)."""
+    rows = []
+    for number, record in enumerate(st.session_state["m2_exp"]["results"], start=1):
+        row = {column: record[column] for column in CSV_COLUMNS if column != "Trial"}
+        row.update(Trial=number, Object=record["Object"])
+        rows.append(row)
+    return rows
+
+
+def results_csv(rows):
+    def safe(value):    # a leading = + - @ would be read as a formula by spreadsheet programs
+        return "'" + value if isinstance(value, str) and value[:1] in ("=", "+", "-", "@") else value
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(EXPORT_COLUMNS)
+    for row in rows:
+        writer.writerow([safe(row[column]) for column in EXPORT_COLUMNS])
+    return buffer.getvalue().encode("utf-8")
+
+
+# ---- callbacks
+
+def clear_measurement_form():
+    """Empties the object, distance and image of the current trial; the calibration and saved measurements are kept."""
     ss = st.session_state
-    visitor_calibration = ss["m2_visitor_calibration"]
-    st.subheader("Step 2: Measure an Object")
-    geometry_assumptions()
-    if visitor_calibration is not None:
-        size = (f"{visitor_calibration['image_width']} × {visitor_calibration['image_height']} px"
-                if visitor_calibration.get("image_width") else "unknown resolution")
-        st.caption(f"Using active calibration: {size}")
-    if visitor_calibration is None:
-        st.info("First load a saved calibration or calibrate your camera in Step 1 above. After a calibration is active, "
-                "upload a photograph of the object, enter the camera-to-object distance and select its four corners. "
-                "The measurement controls stay disabled until then.")
+    ss["m2_object_name"] = ""
+    ss["m2_actual_width"] = None
+    ss["m2_actual_height"] = None
+    ss["m2_distance"] = None
+    ss["m2_same_object"] = NEW_OBJECT
+    ss["m2_img_gen"] += 1
+    if "m2_click_generation" in ss:         # a statement, not a conditional expression: Streamlit would print its None result
+        reset_points()
+    else:
+        clear_live_result()
+    ss.pop("m2_result_notice", None)
+
+
+def start_experiment():
+    st.session_state["m2_exp"]["started"] = True
+
+
+def finish_experiment():
+    """Calculate Experiment Results / Finish Early & View Results: reveals Step 4."""
+    st.session_state["m2_exp"]["finished"] = True
+    request_scroll("m2-results-anchor")
+
+
+def resume_experiment():
+    ss = st.session_state
+    ss["m2_exp"]["finished"] = False
+    if len(ss["m2_exp"]["results"]) >= ss["m2_planned"] and ss["m2_planned"] < MAX_PLANNED:
+        ss["m2_planned"] += 1
+    request_scroll("m2-object-anchor")
+
+
+def add_measurement():
+    ss = st.session_state
+    ss["m2_planned"] = min(MAX_PLANNED, ss["m2_planned"] + 1)
+    request_scroll("m2-object-anchor")
+
+
+def save_result():
+    """Saves the calculated measurement once: the live result is taken out of the session first, and its id is checked."""
+    ss = st.session_state
+    result = ss.pop("m2_live_result", None)
+    if result is None:
         return
-    visitor_measurement(visitor_calibration)
+    exp = ss["m2_exp"]
+    if any(saved["uid"] == result["uid"] for saved in exp["results"]):
+        return
+    exp["results"].append(result)
+    clear_measurement_form()
+    ss["m2_saved_notice"] = f"Measurement {len(exp['results'])} saved."
+    request_scroll("m2-object-anchor")
+
+
+def apply_same_object():
+    ss = st.session_state
+    choice = ss.get("m2_same_object")
+    if choice is None:
+        return
+    if choice == NEW_OBJECT:                # start a new object: empty the object fields (the distance and image are kept)
+        ss["m2_object_name"] = ""
+        ss["m2_actual_width"] = None
+        ss["m2_actual_height"] = None
+        clear_live_result()
+        return
+    for record in reversed(ss["m2_exp"]["results"]):
+        if normalized(record["Object"]) == choice:
+            ss["m2_object_name"] = record["Object"]
+            ss["m2_actual_width"] = record["Actual_Width_cm"]
+            ss["m2_actual_height"] = record["Actual_Height_cm"]
+            break
+    clear_live_result()
+
+
+def run_confirmed(kind):
+    ss = st.session_state
+    if kind == "reset_all":
+        reset_all()
+        return
+    if kind == "remove_file":
+        clear_loaded_calibration()
+    ss["m2_exp"] = new_experiment()         # restart: saved measurements and the plan go, the calibration stays
+    ss["m2_confirm"] = None
+    ss["m2_row_action"] = None
+    clear_measurement_form()
+
+
+def ask_confirm(kind):
+    ss = st.session_state
+    if ss["m2_exp"]["results"]:
+        ss["m2_confirm"] = kind
+    else:
+        run_confirmed(kind)                 # nothing saved yet, so nothing to lose
+
+
+def cancel_confirm():
+    st.session_state["m2_confirm"] = None
+
+
+def confirm_box(kind):
+    ss = st.session_state
+    if ss.get("m2_confirm") != kind:
+        return
+    n = len(ss["m2_exp"]["results"])
+    message, label = CONFIRMS[kind]
+    st.warning(message.format(n=n, s="" if n == 1 else "s"))
+    yes, no = st.columns(2)
+    yes.button(label, key=f"m2_confirm_yes_{kind}", type="primary", on_click=run_confirmed, args=(kind,), width="stretch")
+    no.button("Cancel", key=f"m2_confirm_no_{kind}", on_click=cancel_confirm, width="stretch")
+
+
+def pick_row(action):
+    st.session_state["m2_row_action"] = action
+
+
+def save_edit(uid):
+    ss = st.session_state
+    record = next((r for r in ss["m2_exp"]["results"] if r["uid"] == uid), None)
+    if record is None:
+        return
+    name = " ".join(str(ss.get(f"m2_edit_name_{uid}") or "").split())
+    values = [ss.get(f"m2_edit_{key}_{uid}") for key in ("width", "height", "distance")]
+    if not name or any(v is None or v <= 0 for v in values):
+        ss["m2_row_error"] = "Enter an object name and positive width, height and distance."
+        return
+    width, height, distance = values
+    record.update(Object=name, Actual_Width_cm=width, Actual_Height_cm=height, Distance_cm=distance,
+                  **compute_measurement(record["points"], distance, width, height, record["fx"], record["fy"]))
+    ss["m2_row_error"] = None
+    ss["m2_row_action"] = None
+
+
+def delete_row(uid):
+    ss = st.session_state
+    ss["m2_exp"]["results"] = [r for r in ss["m2_exp"]["results"] if r["uid"] != uid]
+    ss["m2_row_action"] = None
+    ss.pop("m2_row_pick", None)
+    if not ss["m2_exp"]["results"]:
+        ss["m2_exp"]["finished"] = False    # nothing left to show results for
+
+
+# ---- Step 2
+
+def experiment_section():
+    ss = st.session_state
+    calibration = ss["m2_visitor_calibration"]
+    exp = ss["m2_exp"]
+    st.subheader("Step 2: Configure Your Experiment")
+    if calibration is None:
+        st.info("Load or calibrate your camera in Step 1 first. Once a calibration is active, you can set up and run your experiment.")
+        return
+    size = (f"{calibration['image_width']} × {calibration['image_height']} px" if calibration.get("image_width") else "unknown resolution")
+    st.caption(f"Using active calibration: {size}")
+    st.write(f"Measure a single object, or run a complete validation experiment. A complete validation experiment needs at least "
+             f"{VALIDATION_MIN_MEASUREMENTS} measurements at camera-to-object distances greater than {VALIDATION_MIN_DISTANCE_CM} cm. "
+             "Shorter distances are fine for general object measurement.")
+    done = len(exp["results"])
+    ss["m2_planned"] = max(ss["m2_planned"], done, 1)
+    st.number_input("Number of measurements", min_value=max(1, done), max_value=MAX_PLANNED, step=1, key="m2_planned")
+    if not exp["started"]:
+        st.button("Start Experiment", key="m2_start", type="primary", on_click=start_experiment)
+        return
+    st.button("Restart Experiment", key="m2_restart", on_click=ask_confirm, args=("restart",))
+    confirm_box("restart")
+    measure_step(calibration)
+    if exp["finished"] and exp["results"]:
+        results_section()
+
+
+# ---- Step 3
+
+def measure_step(calibration):
+    ss = st.session_state
+    exp = ss["m2_exp"]
+    done, planned = len(exp["results"]), ss["m2_planned"]
+    st.html('<div id="m2-object-anchor"></div>')
+    st.subheader("Step 3: Measure Your Objects")
+    if "m2_saved_notice" in ss:
+        st.success(ss.pop("m2_saved_notice"))
+    st.progress(min(1.0, done / planned))
+    st.caption(f"{done} of {planned} measurements completed")
+    if exp["finished"]:
+        st.info("Your experiment results are shown below. Use Continue Measuring at the bottom of Step 4 to add more measurements.")
+    elif done >= planned:
+        st.markdown("#### Measurements Completed")
+        st.write("All planned measurements have been saved. You can now calculate your experiment results or add another measurement.")
+        calculate, add = st.columns(2)
+        calculate.button("Calculate Experiment Results", key="m2_calc_results", type="primary", on_click=finish_experiment, width="stretch")
+        add.button("Add Another Measurement", key="m2_add_more", on_click=add_measurement, disabled=planned >= MAX_PLANNED, width="stretch")
+    else:
+        st.markdown(f"#### Measurement {done + 1} of {planned}")
+        geometry_assumptions()
+        visitor_measurement(calibration)
+        if done:
+            st.button("Finish Early & View Results", key="m2_finish", on_click=finish_experiment)
+
+
+# ---- Step 4
+
+def results_section():
+    ss = st.session_state
+    exp = ss["m2_exp"]
+    rows = visitor_rows()
+    done, planned = len(rows), ss["m2_planned"]
+    qualifying = sum(1 for row in rows if row["Distance_cm"] > VALIDATION_MIN_DISTANCE_CM)
+    stats = percent_stats(rows)
+    objects = {normalized(row["Object"]) for row in rows}
+    st.html('<div id="m2-results-anchor"></div>')
+    st.subheader("Step 4: Experiment Results")
+    with st.container(key="m2_res_body"):
+        if done >= planned:
+            plan = f"complete ({done} of {planned} measurements)"
+        elif exp["finished"]:
+            plan = f"finished early ({done} of {planned} planned measurements)"
+        else:
+            plan = f"in progress ({done} of {planned} planned measurements)"
+        st.write(f"**Measurement plan:** {plan}")
+        if qualifying >= VALIDATION_MIN_MEASUREMENTS:
+            st.success(f"Full validation requirement met: {qualifying} measurements at distances greater than {VALIDATION_MIN_DISTANCE_CM} cm.")
+        for column, card in zip(st.columns(2), (("Measurements Completed", f"{done}", f"of {planned} planned"),
+                                                ("Distinct Objects", f"{len(objects)}", "by object name"))):
+            with column:
+                metric_card(*card)
+        for column, card in zip(st.columns(2), (("Mean Width Percentage Error", f"{stats['Width']['mpe']:.2f}%", f"across {done} measurement{'' if done == 1 else 's'}"),
+                                                ("Mean Height Percentage Error", f"{stats['Height']['mpe']:.2f}%", f"across {done} measurement{'' if done == 1 else 's'}"))):
+            with column:
+                metric_card(*card)
+
+        st.markdown("#### Measurement Results")
+        kv_table("Trial", [[
+            r["Trial"], r["Object"], r["Image"], f"{r['Distance_cm']:g}",
+            f"{r['Actual_Width_cm']:.2f}", f"{r['Estimated_Width_cm']:.2f}", f"{r['Width_Error_cm']:.2f}", f"{r['Width_Error_Percent']:.2f}",
+            f"{r['Actual_Height_cm']:.2f}", f"{r['Estimated_Height_cm']:.2f}", f"{r['Height_Error_cm']:.2f}", f"{r['Height_Error_Percent']:.2f}",
+        ] for r in rows], ["Object", "Image", "Distance (cm)", "Actual width (cm)", "Estimated width (cm)", "Width error (cm)",
+                           "Width error (%)", "Actual height (cm)", "Estimated height (cm)", "Height error (cm)", "Height error (%)"])
+        st.download_button("Download Results (CSV)", results_csv(rows), file_name="module2_experiment_results.csv", mime="text/csv",
+                           key="m2_results_download", icon=":material/download:", on_click="ignore")
+
+        st.markdown("#### Percentage Error per Measurement")
+        trial_chart(rows)
+
+        st.markdown("#### Error Statistics")
+        st.table({"Statistic": ["Mean Absolute Error", "Mean Percentage Error", "Standard Deviation of Percentage Error", "RMSE"],
+                  **{dimension: [f"{stats[dimension]['mae']:.2f} cm", f"{stats[dimension]['mpe']:.2f} %",
+                                 f"{stats[dimension]['sd']:.2f} %", f"{stats[dimension]['rmse']:.2f} cm"]
+                     for dimension in ("Width", "Height")}})
+
+        st.markdown("#### Edit or Delete a Measurement")
+        uids = [record["uid"] for record in exp["results"]]
+        labels = {record["uid"]: f"Measurement {number} · {record['Object']} · {record['Distance_cm']:g} cm"
+                  for number, record in enumerate(exp["results"], start=1)}
+        uid = st.selectbox("Measurement", uids, format_func=labels.get, key="m2_row_pick", on_change=pick_row, args=(None,))
+        edit, delete = st.columns(2)
+        edit.button("Edit", key="m2_row_edit", on_click=pick_row, args=("edit",), width="stretch")
+        delete.button("Delete", key="m2_row_delete", on_click=pick_row, args=("delete",), width="stretch")
+        record = next((r for r in exp["results"] if r["uid"] == uid), None)
+        action = ss["m2_row_action"]
+        if record is not None and action == "edit":
+            with st.container(border=True):
+                st.text_input("Object Name", value=record["Object"], key=f"m2_edit_name_{uid}")
+                width_column, height_column = st.columns(2)
+                width_column.number_input("Actual Width (cm)", value=float(record["Actual_Width_cm"]), min_value=0.0, step=0.1,
+                                          key=f"m2_edit_width_{uid}")
+                height_column.number_input("Actual Height (cm)", value=float(record["Actual_Height_cm"]), min_value=0.0, step=0.1,
+                                           key=f"m2_edit_height_{uid}")
+                st.number_input("Camera-to-Object Distance (cm)", value=float(record["Distance_cm"]), min_value=0.0, step=1.0,
+                                key=f"m2_edit_distance_{uid}")
+                if ss.get("m2_row_error"):
+                    st.error(ss["m2_row_error"])
+                save, cancel = st.columns(2)
+                save.button("Save Changes", key="m2_edit_save", type="primary", on_click=save_edit, args=(uid,), width="stretch")
+                cancel.button("Cancel", key="m2_edit_cancel", on_click=pick_row, args=(None,), width="stretch")
+                st.caption("The estimated size and errors are recalculated from the corners you selected. To change the corners, "
+                           "delete this measurement and measure it again.")
+        elif record is not None and action == "delete":
+            st.warning(f"Delete {labels[uid]}? This cannot be undone.")
+            yes, no = st.columns(2)
+            yes.button("Delete Measurement", key="m2_delete_yes", type="primary", on_click=delete_row, args=(uid,), width="stretch")
+            no.button("Cancel", key="m2_delete_no", on_click=pick_row, args=(None,), width="stretch")
 
 
 def visitor_measurement(visitor_calibration):
-    """The existing measurement workflow, shown only while a visitor calibration is active."""
+    """One measurement trial: object information, image upload, four-corner selection and calculation (Step 3)."""
+    ss = st.session_state
     visitor_camera_matrix = visitor_calibration["camera_matrix"]
     visitor_distortion_coefficients = visitor_calibration["distortion_coefficients"]
     visitor_fx = visitor_camera_matrix[0, 0]
@@ -1015,10 +1384,20 @@ def visitor_measurement(visitor_calibration):
 
     st.subheader("Object Information")
 
+    # Reuses the name and size of an object that was already measured (for example at another distance)
+    saved = {}
+    for record in ss["m2_exp"]["results"]:
+        saved.setdefault(normalized(record["Object"]), record["Object"])
+    if saved:
+        st.caption("Select a previously measured object to reuse its dimensions, or select New Object.")
+        st.selectbox("Select Object", [NEW_OBJECT] + list(saved), format_func=lambda key: saved.get(key, key), key="m2_same_object",
+                     on_change=apply_same_object)
+
     # Gets the object information
     object_name = st.text_input("Object Name", key="m2_object_name", on_change=clear_live_result)
 
-    actual_width = st.number_input(
+    width_column, height_column = st.columns(2)
+    actual_width = width_column.number_input(
         "Actual Width (cm)",
         value=None,
         placeholder="0.00",
@@ -1028,7 +1407,7 @@ def visitor_measurement(visitor_calibration):
         on_change=clear_live_result
     )
 
-    actual_height = st.number_input(
+    actual_height = height_column.number_input(
         "Actual Height (cm)",
         value=None,
         placeholder="0.00",
@@ -1050,6 +1429,9 @@ def visitor_measurement(visitor_calibration):
         key="m2_distance",
         on_change=clear_live_result
     )
+    if distance is not None and 0 < distance <= VALIDATION_MIN_DISTANCE_CM:
+        st.caption(f"Fine for general measurement. Only distances greater than {VALIDATION_MIN_DISTANCE_CM} cm count toward the full "
+                   "validation requirement.")
 
     st.button("Reset Inputs", on_click=reset_inputs)
 
@@ -1065,8 +1447,11 @@ def visitor_measurement(visitor_calibration):
     uploaded_image = st.file_uploader(
         "Upload Measurement Image",
         type=["jpg", "jpeg", "png"],
+        key=f"m2_meas_img_{ss['m2_reset_count']}_{ss['m2_img_gen']}",
         on_change=reset_points
     )
+    st.caption(f"JPG, JPEG or PNG, up to {st.get_option('server.maxUploadSize')} MB. The photograph must be exactly "
+               f"{visitor_calibration['image_width']} × {visitor_calibration['image_height']} px.")
 
     if uploaded_image is not None:
 
@@ -1179,57 +1564,46 @@ def visitor_measurement(visitor_calibration):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2, cv2.LINE_AA
             )
 
-        # Displays the resized clickable image
+        # Displays the resized clickable image. The component keeps one stable key, so it is never re-created (a new key for every
+        # click re-mounted it and the image vanished); a click is recognised as new by its timestamp.
         coordinates = streamlit_image_coordinates(
             display_image,
-            key=f"m2_measurement_image_{st.session_state.m2_click_generation}"
+            key="m2_measurement_image"
         )
 
         # Converts display coordinates to original coordinates
-        if coordinates is not None and len(points) < 4:
-            original_x = coordinates["x"] / display_scale
-            original_y = coordinates["y"] / display_scale
-            points.append((original_x, original_y))
-
-            # Prevents the consumed click from being reused on reruns
-            st.session_state.m2_click_generation += 1
-            st.rerun()
+        if coordinates is not None and coordinates.get("unix_time") != st.session_state.get("m2_last_click"):
+            # The component keeps returning its last click, so each click is handled once (Reset Points never re-adds an old one)
+            st.session_state["m2_last_click"] = coordinates.get("unix_time")
+            if len(points) < 4:
+                original_x = coordinates["x"] / display_scale
+                original_y = coordinates["y"] / display_scale
+                points.append((original_x, original_y))
+                st.rerun()
 
         if st.button("Calculate Measurement", disabled=len(points) != 4):
-            if any(value is None or value <= 0 for value in (distance, actual_width, actual_height)):
+            if not str(object_name or "").strip():
+                st.error("Enter an object name.")
+            elif any(value is None or value <= 0 for value in (distance, actual_width, actual_height)):
                 st.error("Enter a positive distance, actual width, and actual height.")
             else:
-                top_left, top_right, bottom_right, bottom_left = points
-
-                # Calculates the estimated width
-                top_width = calculate_length(top_left, top_right, distance, visitor_fx, visitor_fy)
-                bottom_width = calculate_length(bottom_left, bottom_right, distance, visitor_fx, visitor_fy)
-                estimated_width = (top_width + bottom_width) / 2
-
-                # Calculates the estimated height
-                left_height = calculate_length(top_left, bottom_left, distance, visitor_fx, visitor_fy)
-                right_height = calculate_length(top_right, bottom_right, distance, visitor_fx, visitor_fy)
-                estimated_height = (left_height + right_height) / 2
-
-                # Calculates the absolute and percentage errors
-                width_error = abs(estimated_width - actual_width)
-                height_error = abs(estimated_height - actual_height)
-                width_error_percent = width_error / actual_width * 100
-                height_error_percent = height_error / actual_height * 100
-
-                # Stores a temporary snapshot of the completed measurement
+                # Stores a temporary snapshot of the completed measurement; Save & Next Measurement keeps it
+                measured = compute_measurement(points, distance, actual_width, actual_height, visitor_fx, visitor_fy)
                 clear_live_result()
-                st.session_state.m2_live_result = {
+                exp = ss["m2_exp"]
+                uid = exp["next_uid"]
+                exp["next_uid"] += 1
+                ss.m2_live_result = {
+                    "uid": uid,
+                    "Object": " ".join(object_name.split()),
                     "Image": uploaded_image.name,
                     "Distance_cm": distance,
                     "Actual_Width_cm": actual_width,
-                    "Estimated_Width_cm": estimated_width,
-                    "Width_Error_cm": width_error,
-                    "Width_Error_Percent": width_error_percent,
                     "Actual_Height_cm": actual_height,
-                    "Estimated_Height_cm": estimated_height,
-                    "Height_Error_cm": height_error,
-                    "Height_Error_Percent": height_error_percent
+                    **measured,
+                    "points": [tuple(point) for point in points],
+                    "fx": float(visitor_fx),
+                    "fy": float(visitor_fy),
                 }
 
         if "m2_result_notice" in st.session_state:
@@ -1239,7 +1613,7 @@ def visitor_measurement(visitor_calibration):
             result = st.session_state.m2_live_result
 
             # Displays the measurement results
-            st.subheader("Measurement Results")
+            st.subheader("Current Measurement Results")
             width_column, height_column = st.columns(2)
             with width_column:
                 st.metric("Estimated Width (cm)", f"{result['Estimated_Width_cm']:.2f}")
@@ -1252,7 +1626,9 @@ def visitor_measurement(visitor_calibration):
                 st.metric("Height Error (cm)", f"{result['Height_Error_cm']:.2f}")
                 st.metric("Height Error (%)", f"{result['Height_Error_Percent']:.2f}")
 
-            st.button("Discard Result", on_click=discard_result)
+            save_column, discard_column = st.columns(2)
+            save_column.button("Save & Next Measurement", key="m2_save_result", type="primary", on_click=save_result, width="stretch")
+            discard_column.button("Discard Result", on_click=discard_result, width="stretch")
 
 
 def page_headings(title, subtitle=None, anchor=None, variant=None):
@@ -1264,13 +1640,37 @@ def page_headings(title, subtitle=None, anchor=None, variant=None):
                 st.header(subtitle, anchor=False)
 
 
+def locked_calibration():
+    """Step 1 once measurements are saved: the calibration stays fixed; changing it restarts the experiment."""
+    active = st.session_state["m2_visitor_calibration"]
+    n = len(st.session_state["m2_exp"]["results"])
+    size = f"{active['image_width']} × {active['image_height']} px" if active and active.get("image_width") else "unknown resolution"
+    st.info(f"Calibration in use for this experiment: {size}. Changing it restarts the experiment and deletes your {n} saved measurement"
+            f"{'' if n == 1 else 's'}.")
+    st.button("Change Calibration", key="m2_change_cal", on_click=ask_confirm, args=("change_cal",))
+    confirm_box("change_cal")
+
+
 def visitor_page():
     page_headings(VISITOR_TITLE, anchor="m2-visitor-heading", variant="visitor")
     st.subheader("Step 1: Calibrate Your Camera")
-    calibrate_workflow()
+    if st.session_state["m2_exp"]["results"] and st.session_state["m2_visitor_calibration"] is not None:
+        locked_calibration()
+    else:
+        calibrate_workflow()
 
-    measurement_section()
-    st.button("Reset All", key="m2_reset_all", on_click=reset_all)
+    experiment_section()
+    exp = st.session_state["m2_exp"]
+    if exp["finished"] and exp["results"] and st.session_state["m2_visitor_calibration"] is not None:
+        continue_column, reset_column = st.columns(2)       # bottom of Step 4
+        continue_column.button("Continue Measuring", key="m2_continue", type="primary", on_click=resume_experiment, width="stretch")
+        reset_column.button("Reset All", key="m2_reset_all", on_click=ask_confirm, args=("reset_all",), width="stretch")
+    else:
+        st.button("Reset All", key="m2_reset_all", on_click=ask_confirm, args=("reset_all",))
+    confirm_box("reset_all")
+    target = st.session_state.pop("m2_scroll_anchor", None)
+    if target:                                  # last element, so the anchors have rendered before the script runs
+        st.html(SCROLL_TO_PHOTO_JS.replace("m2-cal-photo-anchor", target), unsafe_allow_javascript=True)
 
 
 def home_page():
@@ -1284,209 +1684,286 @@ def home_page():
 
 
 def home_buttons():
-    st.button("Calibrate Your Camera & Measure an Object", key="m2_open_visitor", on_click=go_to, args=("visitor",), width="stretch")
-    st.button("View My Experiment & Results", key="m2_open_experiment", on_click=go_to, args=("experiment",), width="stretch")
+    st.button("View My Experiments & Results", key="m2_open_experiment", on_click=go_to, args=("experiment",), width="stretch")
+    st.button("Run Your Own Experiment", key="m2_open_visitor", on_click=go_to, args=("visitor",), width="stretch")
 
 
 # ---------------------------------------------------------------- saved experiment (read-only)
 
-def show_calibration_reference():
-    with st.container(key="m2_calib_ref"), st.expander(CALIB_EXPANDER_LABEL):
-        st.write(
-            "These parameters come from my own smartphone calibration and produced the 20 validation measurements shown "
-            "below. They are reference data only and are not used for visitor measurements."
-        )
-        st.subheader("Intrinsic Parameters")
-        st.write("**Camera intrinsic matrix K (3×3, pixels)**")
-        matrix_table(experiment_camera_matrix, 2)
-        st.table({
-            "Parameter": ["fx", "fy", "cx", "cy"],
-            "Value (pixels)": [f"{experiment_fx:.2f}", f"{experiment_fy:.2f}",
-                               f"{experiment_camera_matrix[0, 2]:.2f}", f"{experiment_camera_matrix[1, 2]:.2f}"],
-        })
-        st.write("**Distortion coefficients**")
-        st.table({
-            "Coefficient": ["k1", "k2", "p1", "p2", "k3"],
-            "Value": [f"{value:.5f}" for value in experiment_distortion_coefficients.flatten()],
-        })
-        st.subheader("Calibration Error")
-        st.table({
-            "Error measure (pixels)": ["RMS reprojection error (saved in the calibration file)",
-                                       "Mean reprojection error (from my original report)"],
-            "Value": [f"{float(rms_error):.4f}", f"{MEAN_REPROJECTION_ERROR_PX:.3f}"],
-        })
-        st.caption("The RMS error weights large corner errors more heavily than the mean error, so it is always at least as large "
-                   "as the mean. The two values describe the same calibration and must not be confused. The mean error is "
-                   "not stored in the calibration file; it is quoted from my original calibration report.")
+def display_image(name, caption):
+    """One saved display photograph (original, EXIF-oriented copy). A missing file is reported instead of hidden."""
+    path = DISPLAY_DIR / name
+    if path.is_file():
+        st.image(str(path), caption=caption, width="stretch")
+    else:
+        st.warning(f"Display image {name} is unavailable.")
 
 
-def image_row(items, per_row=3):
-    """items: (file name in display/, caption). Missing files are reported instead of hidden."""
-    for start in range(0, len(items), per_row):
-        chunk = items[start:start + per_row]
-        for column, (name, caption) in zip(st.columns(per_row), chunk):
-            with column:
-                path = DISPLAY_DIR / name
-                if path.is_file():
-                    st.image(str(path), caption=caption, width="stretch")
-                else:
-                    st.warning(f"Display image {name} is unavailable.")
+def image_row(items, per_row=2):
+    """items: (file name in display/, caption)."""
+    for column, (name, caption) in zip(st.columns(per_row), items):
+        with column:
+            display_image(name, caption)
 
 
-def show_experiment():
-    st.header("My Experiment & Results", anchor="m2-experiment-heading")
-    st.caption("Read-only. These results come from my saved calibration and validation files; nothing on this page can change them.")
+def metric_card(label, value, note=None):
+    with st.container(border=True):
+        st.metric(label, value)
+        if note:
+            st.caption(note)
 
-    try:
-        rows = read_validation_rows()
-    except (OSError, ValueError, csv.Error, TypeError) as error:
-        st.error(f"Validation results could not be loaded: {error}")
-        back_button("m2_back_bottom", go_to, ("home",))
-        return
-    trial_count = len(rows)
-    distances = sorted({float(row["Distance_cm"]) for row in rows})
 
-    # A. Experiment overview
-    st.subheader("A. Experiment Overview")
-    st.write(
-        "**Assignment objective:** (1) calibrate a smartphone camera with OpenCV, (2) implement perspective projection "
-        "equations that estimate the real-world 2D dimensions of an object from an image, and (3) validate the method at a "
-        "measured camera-to-object distance greater than 2 m using 20 different object measurements, reporting error statistics."
-    )
-    st.write(
-        f"**Completed experiment:** I calibrated my smartphone camera from checkerboard photographs, then photographed five "
-        f"objects at four distances ({', '.join(f'{d:g}' for d in distances)} cm), giving {trial_count} measurements. For each "
-        "photograph I selected the object's four corners by hand, computed width and height with the perspective-projection "
-        "equations, and compared them with the measured dimensions of the object."
-    )
-
-    # B. Calibration setup
-    st.subheader("B. Camera Calibration Setup")
-    st.write("**Camera:** iPhone 17 Pro Max, 1× main camera")
-    st.caption("The photographs' EXIF data lists the iPhone 17 Pro Max main lens (6.765 mm, f/1.78) for both the calibration and "
-               "the measurement photographs.")
-    columns_n, rows_n = int(calibration["checkerboard_columns"]), int(calibration["checkerboard_rows"])
-    st.write(f"**Checkerboard:** {columns_n + 1} × {rows_n + 1} physical squares, {columns_n} × {rows_n} inner corners, "
-             f"{float(calibration['square_size_mm']):g} mm squares")
-    st.write(f"**Calibration photographs:** {CALIBRATION_PHOTOS_CAPTURED} captured, {int(calibration['successful_images'])} accepted "
-             "(the checkerboard corners were detected in 18 photographs)")
-    st.write("**Photograph resolution:** 4284 × 5712 pixels (portrait, EXIF orientation applied)")
-    st.caption("The measurement photographs use the same resolution, so the saved focal lengths apply to them unchanged.")
-
-    # C. Calibration results
-    st.subheader("C. Calibration Results")
-    show_calibration_reference()
-
-    # D. Methodology
-    st.subheader("D. Measurement Methodology")
-    st.markdown(
-        "1. **Lens distortion correction:** each photograph is undistorted with the saved camera matrix and distortion "
-        "coefficients.\n"
-        "2. **Four-corner selection:** the object's corners are clicked in the order top-left, top-right, bottom-right, "
-        "bottom-left.\n"
-        "3. **Known camera-to-object distance:** the distance Z from the camera to the object's plane was measured and entered.\n"
-        "4. **Perspective projection:** for two image points the real-world length between them is"
-    )
-    st.latex(r"L = Z\,\sqrt{\left(\dfrac{u_2-u_1}{f_x}\right)^2 + \left(\dfrac{v_2-v_1}{f_y}\right)^2}")
-    st.markdown(
-        "5. **Width** is the mean of the top-edge and bottom-edge lengths.\n"
-        "6. **Height** is the mean of the left-edge and right-edge lengths.\n"
-        "7. **Averaging opposite edges** reduces the effect of small errors in individual corner positions.\n"
-        "8. **Errors** are the absolute difference from the measured dimension, and that difference as a percentage of it."
-    )
-    st.caption("The method treats the object as a flat face perpendicular to the optical axis at the entered distance. All lengths "
-               "are in centimetres.")
-
-    # E. Validation experiment
-    st.subheader("E. Validation Experiment")
-    objects = {}
-    for row in rows:
-        objects.setdefault((float(row["Actual_Width_cm"]), float(row["Actual_Height_cm"])), len(objects) + 1)
-    st.write(f"{len(objects)} objects were each measured at {len(distances)} distances, all greater than 2 m: "
-             f"{trial_count} measurements in total.")
-    kv_table("Trial", [[
-        r["Trial"], f"Object {objects[(float(r['Actual_Width_cm']), float(r['Actual_Height_cm']))]}",
-        f"{float(r['Distance_cm']):g}",
-        f"{float(r['Actual_Width_cm']):.2f}", f"{float(r['Estimated_Width_cm']):.2f}", f"{float(r['Width_Error_Percent']):.2f}",
-        f"{float(r['Actual_Height_cm']):.2f}", f"{float(r['Estimated_Height_cm']):.2f}", f"{float(r['Height_Error_Percent']):.2f}",
-    ] for r in rows], ["Object", "Distance (cm)", "Actual width (cm)", "Estimated width (cm)", "Width error (%)",
-                       "Actual height (cm)", "Estimated height (cm)", "Height error (%)"])
-    st.caption("Values are read from measurement_results.csv, which this page cannot modify. Objects are numbered in the order "
-               "they were measured.")
-    st.bar_chart(pd.DataFrame({
-        "Trial": [int(r["Trial"]) for r in rows],
-        "Width error (%)": [float(r["Width_Error_Percent"]) for r in rows],
-        "Height error (%)": [float(r["Height_Error_Percent"]) for r in rows],
-    }).set_index("Trial"), x_label="Trial", y_label="Percentage error (%)")
-
-    # F. Error statistics
-    st.subheader("F. Error Statistics")
-    statistics = {"Statistic": ["Mean Absolute Error", "Mean Percentage Error", "Standard Deviation of Percentage Error", "RMSE"]}
-    underestimated = {}
+def percent_stats(rows):
+    """Mean absolute error, mean percentage error, SD of the percentage error and RMSE per dimension, from the saved CSV."""
+    out = {}
     for dimension in ("Width", "Height"):
         errors = np.array([float(row[f"{dimension}_Error_cm"]) for row in rows])
         percent_errors = np.array([float(row[f"{dimension}_Error_Percent"]) for row in rows])
-        statistics[dimension] = [f"{np.mean(errors):.2f} cm", f"{np.mean(percent_errors):.2f} %",
-                                 f"{np.std(percent_errors):.2f} %", f"{np.sqrt(np.mean(errors ** 2)):.2f} cm"]
-        underestimated[dimension] = sum(float(r[f"Estimated_{dimension}_cm"]) < float(r[f"Actual_{dimension}_cm"]) for r in rows)
-    st.table(statistics)
+        out[dimension] = {"mae": np.mean(errors), "mpe": np.mean(percent_errors), "sd": np.std(percent_errors),
+                          "rmse": np.sqrt(np.mean(errors ** 2)),
+                          "under": sum(float(r[f"Estimated_{dimension}_cm"]) < float(r[f"Actual_{dimension}_cm"]) for r in rows)}
+    return out
 
-    # G. Visual evidence
-    st.subheader("G. Visual Evidence")
-    st.write("**Calibration photographs** (accepted)")
-    image_row([
-        ("calibration_IMG_7374.jpg", "IMG_7374: checkerboard detected."),
-        ("calibration_IMG_7380.jpg", "IMG_7380: checkerboard detected."),
-        ("calibration_IMG_7388.jpg", "IMG_7388: checkerboard detected."),
-        ("calibration_IMG_7394.jpg", "IMG_7394: checkerboard detected."),
-    ], per_row=2)
-    st.write("**Calibration photographs** (not accepted)")
-    image_row([
-        ("calibration_rejected_IMG_7390.jpg", "IMG_7390: OpenCV did not detect the checkerboard in this photograph."),
-        ("calibration_rejected_IMG_7391.jpg", "IMG_7391: OpenCV did not detect the checkerboard in this photograph."),
-    ], per_row=2)
-    st.write("**Object photographs** (one per object, nearest distance)")
-    first_trials = {}
-    for row in rows:
-        first_trials.setdefault((float(row["Actual_Width_cm"]), float(row["Actual_Height_cm"])), row)
-    shown = []
-    for number, row in enumerate(first_trials.values(), start=1):
-        name = Path(row["Image"]).stem
-        shown.append((f"measurement_{name}.jpg",
-                      f"Object {number} ({row['Actual_Width_cm']} × {row['Actual_Height_cm']} cm), {name}, {float(row['Distance_cm']):g} cm"))
-    image_row(shown, per_row=3)
-    st.caption("Optimized display copies of the original photographs (EXIF orientation applied). They are shown without annotations "
-               "because the clicked corner coordinates were not saved with the results.")
 
-    # H. Discussion and limitations
-    st.subheader("H. Discussion and Limitations")
-    st.write(
-        f"Across the {trial_count} measurements the mean percentage error is "
-        f"{np.mean([float(r['Width_Error_Percent']) for r in rows]):.2f} % for width and "
-        f"{np.mean([float(r['Height_Error_Percent']) for r in rows]):.2f} % for height. "
-        f"The estimate was smaller than the measured size in {underestimated['Width']} of {trial_count} width measurements and "
-        f"{underestimated['Height']} of {trial_count} height measurements, so the error is mostly in one direction rather than "
-        "scattered both ways. I did not isolate the cause; the factors below are plausible contributors, not proven ones."
-    )
-    st.markdown(
-        "- **Manual corner selection:** corners are clicked by hand, so a few pixels of placement error changes each edge. At "
-        "these distances one pixel corresponds to roughly 0.5 to 0.6 mm on the object.\n"
-        "- **Camera-to-object distance:** the length scales linearly with the entered distance Z, so a distance error of a "
-        "few centimetres gives a proportional size error. The distance is a hand measurement, so it carries "
-        "its own uncertainty.\n"
-        "- **Camera and object alignment:** the method assumes the camera axis is perpendicular to the object face. Any "
-        "tilt or rotation changes the apparent size.\n"
-        "- **Residual lens distortion:** the calibration RMS reprojection error is about 3 px, so some distortion may remain "
-        "after correction, especially away from the image centre.\n"
-        "- **Fronto-parallel plane assumption:** the object is treated as a flat face at a single depth. Depth variation "
-        "across the object, or any thickness of the object, is not modelled.\n"
-        "- **Limits of monocular metric measurement:** one image fixes direction but not scale. Metric size comes only from the "
-        "known distance and the assumed plane orientation, so the result is valid only when those assumptions hold, for this "
-        "camera, lens and resolution.\n"
-        f"- **Scope of validity:** five objects and distances from {min(distances):g} to {max(distances):g} cm are too few to "
-        "claim accuracy outside this range."
-    )
-    back_button("m2_back_bottom", go_to, ("home",))
+def trial_chart(rows):
+    """Grouped (side-by-side) bars: the width and the height percentage error of every trial, both measured from zero."""
+    import altair as alt          # ships with Streamlit
+    trials = [int(r["Trial"]) for r in rows]
+    series = ["Width error (%)", "Height error (%)"]
+    data = pd.DataFrame([{"Trial": int(r["Trial"]), "Error type": name, "Percentage error (%)": float(r[column])}
+                         for r in rows for name, column in zip(series, ("Width_Error_Percent", "Height_Error_Percent"))])
+    chart = alt.Chart(data).mark_bar().encode(
+        x=alt.X("Trial:O", sort=trials, title="Trial", axis=alt.Axis(labelAngle=0, labelOverlap=False, labelFontSize=11)),
+        xOffset=alt.XOffset("Error type:N", sort=series),
+        y=alt.Y("Percentage error (%):Q", title="Percentage error (%)", scale=alt.Scale(domainMin=0, nice=True)),
+        color=alt.Color("Error type:N", sort=series, scale=alt.Scale(domain=series, range=["#0068C9", "#83C9FF"]),
+                        legend=alt.Legend(title=None, orient="top")),
+        tooltip=[alt.Tooltip("Trial:O"), alt.Tooltip("Error type:N"), alt.Tooltip("Percentage error (%):Q", format=".2f")])
+    st.altair_chart(chart.properties(height=340).configure(background="rgba(0,0,0,0)"), width="stretch")
+
+
+def show_experiment():
+    with st.container(key="m2_res_head"):
+        with st.container(key="m2_res_title"):
+            st.title("My Experiment & Results", anchor=False)
+        st.header("Camera Calibration & 2D Object Measurement", anchor=False)
+
+    with st.container(key="m2_res_body"):
+        try:
+            rows = read_validation_rows()
+        except (OSError, ValueError, csv.Error, TypeError) as error:
+            st.error(f"Validation results could not be loaded: {error}")
+            return
+        trial_count = len(rows)
+        distances = sorted({float(row["Distance_cm"]) for row in rows})
+        objects = {}
+        for row in rows:
+            objects.setdefault((float(row["Actual_Width_cm"]), float(row["Actual_Height_cm"])), len(objects) + 1)
+        stats = percent_stats(rows)
+        accepted = int(calibration["successful_images"])
+        columns_n, rows_n = int(calibration["checkerboard_columns"]), int(calibration["checkerboard_rows"])
+        square_mm = float(calibration["square_size_mm"])
+        distance_text = ", ".join(f"{d:g}" for d in distances)
+
+        # ---- objective and summary
+        with st.container(key="m2_res_objective"):
+            st.markdown("##### Objective")
+            st.write(
+                "The objective of this experiment is to calibrate a smartphone camera using OpenCV and estimate the real-world 2D "
+                "dimensions of objects using perspective projection. The method is validated through 20 measurements of five objects "
+                "at four camera-to-object distances (210, 220, 230, and 250 cm). The estimated dimensions are compared with the "
+                "actual measured dimensions, and error statistics are used to evaluate the accuracy of the method."
+            )
+        for column, card in zip(st.columns(2), (
+                ("Calibration Images", f"{accepted} / {CALIBRATION_PHOTOS_CAPTURED}", "successfully accepted"),
+                ("Validation Measurements", f"{trial_count}", f"{len(objects)} objects at {len(distances)} distances"))):
+            with column:
+                metric_card(*card)
+        for column, card in zip(st.columns(2), (
+                ("Mean Width Percentage Error", f"{stats['Width']['mpe']:.2f}%", f"across {trial_count} measurements"),
+                ("Mean Height Percentage Error", f"{stats['Height']['mpe']:.2f}%", f"across {trial_count} measurements"))):
+            with column:
+                metric_card(*card)
+
+        # ---- 1. experimental setup
+        with st.container(key="m2_res_sec_1"):
+            st.header("1. Experimental Setup", anchor=False)
+            st.subheader("Camera", anchor=False)
+            st.table(pd.DataFrame({"Item": ["Device", "Camera", "Focal length", "Aperture", "Photograph resolution"],
+                                   "Value": ["iPhone 17 Pro Max", "1× main camera", "6.765 mm", "f/1.78",
+                                             "4284 × 5712 pixels (portrait, EXIF orientation applied)"]}).set_index("Item"))
+            st.caption("The photographs' EXIF data lists the iPhone 17 Pro Max main lens (6.765 mm, f/1.78) for both the calibration and "
+                       "the measurement photographs. The measurement photographs use the same resolution, so the saved focal lengths "
+                       "apply to them unchanged.")
+
+            st.subheader("Checkerboard", anchor=False)
+            image_column, spec_column = st.columns(2)
+            with image_column:
+                display_image("calibration_IMG_7374.jpg", "IMG_7374: my printed checkerboard, photographed for calibration. "
+                                                         "The checkerboard was detected in this photograph.")
+            with spec_column:
+                st.table(pd.DataFrame({"Specification": ["Physical squares", "Inner corners", "Square size"],
+                                       "Value": [f"{columns_n + 1} × {rows_n + 1}", f"{columns_n} × {rows_n}", f"{square_mm:g} mm"]}
+                                      ).set_index("Specification"))
+                st.caption("Inner corners are the points where four squares meet, so a board with "
+                           f"{columns_n + 1} × {rows_n + 1} squares has {columns_n} × {rows_n} inner corners.")
+
+            st.subheader("Calibration Photographs", anchor=False)
+            for column, card in zip(st.columns(2), (("Captured", f"{CALIBRATION_PHOTOS_CAPTURED}", "calibration photographs"),
+                                                    ("Accepted", f"{accepted}", "checkerboard corners detected"))):
+                with column:
+                    metric_card(*card)
+            st.write(f"{CALIBRATION_PHOTOS_CAPTURED} calibration photographs were captured and {accepted} were accepted: the "
+                     f"checkerboard corners were detected in {accepted} photographs. OpenCV did not detect the checkerboard in "
+                     "IMG_7390 or IMG_7391, so those two were not used.")
+            image_row([("calibration_IMG_7388.jpg", "IMG_7388: checkerboard detected (accepted photograph)."),
+                       ("calibration_rejected_IMG_7390.jpg", "IMG_7390: OpenCV did not detect the checkerboard in this photograph "
+                                                              "(not accepted).")])
+
+        # ---- 2. calibration and results
+        with st.container(key="m2_res_sec_2"):
+            st.header("2. Camera Calibration & Results", anchor=False)
+            st.write("OpenCV detected the checkerboard corners in the accepted photographs, refined them to sub-pixel accuracy, and "
+                     "estimated the camera intrinsic matrix and the lens distortion coefficients from them. The values below are the "
+                     "saved calibration used for all 20 validation measurements.")
+            st.subheader("Reprojection Error", anchor=False)
+            for column, card in zip(st.columns(2), (
+                    ("RMS reprojection error", f"{float(rms_error):.4f} px", "saved in the calibration file"),
+                    ("Mean reprojection error", f"{MEAN_REPROJECTION_ERROR_PX:.3f} px", "from my original calibration report"))):
+                with column:
+                    metric_card(*card)
+            st.subheader("Camera Intrinsic Matrix", anchor=False)
+            K = experiment_camera_matrix
+            st.latex(r"K = \small\begin{bmatrix} %.2f & 0 & %.2f \\ 0 & %.2f & %.2f \\ 0 & 0 & 1 \end{bmatrix}"
+                     % (K[0, 0], K[0, 2], K[1, 1], K[1, 2]))
+            st.table(pd.DataFrame({"Parameter": ["fx", "fy", "cx", "cy"],
+                                   "Meaning": ["Focal length along x", "Focal length along y", "Principal point, x", "Principal point, y"],
+                                   "Value (pixels)": [f"{K[0, 0]:.2f}", f"{K[1, 1]:.2f}", f"{K[0, 2]:.2f}", f"{K[1, 2]:.2f}"]}
+                                  ).set_index("Parameter"))
+            st.write("**Original image resolution:** 4284 × 5712 pixels (portrait, EXIF orientation applied)")
+            st.subheader("Distortion Coefficients", anchor=False)
+            st.table(pd.DataFrame({"Coefficient": ["k1", "k2", "p1", "p2", "k3"],
+                                   "Type": ["Radial", "Radial", "Tangential", "Tangential", "Radial"],
+                                   "Value": [f"{value:.5f}" for value in experiment_distortion_coefficients.flatten()]}
+                                  ).set_index("Coefficient"))
+            st.caption("These parameters are from my original smartphone calibration and were used for all 20 validation measurements. "
+                       "Visitor measurements use their own activated calibration.")
+
+        # ---- 3. methodology
+        with st.container(key="m2_res_sec_3"):
+            st.header("3. Object Measurement Methodology", anchor=False)
+            st.markdown("#### 1. Image acquisition at a known distance")
+            st.markdown("Each object was photographed at a measured camera-to-object distance $Z$, measured from the camera to the "
+                        "object's plane and entered for the calculation.")
+            st.markdown("#### 2. Lens distortion correction")
+            st.markdown("Each photograph is undistorted with the saved camera matrix and distortion coefficients.")
+            st.markdown("#### 3. Four-corner selection")
+            st.markdown("On the corrected photograph, I selected the object's four corners by hand, clicking them in the order top-left, "
+                        "top-right, bottom-right, bottom-left.")
+            st.markdown("#### 4. Perspective projection and dimension estimation")
+            st.markdown("For two image points the real-world length between them is")
+            st.latex(r"L = Z\,\sqrt{\left(\dfrac{u_2-u_1}{f_x}\right)^2 + \left(\dfrac{v_2-v_1}{f_y}\right)^2}")
+            st.markdown("- **Width** is the mean of the top-edge and bottom-edge lengths.\n"
+                        "- **Height** is the mean of the left-edge and right-edge lengths.\n"
+                        "- **Averaging opposite edges** reduces the effect of small errors in individual corner positions.")
+            st.markdown("#### 5. Comparison with the measured dimensions")
+            st.markdown("**Errors** are the absolute difference from the measured dimension, and that difference as a percentage of it.")
+            st.caption("The method treats the object as a flat face perpendicular to the optical axis at the entered distance. All lengths "
+                       "are in centimetres.")
+
+        # ---- 4. validation
+        with st.container(key="m2_res_sec_4"):
+            st.header("4. Validation Experiment", anchor=False)
+            for column, card in zip(st.columns(3), (("Objects", f"{len(objects)}", None), ("Distances", f"{len(distances)}", None),
+                                                    ("Trials", f"{trial_count}", None))):
+                with column:
+                    metric_card(*card)
+            st.write(f"**Camera-to-object distances:** {', '.join(f'{d:g} cm' for d in distances)}")
+            st.write(f"{len(objects)} objects were each measured at {len(distances)} distances, all greater than 2 m: "
+                     f"{trial_count} measurements in total.")
+
+            st.subheader("Validation Photographs", anchor=False)
+            first_trials = {}
+            for row in rows:
+                first_trials.setdefault((float(row["Actual_Width_cm"]), float(row["Actual_Height_cm"])), row)
+            shown = []
+            for number, row in enumerate(first_trials.values(), start=1):
+                name = Path(row["Image"]).stem
+                if name in ("IMG5", "IMG9"):
+                    shown.append((f"measurement_{name}.jpg", f"Object {number} ({row['Actual_Width_cm']} × {row['Actual_Height_cm']} cm), "
+                                                             f"{name}, {float(row['Distance_cm']):g} cm"))
+            image_row(shown)
+
+            st.subheader("Complete Validation Results", anchor=False)
+            kv_table("Trial", [[
+                r["Trial"], f"Object {objects[(float(r['Actual_Width_cm']), float(r['Actual_Height_cm']))]}",
+                f"{float(r['Distance_cm']):g}",
+                f"{float(r['Actual_Width_cm']):.2f}", f"{float(r['Estimated_Width_cm']):.2f}", f"{float(r['Width_Error_Percent']):.2f}",
+                f"{float(r['Actual_Height_cm']):.2f}", f"{float(r['Estimated_Height_cm']):.2f}", f"{float(r['Height_Error_Percent']):.2f}",
+            ] for r in rows], ["Object", "Distance (cm)", "Actual width (cm)", "Estimated width (cm)", "Width error (%)",
+                               "Actual height (cm)", "Estimated height (cm)", "Height error (%)"])
+            trial_chart(rows)
+
+        # ---- 5. error analysis
+        with st.container(key="m2_res_sec_5"):
+            st.header("5. Error Analysis & Statistics", anchor=False)
+            st.table({"Statistic": ["Mean Absolute Error", "Mean Percentage Error", "Standard Deviation of Percentage Error", "RMSE"],
+                      **{dimension: [f"{stats[dimension]['mae']:.2f} cm", f"{stats[dimension]['mpe']:.2f} %",
+                                     f"{stats[dimension]['sd']:.2f} %", f"{stats[dimension]['rmse']:.2f} cm"]
+                         for dimension in ("Width", "Height")}})
+            st.subheader("Mean Percentage Error", anchor=False)
+            st.bar_chart(pd.DataFrame({"Dimension": ["Width", "Height"],
+                                       "Mean percentage error (%)": [stats["Width"]["mpe"], stats["Height"]["mpe"]]}).set_index("Dimension"),
+                         y_label="Mean percentage error (%)")
+
+        # ---- 6. discussion
+        with st.container(key="m2_res_sec_6"):
+            st.header("6. Discussion & Limitations", anchor=False)
+            st.markdown("#### Interpretation of the results")
+            st.write(
+                f"Across the {trial_count} measurements the mean percentage error is {stats['Width']['mpe']:.2f} % for width and "
+                f"{stats['Height']['mpe']:.2f} % for height. "
+                f"The estimate was smaller than the measured size in {stats['Width']['under']} of {trial_count} width measurements and "
+                f"{stats['Height']['under']} of {trial_count} height measurements, so the error is mostly in one direction rather than "
+                "scattered both ways. I did not isolate the cause; the factors below are plausible contributors, not proven ones."
+            )
+            st.markdown("#### Measurement factors")
+            st.markdown(
+                "- **Manual corner selection:** corners are clicked by hand, so a few pixels of placement error changes each edge. At "
+                "these distances one pixel corresponds to roughly 0.5 to 0.6 mm on the object.\n"
+                "- **Camera-to-object distance:** the length scales linearly with the entered distance Z, so a distance error of a "
+                "few centimetres gives a proportional size error. The distance is a hand measurement, so it carries "
+                "its own uncertainty."
+            )
+            st.markdown("#### Camera and calibration factors")
+            st.markdown(
+                "- **Residual lens distortion:** the calibration RMS reprojection error is about 3 px, so some distortion may remain "
+                "after correction, especially away from the image centre."
+            )
+            st.markdown("#### Geometric assumptions")
+            st.markdown(
+                "- **Camera and object alignment:** the method assumes the camera axis is perpendicular to the object face. Any "
+                "tilt or rotation changes the apparent size.\n"
+                "- **Fronto-parallel plane assumption:** the object is treated as a flat face at a single depth. Depth variation "
+                "across the object, or any thickness of the object, is not modelled.\n"
+                "- **Limits of monocular metric measurement:** one image fixes direction but not scale. Metric size comes only from the "
+                "known distance and the assumed plane orientation, so the result is valid only when those assumptions hold, for this "
+                "camera, lens and resolution."
+            )
+
+        # ---- 7. conclusion
+        with st.container(key="m2_res_conclusion"):
+            st.header("7. Conclusion", anchor=False)
+            st.markdown(
+                f"I calibrated my smartphone camera with OpenCV from {accepted} accepted checkerboard photographs and used the "
+                f"perspective-projection equations to estimate the width and height of {len(objects)} objects at {distance_text} cm. "
+                f"Across the {trial_count} measurements the mean percentage error was {stats['Width']['mpe']:.2f} % for width and "
+                f"{stats['Height']['mpe']:.2f} % for height."
+            )
+            st.markdown(
+                "These results are valid only under the stated assumptions: the same camera, lens and resolution as the calibration, "
+                "and a flat object face perpendicular to the optical axis at the measured distance."
+            )
 
 
 # ---------------------------------------------------------------- page
@@ -1508,7 +1985,6 @@ nav_row(CRUMBS[page], go_to, PAGE_CSS, view=f"m2:{page}")
 if page == "visitor":
     visitor_page()
 elif page == "experiment":
-    page_headings(MODULE_TITLE)
     show_experiment()
 else:
     home_page()

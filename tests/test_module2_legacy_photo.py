@@ -25,7 +25,7 @@ sys.path.insert(0, str(MODULE))
 import calibration_file as cf  # noqa: E402
 import visitor_calibration as vc  # noqa: E402
 
-PHOTO_LABEL = "Upload Calibration Image"
+PHOTO_LABEL = "Upload an Original Calibration Image"
 
 
 def image_bytes(width, height, fmt="JPEG", orientation=None):
@@ -48,6 +48,16 @@ def sha(path):
 def photo_uploader(at):
     found = [u for u in at.get("file_uploader") if u.label == PHOTO_LABEL]
     return found[0] if found else None
+
+
+MANUAL = "Enter Resolution Manually"
+AUTO = "Detect Automatically from Calibration Image"
+
+
+def manual(at):
+    """Select the manual-entry method (the default method is automatic detection)."""
+    at.radio[0].set_value(MANUAL).run()
+    return at
 
 
 def legacy_page(extra=None):
@@ -118,13 +128,15 @@ class LegacyPhotoPageTests(unittest.TestCase):
     def test_legacy_file_shows_photo_workflow_and_collapsed_manual_expander(self):
         at = legacy_page()
         self.assertIsNotNone(photo_uploader(at))
-        warnings = [w.value for w in at.warning if w.value.startswith("Missing image resolution.")]
-        self.assertEqual(warnings, ["Missing image resolution. Choose one option below."])
+        self.assertFalse([w for w in at.warning if "Missing image resolution" in w.value])
+        self.assertIn("**Calibration Image Resolution**", [m.value for m in at.markdown])
+        self.assertTrue(any("does not include the original image resolution" in m.value for m in at.markdown))
+        self.assertEqual(at.radio[0].options, [AUTO, MANUAL])
+        self.assertEqual(at.radio[0].value, AUTO)
+        self.assertEqual([n for n in at.text_input if n.label in ("Image width (px)", "Image height (px)")], [])   # manual hidden
         self.assertFalse(any("Original Calibration Photograph" in m.value or "resolution required" in m.value for m in at.markdown))
         self.assertFalse(any("detect its image resolution automatically" in c.value for c in at.caption))
-        manual = [e for e in at.expander if e.label == "Show manual entry"]
-        self.assertEqual(len(manual), 1)
-        self.assertIn("Show manual entry", [e.label for e in at.expander])
+        self.assertEqual([e for e in at.expander if e.label == "Show manual entry"], [])
         self.assertNotIn("Activate Calibration", [b.label for b in at.button])
         self.assertEqual([t for t in ("m2_photo_apply",) if t in [b.key for b in at.button]], [])   # nothing detected yet
 
@@ -183,15 +195,15 @@ class LegacyPhotoPageTests(unittest.TestCase):
         self.assertFalse(any("Original Calibration Photograph" in m.value for m in at.markdown))
         self.assertNotIn("Show manual entry", [e.label for e in at.expander])   # whole section is gone
         self.assertFalse([w for w in at.warning if "Missing image resolution" in w.value])
-        self.assertEqual(len([n for n in at.number_input if "Calibration image" in n.label]), 0)
+        self.assertEqual(len([n for n in at.text_input if n.label in ("Image width (px)", "Image height (px)")]), 0)
         self.assertEqual(len([m for m in at.markdown if "**4284 × 5712 px** |" in m.value]), 0)   # validated is not activated
         at = click(at, "m2_activate_loaded")
         self.assertEqual(len([m for m in at.markdown if "**4284 × 5712 px** |" in m.value]), 1)   # one summary line, not repeated
 
     def test_manual_entry_fallback_still_works(self):
-        at = legacy_page()
-        width, height = [n for n in at.number_input if "Calibration image" in n.label]
-        width.set_value(4284); height.set_value(5712)
+        at = manual(legacy_page())
+        width, height = [n for n in at.text_input if n.label in ("Image width (px)", "Image height (px)")]
+        width.set_value("4284"); height.set_value("5712")
         at.run()
         at = click(at, "m2_legacy_apply")
         self.assertTrue(at.session_state["m2_load_pending"]["needs_image_size"])    # needs its confirmation
@@ -201,11 +213,23 @@ class LegacyPhotoPageTests(unittest.TestCase):
         self.assertEqual((pending["image_width"], pending["image_height"], pending["size_source"]), (4284, 5712, "confirmed_by_visitor"))
         self.assertIsNone(at.session_state["m2_visitor_calibration"])
 
+    def test_manual_entry_rejects_invalid_dimensions(self):
+        for bad in ("", " ", "0", "-5", "4284.5", "4284.0", "abc", "12e3", "50", "30000", "+4284"):
+            at = manual(legacy_page())
+            width, height = [n for n in at.text_input if n.label in ("Image width (px)", "Image height (px)")]
+            width.set_value(bad); height.set_value("5712")
+            at.run()
+            at.checkbox[0].check(); at.run()
+            at = click(at, "m2_legacy_apply")
+            self.assertTrue(at.session_state["m2_load_pending"]["needs_image_size"], bad)   # nothing was applied
+            self.assertTrue(any("was not applied" in e.value for e in at.error), bad)
+            self.assertIsNone(at.session_state["m2_visitor_calibration"], bad)
+
     def test_confirmed_resolution_cannot_be_changed_without_removing_the_file(self):
         at = click(tick_photo_box(upload(legacy_page(), image_bytes(4284, 5712))), "m2_photo_apply")
         at = click(at, "m2_activate_loaded")
         self.assertIsNone(photo_uploader(at))
-        self.assertEqual(len([n for n in at.number_input if "Calibration image" in n.label]), 0)
+        self.assertEqual(len([n for n in at.text_input if n.label in ("Image width (px)", "Image height (px)")]), 0)
         self.assertIsNotNone(at.session_state["m2_visitor_calibration"])
 
     def test_new_format_npz_does_not_ask_for_a_photo(self):
@@ -268,7 +292,7 @@ class LoadedCalibrationCompactUiTests(unittest.TestCase):
         self.assertTrue(any("Active for Measurement" in m.value for m in at.markdown))
         self.assertFalse(any("ready for activation" in m.value for m in at.markdown))
         self.assertNotIn("Activate Calibration", [b.label for b in at.button])
-        self.assertIn("Clear Calibration", [b.label for b in at.button])
+        self.assertIn("m2_clear_loaded", [b.key for b in at.button])
         self.assertTrue(any("Using active calibration: 4284 × 5712 px" in c.value for c in at.caption))   # Step 2 line
         at = click(at, "m2_clear_loaded")
         self.assertIsNone(at.session_state["m2_visitor_calibration"])
@@ -321,8 +345,8 @@ class NpzUploadCardTests(unittest.TestCase):
         self.assertEqual(len(at.get("file_uploader")), 0)                           # no duplicate upload widget
         self.assertIn("camera_calibration.npz", texts(at))
         self.assertIn("File uploaded and validated", texts(at))
-        self.assertEqual([b.label for b in at.button if b.key in ("m2_clear_loaded", "m2_load_replace", "m2_load_replace_cancel")],
-                         ["Clear Calibration"])
+        self.assertEqual([b.key for b in at.button if b.key in ("m2_clear_loaded", "m2_load_replace", "m2_load_replace_cancel")],
+                         ["m2_clear_loaded"])
         self.assertFalse({"Replace File", "Cancel"} & {b.label for b in at.button})
         self.assertIsNone(at.session_state["m2_visitor_calibration"])               # loaded, not activated
 
@@ -354,7 +378,7 @@ class NpzUploadCardTests(unittest.TestCase):
     def test_removing_a_file_restores_the_empty_uploader_and_a_different_file_can_follow(self):
         at = click(upload_npz(load_page(), sized_bytes()), "m2_clear_loaded")
         self.assertIsNotNone(npz_uploader(at))
-        self.assertNotIn("Clear Calibration", [b.label for b in at.button])         # nothing loaded: no button
+        self.assertNotIn("m2_clear_loaded", [b.key for b in at.button])         # nothing loaded: no button
         at = upload_npz(at, sized_bytes(4300, 5800), "second.npz")
         self.assertEqual(at.session_state["m2_load_pending"]["image_width"], 4300)
 
@@ -425,13 +449,13 @@ class CompactSummaryTests(unittest.TestCase):
             self.assertNotIn("My own calibration", everything)
             self.assertNotIn("never used for your measurements", everything)
 
-    def test_legacy_upload_shows_one_warning_then_uploader_and_collapsed_manual_expander(self):
+    def test_legacy_upload_shows_resolution_heading_then_uploader_and_radio(self):
         at = upload_npz(load_page(), legacy_bytes())
-        self.assertEqual(len([w for w in at.warning if "Missing image resolution" in w.value]), 1)
+        self.assertFalse([w for w in at.warning if "Missing image resolution" in w.value])
+        self.assertEqual([m.value for m in at.markdown].count("**Calibration Image Resolution**"), 1)
         self.assertIsNotNone(photo_uploader(at))
-        manual = [e for e in at.expander if e.label == "Show manual entry"]
-        self.assertEqual(len(manual), 1)
-        self.assertFalse(manual[0].proto.expanded)
+        self.assertEqual(at.radio[0].options, [AUTO, MANUAL])
+        self.assertEqual([e for e in at.expander if e.label == "Show manual entry"], [])
 
     def test_reset_all_clears_file_state_and_shows_the_uploader_again(self):
         at = click(upload_npz(load_page(), sized_bytes()), "m2_activate_loaded")
@@ -462,7 +486,7 @@ class ClearLoadedCalibrationTests(unittest.TestCase):
         self.assertNotIn("camera_calibration.npz", texts(at))
         self.assertNotIn("File uploaded and validated", texts(at))
         self.assertEqual([e.label for e in at.expander if "Calibration Details" in e.label], [])
-        self.assertNotIn("Clear Calibration", [b.label for b in at.button])
+        self.assertNotIn("m2_clear_loaded", [b.key for b in at.button])
         for key in ("m2_load_pending", "m2_load_name", "m2_load_base", "m2_legacy_photo", "m2_load_error", "m2_legacy_photo_error"):
             self.assertIsNone(s[key], key)
         self.assertFalse(any("Using active calibration" in c.value for c in at.caption))
@@ -470,12 +494,12 @@ class ClearLoadedCalibrationTests(unittest.TestCase):
     def test_single_button_and_never_remove_file(self):
         at = upload_npz(load_page(), legacy_bytes())
         labels = [b.label for b in at.button]
-        self.assertEqual(labels.count("Clear Calibration"), 1)
+        self.assertEqual([b.key for b in at.button].count("m2_clear_loaded"), 1)
         self.assertNotIn("Remove File", labels)
 
     def test_missing_resolution(self):
         at = upload_npz(load_page(), legacy_bytes())
-        self.assertIn("Clear Calibration", [b.label for b in at.button])
+        self.assertIn("m2_clear_loaded", [b.key for b in at.button])
         self.assert_reset(click(at, "m2_clear_loaded"))
 
     def test_resolution_confirmed_photo_and_checkbox_cleared(self):
@@ -488,14 +512,14 @@ class ClearLoadedCalibrationTests(unittest.TestCase):
         self.assertFalse([c for c in at.checkbox if c.value])
 
     def test_manual_resolution_cleared(self):
-        at = upload_npz(load_page(), legacy_bytes())
-        for n in at.number_input:
-            n.set_value(4284 if "width" in n.label else 5712)
+        at = manual(upload_npz(load_page(), legacy_bytes()))
+        for n in at.text_input:
+            n.set_value("4284" if "width" in n.label else "5712")
         at.run()
-        [c for c in at.checkbox if "exact dimensions" in c.label][0].check()
+        [c for c in at.checkbox if "original calibration image dimensions" in c.label][0].check()
         at.run()
         at = upload_npz(click(at, "m2_clear_loaded"), legacy_bytes())
-        self.assertTrue(all(n.value is None for n in at.number_input if "Calibration image" in n.label))
+        self.assertTrue(all(n.value == "" for n in at.text_input if n.label in ("Image width (px)", "Image height (px)")))
         self.assertFalse([c for c in at.checkbox if c.value])
 
     def test_ready_for_activation(self):
@@ -506,7 +530,7 @@ class ClearLoadedCalibrationTests(unittest.TestCase):
     def test_active_is_deactivated_and_step_two_unavailable(self):
         at = click(upload_npz(load_page(), sized_bytes()), "m2_activate_loaded")
         self.assertIsNotNone(at.session_state["m2_visitor_calibration"])
-        self.assertIn("Clear Calibration", [b.label for b in at.button])
+        self.assertIn("m2_clear_loaded", [b.key for b in at.button])
         at = click(at, "m2_clear_loaded")
         self.assertIsNone(at.session_state["m2_visitor_calibration"])
         self.assert_reset(at)
@@ -550,6 +574,61 @@ def flatten(node):
     return out
 
 
+SAVED = {"uid": 1, "Object": "Box", "Image": "a.jpeg", "Distance_cm": 250.0, "Actual_Width_cm": 20.0, "Actual_Height_cm": 10.0,
+         "Estimated_Width_cm": 19.5, "Width_Error_cm": 0.5, "Width_Error_Percent": 2.5, "Estimated_Height_cm": 10.2,
+         "Height_Error_cm": 0.2, "Height_Error_Percent": 2.0, "points": [(1, 1), (2, 1), (2, 2), (1, 2)], "fx": 1000.0, "fy": 1000.0}
+
+
+class NoStrayOutputTests(unittest.TestCase):
+    def test_no_bare_expression_statements_that_streamlit_would_print(self):
+        """Streamlit prints the value of a bare expression statement (e.g. `a() if x else b()` printed 'None' above the breadcrumb)."""
+        import ast
+        tree = ast.parse(PAGE.read_text())
+        bare = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Expr) and isinstance(n.value, (ast.IfExp, ast.BoolOp, ast.Name))]
+        self.assertEqual(bare, [])
+
+
+class RemoveFileCrossTests(unittest.TestCase):
+    """The x on the loaded-file row replaces Clear Calibration; saved measurements require a confirmation."""
+
+    def test_card_shows_icon_name_status_and_x_but_no_uploader(self):
+        at = upload_npz(load_page(), sized_bytes())
+        self.assertIsNone(npz_uploader(at))
+        self.assertTrue(any(":material/description:" in m.value and "**" in m.value for m in at.markdown))
+        self.assertTrue(any("File uploaded and validated" in c.value for c in at.caption))
+        self.assertEqual([b.key for b in at.button if b.key == "m2_clear_loaded"], ["m2_clear_loaded"])
+        self.assertNotIn("Clear Calibration", [b.label for b in at.button])
+
+    def test_x_without_measurements_clears_at_once_and_allows_same_file_again(self):
+        at = click(upload_npz(load_page(), sized_bytes()), "m2_clear_loaded")
+        self.assertIsNotNone(npz_uploader(at))
+        self.assertIsNone(at.session_state["m2_load_pending"])
+        self.assertIsNone(at.session_state["m2_visitor_calibration"])
+        at = upload_npz(at, sized_bytes())
+        self.assertIsNotNone(at.session_state["m2_load_pending"])
+
+    def seeded(self):
+        at = upload_npz(load_page(), sized_bytes())
+        at.session_state["m2_exp"] = {"started": True, "finished": False, "results": [dict(SAVED)], "next_uid": 2}
+        return at.run()
+
+    def test_x_with_measurements_asks_and_cancel_keeps_everything(self):
+        at = click(self.seeded(), "m2_clear_loaded")
+        self.assertEqual(at.session_state["m2_confirm"], "remove_file")
+        self.assertIn("m2_confirm_yes_remove_file", [b.key for b in at.button])
+        at = click(at, "m2_confirm_no_remove_file")
+        self.assertIsNotNone(at.session_state["m2_load_pending"])
+        self.assertEqual(len(at.session_state["m2_exp"]["results"]), 1)
+        self.assertIsNone(npz_uploader(at))
+
+    def test_x_with_measurements_confirmed_clears_file_and_restarts(self):
+        at = click(click(self.seeded(), "m2_clear_loaded"), "m2_confirm_yes_remove_file")
+        self.assertIsNone(at.session_state["m2_load_pending"])
+        self.assertIsNone(at.session_state["m2_load_name"])
+        self.assertEqual(at.session_state["m2_exp"]["results"], [])
+        self.assertIsNotNone(npz_uploader(at))
+
+
 def step1_controls(at):
     """Widgets between the Step 1 heading and the Step 2 heading, in display order."""
     elements = flatten(at.main)
@@ -570,8 +649,8 @@ def summary_shown(at):
 class ClearPlacementAndPhotoSummaryTests(unittest.TestCase):
     def assert_clear_last(self, at):
         controls = step1_controls(at)
-        self.assertEqual([c.key for c in controls if c.type == "button" and c.label == "Clear Calibration"], ["m2_clear_loaded"])
-        self.assertEqual(controls[-1].key, "m2_clear_loaded")
+        self.assertEqual([c.key for c in controls if c.type == "button" and c.key == "m2_clear_loaded"], ["m2_clear_loaded"])
+        self.assertNotIn("Clear Calibration", [c.label for c in controls if c.type == "button"])   # the × replaces it
 
     def test_clear_is_last_control_in_every_loaded_state(self):
         missing = upload_npz(load_page(), legacy_bytes())
@@ -583,7 +662,7 @@ class ClearPlacementAndPhotoSummaryTests(unittest.TestCase):
         self.assert_clear_last(click(upload_npz(load_page(), sized_bytes()), "m2_activate_loaded"))
 
     def test_no_clear_button_without_a_file(self):
-        self.assertEqual([b for b in step1_controls(load_page()) if b.type == "button" and b.label == "Clear Calibration"], [])
+        self.assertEqual([b for b in step1_controls(load_page()) if b.type == "button" and b.key == "m2_clear_loaded"], [])
 
     def test_photo_summary_and_hidden_confirmation_controls(self):
         at = confirmed_page()
@@ -614,9 +693,9 @@ class ClearPlacementAndPhotoSummaryTests(unittest.TestCase):
         self.assertEqual(s["m2_load_name"], "camera_calibration.npz")                  # NPZ stays loaded
         self.assertFalse(summary_shown(at))
         self.assertNotIn("m2_photo_remove", [b.key for b in at.button])
-        self.assertEqual(len([w for w in at.warning if "Missing image resolution" in w.value]), 1)
+        self.assertIn("**Calibration Image Resolution**", [m.value for m in at.markdown])
         self.assertIsNotNone(photo_uploader(at))
-        self.assertEqual(len([e for e in at.expander if e.label == "Show manual entry"]), 1)
+        self.assertEqual(at.radio[0].value, AUTO)
         self.assertNotIn("m2_photo_apply", [b.key for b in at.button])
         self.assertFalse([c for c in at.checkbox if c.value])                          # confirmation cleared
         self.assert_clear_last(at)
@@ -628,7 +707,7 @@ class ClearPlacementAndPhotoSummaryTests(unittest.TestCase):
         self.assertIsNone(at.session_state["m2_visitor_calibration"])
         self.assertNotIn("Activate Calibration", [b.label for b in at.button])
         self.assertFalse(any("Using active calibration" in c.value for c in at.caption))
-        self.assertTrue(any("First load a saved calibration" in i.value for i in at.info))   # measurement disabled again
+        self.assertTrue(any("Load or calibrate your camera" in i.value for i in at.info))   # measurement disabled again
 
     def test_remove_image_leaves_a_separate_active_calibration_alone(self):
         other = cf.parse_calibration(sized_bytes(4200, 5700))
@@ -658,11 +737,11 @@ class ClearPlacementAndPhotoSummaryTests(unittest.TestCase):
             self.assertFalse(any("Upload Calibration Image" in m.value for m in at.markdown))
 
     def test_manual_resolution_shows_no_photo_summary(self):
-        at = upload_npz(load_page(), legacy_bytes())
-        for n in at.number_input:
-            n.set_value(4284 if "width" in n.label else 5712)
+        at = manual(upload_npz(load_page(), legacy_bytes()))
+        for n in at.text_input:
+            n.set_value("4284" if "width" in n.label else "5712")
         at.run()
-        [c for c in at.checkbox if "exact dimensions" in c.label][0].check()
+        [c for c in at.checkbox if "original calibration image dimensions" in c.label][0].check()
         at.run()
         at = click(at, "m2_legacy_apply")
         self.assertNotIn("m2_photo_remove", [b.key for b in at.button])
@@ -699,14 +778,12 @@ class VisibilityRulesTests(unittest.TestCase):
     def test_missing_resolution_shows_workflow_without_results(self):
         at = upload_npz(load_page(), legacy_bytes())
         self.assertEqual(self.shown(at), (False, False, False))
-        self.assertIn("Clear Calibration", [b.label for b in at.button])
-        self.assertIn("Upload Calibration Image", [m.value.strip("*") for m in at.markdown])
-        self.assertIn("Enter Resolution Manually", [m.value.strip("*") for m in at.markdown])
-        self.assertIn("Detect resolution automatically", [c.value for c in at.caption])
-        self.assertIn("Specify width and height", [c.value for c in at.caption])
+        self.assertIn("m2_clear_loaded", [b.key for b in at.button])
+        self.assertIn("Calibration Image Resolution", [m.value.strip("*") for m in at.markdown])
+        self.assertEqual(at.radio[0].options, [AUTO, MANUAL])
         self.assertEqual(len([u for u in at.get("file_uploader") if u.label == PHOTO_LABEL]), 1)   # no duplicate widget
         self.assertEqual(len(at.get("file_uploader")), 1)
-        self.assertFalse([e for e in at.expander if e.label == "Show manual entry"][0].proto.expanded)
+        self.assertEqual([e for e in at.expander if e.label == "Show manual entry"], [])
 
     def test_new_format_file_skips_missing_resolution_controls(self):
         at = upload_npz(load_page(), sized_bytes())
@@ -723,7 +800,7 @@ class VisibilityRulesTests(unittest.TestCase):
         at = click(at, "m2_clear_loaded")
         self.assertEqual(self.shown(at), (False, False, False))
         self.assertEqual(len(at.get("file_uploader")), 1)
-        self.assertNotIn("Clear Calibration", [b.label for b in at.button])
+        self.assertNotIn("m2_clear_loaded", [b.key for b in at.button])
         self.assertIsNone(at.session_state["m2_load_pending"]); self.assertIsNone(at.session_state["m2_load_name"])
         self.assertIsNone(at.session_state["m2_visitor_calibration"])
         at.run()                                                                       # nothing stale after another rerun
@@ -734,3 +811,32 @@ class VisibilityRulesTests(unittest.TestCase):
         at = click(upload_npz(load_page(), sized_bytes()), "m2_clear_loaded")
         self.assertEqual(len(at.get("file_uploader")), 1)
         self.assertEqual(self.shown(at), (False, False, False))
+
+
+class ResolutionMethodRadioTests(unittest.TestCase):
+    def test_only_the_selected_methods_controls_are_shown(self):
+        at = legacy_page()
+        self.assertIsNotNone(photo_uploader(at))
+        self.assertEqual(len(at.text_input), 0)
+        self.assertEqual(len([c for c in at.checkbox]), 0)
+        at = manual(at)
+        self.assertIsNone(photo_uploader(at))
+        self.assertEqual([n.label for n in at.text_input], ["Image width (px)", "Image height (px)"])
+        self.assertEqual([n.value for n in at.text_input], ["", ""])                      # nothing prefilled
+        self.assertEqual(len(at.get("file_uploader")), 0)
+
+    def test_switching_never_applies_a_resolution_or_activates(self):
+        at = upload(legacy_page(), image_bytes(4284, 5712), "IMG.jpg")
+        self.assertEqual(at.session_state["m2_legacy_photo"]["width"], 4284)
+        at = manual(at)                                                                   # unconfirmed detection is dropped
+        self.assertIsNone(at.session_state["m2_legacy_photo"])
+        self.assertTrue(at.session_state["m2_load_pending"]["needs_image_size"])
+        self.assertIsNone(at.session_state["m2_visitor_calibration"])
+        for n, v in zip(at.text_input, ("4284", "5712")):
+            n.set_value(v)
+        at.run()
+        at.radio[0].set_value(AUTO).run()                                                # typed but unconfirmed values are dropped
+        at = manual(at)
+        self.assertEqual([n.value for n in at.text_input], ["", ""])
+        self.assertTrue(at.session_state["m2_load_pending"]["needs_image_size"])
+        self.assertIsNone(at.session_state["m2_visitor_calibration"])
