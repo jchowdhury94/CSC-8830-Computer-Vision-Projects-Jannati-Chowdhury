@@ -17,7 +17,7 @@ HOME_SOURCE = (ROOT / "home.py").read_text(encoding="utf-8")
 VIEWS = {
     2: ("m2_page", ("home", "visitor", "experiment")),
     3: ("m3_page", ("home", "visitor", "experiment")),
-    4: ("module4_section", ("home", "rgb_select", "rgb_results", "rgb", "thermal_select", "thermal_results", "thermal")),
+    4: ("module4_section", ("home", "my_results", "rgb_results", "rgb", "thermal_results", "thermal")),
     6: ("module6_section", ("home", "a_select", "a_visitor", "a_results", "b_select", "b_visitor", "b_results")),
     7: ("module7_part", ("home", "my_results", "run_own", "1", "experiment", "3_visitor", "3_results")),
 }
@@ -36,7 +36,7 @@ def run(n, view):
 
 # number of breadcrumb levels below Home per view (the last one is the current page)
 DEPTH = {2: {"home": 1, "visitor": 2, "experiment": 2}, 3: {"home": 1, "visitor": 2, "experiment": 2},
-         4: {"home": 1, "rgb_select": 2, "thermal_select": 2, "rgb": 3, "rgb_results": 3, "thermal": 3, "thermal_results": 3},
+         4: {"home": 1, "my_results": 2, "rgb": 2, "thermal": 2, "rgb_results": 3, "thermal_results": 3},
          6: {"home": 1, "a_select": 2, "b_select": 2, "a_visitor": 3, "a_results": 3, "b_visitor": 3, "b_results": 3},
          7: {"home": 1, "my_results": 2, "run_own": 2, "1": 3, "experiment": 3, "3_visitor": 3, "3_results": 3}}
 
@@ -95,8 +95,8 @@ class HomeButtonOnEveryViewTests(unittest.TestCase):
 
     def test_back_arrow_on_every_module_view_and_returns_to_the_immediate_parent(self):
         parents = {(2, "visitor"): "home", (2, "experiment"): "home", (3, "visitor"): "home", (3, "experiment"): "home",
-                   (4, "rgb_select"): "home", (4, "rgb"): "rgb_select", (4, "rgb_results"): "rgb_select",
-                   (4, "thermal"): "thermal_select", (4, "thermal_results"): "thermal_select",
+                   (4, "my_results"): "home", (4, "rgb"): "home", (4, "rgb_results"): "my_results",
+                   (4, "thermal"): "home", (4, "thermal_results"): "my_results",
                    (6, "a_select"): "home", (6, "a_visitor"): "a_select", (6, "b_results"): "b_select",
                    (7, "my_results"): "home", (7, "run_own"): "home", (7, "1"): "run_own", (7, "experiment"): "my_results",
                    (7, "3_visitor"): "run_own", (7, "3_results"): "my_results"}
@@ -120,8 +120,8 @@ class HomeButtonOnEveryViewTests(unittest.TestCase):
 
     def test_breadcrumb_navigation_goes_to_the_parent_view(self):
         expectations = [(2, "experiment", 0, "m2_page", "home"), (3, "visitor", 0, "m3_page", "home"),
-                        (4, "rgb", 0, "module4_section", "home"), (4, "rgb", 1, "module4_section", "rgb_select"),
-                        (4, "thermal_results", 1, "module4_section", "thermal_select"),
+                        (4, "rgb", 0, "module4_section", "home"), (4, "rgb_results", 1, "module4_section", "my_results"),
+                        (4, "thermal_results", 1, "module4_section", "my_results"),
                         (6, "b_results", 0, "module6_section", "home"), (6, "b_results", 1, "module6_section", "b_select"),
                         (6, "a_visitor", 1, "module6_section", "a_select"),
                         (7, "experiment", 0, "module7_part", "home"), (7, "experiment", 1, "module7_part", "my_results"),

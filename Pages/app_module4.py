@@ -2,12 +2,14 @@
 
 import hashlib
 import logging
+import math
 import os
 import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
+import pandas as pd
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
 
@@ -16,7 +18,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from home_navigation import back_button, nav_row  # noqa: E402
+from home_navigation import nav_row  # noqa: E402
 from Modules.Module_4.human_boundary import (
     find_human_boundary,
     normalize_image,
@@ -26,6 +28,9 @@ from Modules.Module_4.rgb_preprocessing import (
     prepared_rgb_upload,
 )
 from Modules.Module_4.thermal_boundary import (
+    CLOSING_ITERATIONS,
+    CLOSING_KERNEL_SIZE,
+    HSV_RANGES,
     find_thermal_boundary,
 )
 from Modules.Module_4.thermal_preprocessing import prepared_thermal_upload
@@ -58,6 +63,18 @@ def cached_sam2_model(checkpoint_settings, model_config, device):
     return load_sam2_model(checkpoint, model_config=model_config, device=device)
 
 
+def current_sam2_model(source, config, device):
+    """The cached model resource, rebuilt if it was created by an earlier copy of the SAM2 module. Streamlit reloads the app's
+    modules when a source file changes, which gives the resource class a new identity; run_sam2 then rejects the old resource."""
+    from Modules.Module_4.sam2_comparison import SAM2ModelResource
+
+    resource = cached_sam2_model(source, config, device)
+    if not isinstance(resource, SAM2ModelResource):
+        cached_sam2_model.clear()
+        resource = cached_sam2_model(source, config, device)
+    return resource
+
+
 def clear_results(method=None):
     """Clear one method or both, and always invalidate the comparison."""
     st.session_state.pop("module4_comparison", None)
@@ -74,27 +91,15 @@ def clear_results(method=None):
 def reset_classical_result():
     """Discard the Classical run while preserving shared inputs and SAM2."""
     clear_results("classical")
-    st.session_state["module4_classical_config_open"] = True
-    if st.session_state.get("module4_sam2_results") is not None:
-        st.session_state["module4_rgb_first_method"] = "sam2"
-
-
-def open_classical_settings():
-    """Select Classical without executing either processing method."""
-    st.session_state["module4_classical_config_open"] = True
 
 
 def reset_sam2_result():
     """Discard the SAM2 run while preserving shared inputs and Classical."""
     clear_results("sam2")
-    if st.session_state.get("module4_results") is not None:
-        st.session_state["module4_rgb_first_method"] = "classical"
 
 
 def reset_rectangle():
     """Clear corners and replace the component so old clicks cannot replay."""
-    st.session_state["module4_classical_config_open"] = False
-    st.session_state.pop("module4_rgb_first_method", None)
     st.session_state["module4_points"] = []
     st.session_state["module4_click_generation"] += 1
     clear_results()
@@ -128,6 +133,17 @@ def clear_rgb_upload():
     reset_rectangle()
 
 
+SETTING_KEYS = ("module4_gaussian_kernel", "module4_gaussian_sigma", "module4_canny_lower", "module4_canny_upper",
+                "module4_grabcut_iterations", "module4_cleanup_enabled", "module4_morphology_kernel")
+
+
+def reset_experiment():
+    """Full reset of the RGB experiment: upload, rectangle, results, comparison and the classical settings (back to their defaults)."""
+    clear_rgb_upload()
+    for key in SETTING_KEYS:
+        st.session_state.pop(key, None)
+
+
 def navigate_module4(section):
     st.session_state["module4_section"] = section
     if section == "thermal":
@@ -138,84 +154,151 @@ def navigate_module4(section):
 
 
 def render_classical_settings():
-    """Render the single Q1 parameter editor in the active method area."""
-    st.subheader("Processing Settings")
+    """Render the single Q1 parameter editor."""
+    st.markdown("##### Processing Settings")
     gaussian_column, canny_column = st.columns(2)
     with gaussian_column:
-        st.selectbox("Gaussian kernel size", [1, 3, 5, 7], index=1, key="module4_gaussian_kernel")
-        st.slider("Gaussian sigma", 0.1, 3.0, 0.8, 0.1, key="module4_gaussian_sigma")
+        st.selectbox("Gaussian kernel size", [1, 3, 5, 7], index=1, key="module4_gaussian_kernel",
+                     help="Size of the smoothing window. A larger kernel blurs more.")
+        st.slider("Gaussian sigma", 0.1, 3.0, 0.8, 0.1, key="module4_gaussian_sigma",
+                  help="Spread of the Gaussian. A larger sigma blurs more.")
     with canny_column:
-        st.slider("Canny lower threshold", 0, 255, 50, key="module4_canny_lower")
-        st.slider("Canny upper threshold", 1, 255, 150, key="module4_canny_upper")
-    st.slider("GrabCut iterations", 1, 10, 5, key="module4_grabcut_iterations")
-    cleanup_enabled = st.checkbox("Apply Morphological Cleanup", value=False, key="module4_cleanup_enabled")
-    st.selectbox(
-        "Cleanup kernel size", [3, 5], disabled=not cleanup_enabled, key="module4_morphology_kernel",
-        help="One elliptical closing operation; small kernels help preserve thin body parts.",
-    )
+        st.slider("Canny lower threshold", 0, 255, 50, key="module4_canny_lower",
+                  help="Edges weaker than this are discarded.")
+        st.slider("Canny upper threshold", 1, 255, 150, key="module4_canny_upper",
+                  help="Edges stronger than this are kept. Edges in between are kept only if they connect to strong edges.")
+    grabcut_column, cleanup_column = st.columns(2)
+    with grabcut_column:
+        st.slider("GrabCut iterations", 1, 10, 5, key="module4_grabcut_iterations",
+                  help="How many times GrabCut refines the foreground and background. More iterations take longer.")
+    with cleanup_column:
+        cleanup_enabled = st.checkbox("Apply Morphological Cleanup", value=False, key="module4_cleanup_enabled")
+        st.caption("Morphological cleanup helps refine the foreground mask by reducing small imperfections before extracting "
+                   "the final boundary.")
+        if cleanup_enabled:
+            st.selectbox(
+                "Cleanup kernel size", [3, 5], key="module4_morphology_kernel",
+                help="A larger kernel produces stronger cleanup but may remove fine details from the foreground.",
+            )
+
+
+# Instructional example for Step 2: the saved example photograph with an illustrative rectangle and two corners. It is
+# separate from the visitor's upload. Coordinates are in that 1000 x 1400 photograph and leave a small margin around the person.
+EXAMPLE_IMAGE = "step1_original.jpg"
+EXAMPLE_CORNERS = ((470, 40), (940, 1375))
+
+
+# The same example for the thermal page: the saved thermal photograph, with the black markers that page uses.
+THERMAL_EXAMPLE_IMAGE = "thermal_step1_original.jpg"
+THERMAL_EXAMPLE_CORNERS = ((250, 15), (845, 1438))
+
+
+@st.cache_data(show_spinner=False)
+def rectangle_example(name=EXAMPLE_IMAGE, corners=EXAMPLE_CORNERS, color=(255, 200, 0)):
+    image = cv2.cvtColor(cv2.imread(str(DISPLAY_DIR / name), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+    pad = 130
+    image = cv2.copyMakeBorder(image, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=(236, 238, 242))
+    (x1, y1), (x2, y2) = ((x, y + pad) for x, y in corners)
+    marker, ink = color, (30, 33, 40)
+    cv2.rectangle(image, (x1, y1), (x2, y2), marker, 8)
+    for x, y in ((x1, y1), (x2, y2)):
+        cv2.circle(image, (x, y), 22, ink, -1)
+        cv2.circle(image, (x, y), 16, marker, -1)
+    font, scale, thickness = cv2.FONT_HERSHEY_SIMPLEX, 1.7, 4
+    cv2.putText(image, "1. First corner", (x1, y1 - 40), font, scale, ink, thickness, cv2.LINE_AA)
+    label = "2. Second corner"
+    width = cv2.getTextSize(label, font, scale, thickness)[0][0]
+    cv2.putText(image, label, (x2 - width + 10, y2 + 75), font, scale, ink, thickness, cv2.LINE_AA)
+    return image
+
+
+VISITOR_CSS = """
+<style>
+.st-key-m4_vis_headings h1 {
+    font-size: clamp(1.75rem, 5vw + 0.5rem, 3rem); font-weight: 800; line-height: 1.15; text-align: center;
+    padding: 0.25rem 0 0; margin: 0; overflow-wrap: anywhere;
+}
+.st-key-m4_vis_headings h2 {
+    font-size: clamp(1rem, 1.6vw + 0.5rem, 1.3rem); font-weight: 500; line-height: 1.3; text-align: center; opacity: 0.8;
+    padding: 0.5rem 0 0; margin: 0; overflow-wrap: anywhere;
+}
+.st-key-m4_vis_headings { padding-bottom: 0.5rem; }
+/* this page only: the same 900px content width as the Calibrate My Cameras workflow */
+.stMainBlockContainer, .block-container { max-width: 900px !important; }
+.st-key-m4_rect_view { align-items: center; text-align: center; }
+/* Light theme only (Streamlit follows prefers-color-scheme): charcoal primary text, a readable darker gray for secondary text,
+   darker green / red status marks, and locked steps that are muted rather than faded. The dark theme is not touched. */
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) .st-key-m4_vis_headings h2 { color: #4B5160; opacity: 1; }
+    :root:not([data-theme="dark"]) .st-key-m4_vis_body :is([data-testid="stCaptionContainer"], [data-testid="stImageCaption"],
+        [data-testid="stFileUploaderDropzoneInstructions"], [data-testid="stFileUploaderDropzoneInstructions"] *) { color: #4B5160 !important; opacity: 1; }
+    :root:not([data-theme="dark"]) .st-key-m4_vis_body :is([data-testid="stTable"] th, [data-testid="stTable"] td) { color: #31333F !important; }
+    :root:not([data-theme="dark"]) [class*="st-key-m4_stepbox_"]:has([class*="st-key-m4_stmark_"][class*="_locked"]) { opacity: 1; }
+    :root:not([data-theme="dark"]) [class*="st-key-m4_stmark_"][class*="_locked"] h3 { color: #5B6270 !important; }
+    :root:not([data-theme="dark"]) [class*="st-key-m4_stmark_"][class*="_locked"] :is([data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] *) { color: #4B5160 !important; }
+    :root:not([data-theme="dark"]) [class*="st-key-m4_stmark_"][class*="_active"] :is([data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] *) { color: #B3262E !important; }
+    :root:not([data-theme="dark"]) [class*="st-key-m4_stmark_"][class*="_done"] :is([data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] *) { color: #1B7A3E !important; }
+}
+.st-key-m4_vis_body h3 { padding-top: 0.25rem; }
+.st-key-m4_vis_body h5 { font-weight: 700; margin: 0; padding: 0.75rem 0 0.25rem; }
+/* Step boxes, as in the Calibrate My Cameras workflow: locked = dimmed, current = red border, completed = green border. Only the
+   small heading wrapper inside a box carries the state, so the widgets in the box keep their identity when the state changes. */
+[class*="st-key-m4_stepbox_"]:has([class*="st-key-m4_stmark_"][class*="_locked"]) { opacity: 0.5; }
+[class*="st-key-m4_stepbox_"]:has([class*="st-key-m4_stmark_"][class*="_active"]) { border-color: #C9363E !important; }
+[class*="st-key-m4_stepbox_"]:has([class*="st-key-m4_stmark_"][class*="_done"]) { border-color: rgba(46, 158, 91, 0.6) !important; }
+</style>
+"""
+
+
+STEP_TITLES = {1: "Upload RGB Image", 2: "Select Person Rectangle", 3: "Classical Method", 4: "SAM2", 5: "Compare Results"}
+STEP_LOCKED = {n: f"Locked. Complete Step {n - 1} to continue." for n in (2, 3, 4, 5)}
+
+
+THERMAL_STEP_TITLES = {1: "Upload Thermal Image", 2: "Classical Method", 3: "SAM2", 4: "Compare Results"}
+
+
+def step_head(n, state, titles=STEP_TITLES):
+    """Heading of one step box: title plus a lock message, a completed mark or the current-step mark."""
+    st.subheader(f"Step {n} · {titles[n]}", anchor=False)
+    if state == "locked":
+        st.caption(f":material/lock: {STEP_LOCKED[n]}")
+    elif state == "done":
+        st.caption(":green[:material/check_circle: Completed]")
+    else:
+        st.caption(":red[:material/arrow_forward: Current step]")
 
 
 def render_rgb():
-    st.subheader("Question 1 – Human Boundary Detection in an RGB Image")
-    st.caption(
-        "Select one main person who is the dominant foreground component. "
-        "Canny demonstrates edge detection; GrabCut segments foreground from "
-        "background using your rectangle. Neither method recognizes a person."
-    )
+    ss = st.session_state
+    ss.setdefault("module4_points", [])
+    ss.setdefault("module4_click_generation", 0)
+    ss.setdefault("module4_upload_generation", 0)
+    # Streamlit forgets a widget's value while the widget is not drawn (a locked step); reassigning the key keeps it.
+    for key in SETTING_KEYS:
+        if key in ss:
+            ss[key] = ss[key]
+    st.markdown(VISITOR_CSS, unsafe_allow_html=True)
 
-    st.session_state.setdefault("module4_points", [])
-    st.session_state.setdefault("module4_click_generation", 0)
-    st.session_state.setdefault("module4_upload_generation", 0)
-
-    st.button("Reset RGB Experiment", key="module4_reset_rgb", on_click=clear_rgb_upload)
-    uploaded = st.file_uploader(
-        "Upload RGB Image", type=["jpg", "jpeg", "png"],
-        key=f"module4_upload_{st.session_state['module4_upload_generation']}", on_change=update_rgb_upload,
-    )
-    image_bytes = uploaded.getvalue() if uploaded is not None else st.session_state.get("module4_rgb_bytes")
-    if uploaded is not None:
-        st.session_state["module4_rgb_bytes"] = image_bytes
-        st.session_state["module4_rgb_filename"] = uploaded.name
-    elif image_bytes is not None:
-        st.caption(f"Loaded RGB image: {st.session_state.get('module4_rgb_filename', 'previous upload')}")
-        st.button("Clear RGB Image", key="module4_clear_image", on_click=clear_rgb_upload)
+    # ---- everything the step states depend on is worked out first, from the stored upload, rectangle and results
+    image_bytes = ss.get("module4_rgb_bytes")
     image_digest = hashlib.sha256(image_bytes).hexdigest() if image_bytes is not None else None
-    if st.session_state.get("module4_image_digest") != image_digest:
+    if ss.get("module4_image_digest") != image_digest:
         reset_rectangle()
-        st.session_state["module4_image_digest"] = image_digest
-
-    image = None
-    original_shape = None
+        ss["module4_image_digest"] = image_digest
+    image = original_shape = preparation_error = None
     if image_bytes is not None:
-        image, original_shape, preparation_error = prepared_rgb_upload(
-            st.session_state, image_bytes, image_digest,
-        )
-        if preparation_error:
-            st.error(preparation_error)
+        image, original_shape, preparation_error = prepared_rgb_upload(ss, image_bytes, image_digest)
     prepared_identity = (
-        st.session_state["module4_rgb_prepared"][0],
-        tuple(image.shape) if image is not None else None,
+        ss["module4_rgb_prepared"][0], tuple(image.shape) if image is not None else None,
     ) if image_bytes is not None else None
-    if st.session_state.get("module4_rgb_processing_identity") != prepared_identity:
+    if ss.get("module4_rgb_processing_identity") != prepared_identity:
         reset_rectangle()
-        st.session_state["module4_rgb_processing_identity"] = prepared_identity
+        ss["module4_rgb_processing_identity"] = prepared_identity
     resized = image is not None and image.shape != original_shape
-    if resized:
-        st.caption(
-            f"Image resized from {original_shape[1]} × {original_shape[0]} to "
-            f"{image.shape[1]} × {image.shape[0]} pixels for processing."
-        )
 
-    rectangle = None
-    rectangle_image = None
-    if image is None:
-        st.info("Upload an image to select a person and run the experiment.")
-    else:
-        st.subheader("Select Person Rectangle")
-        st.write("Click two opposite corners to create a rectangle around the person.")
-        st.caption("Include the entire person and leave some background outside the rectangle.")
-        st.button("Reset Rectangle", key="module4_reset_rectangle", on_click=reset_rectangle)
-        points = st.session_state["module4_points"]
+    points = ss["module4_points"]
+    rectangle = rectangle_image = rectangle_error = None
+    if image is not None:
         rectangle_image = image.copy()
         if len(points) == 2:
             left, right = sorted((points[0][0], points[1][0]))
@@ -223,73 +306,58 @@ def render_rgb():
             try:
                 rectangle = validate_rectangle((left, top, right - left, bottom - top), image.shape)
             except ValueError as error:
-                st.warning(f"{error} Use Reset Rectangle to select again.")
+                rectangle_error = str(error)
             else:
                 # The backend rectangle uses an exclusive right/bottom boundary.
                 cv2.rectangle(rectangle_image, (left, top), (right - 1, bottom - 1), (255, 200, 0), 2)
-                st.caption(f"Rectangle (x, y, width, height): {rectangle} pixels")
 
-        # Limit preview payload size; click mapping uses actual rendered dimensions.
-        height, width = image.shape[:2]
-        scale = min(1.0, 700 / width, 700 / height)
-        preview = cv2.resize(rectangle_image, (max(1, round(width * scale)), max(1, round(height * scale))))
-        for x, y in points:
-            position = (round(x * preview.shape[1] / width), round(y * preview.shape[0] / height))
-            cv2.circle(preview, position, 5, (255, 200, 0), -1)
-        if len(points) < 2:
-            st.info("Select the first corner." if not points else "Select the opposite corner.")
-            click = streamlit_image_coordinates(
-                preview, width="content", cursor="crosshair",
-                key=f"module4_image_{st.session_state['module4_click_generation']}",
-            )
-            if click is not None:
-                try:
-                    point = original_point(click, image.shape)
-                except (KeyError, ValueError, TypeError, OverflowError):
-                    st.warning("Could not read that click. Please click the image again.")
-                else:
-                    points.append(point)
-                    clear_results()
-                    # A new component key consumes this event exactly once across reruns.
-                    st.session_state["module4_click_generation"] += 1
-                    st.rerun()
-        else:
-            st.image(preview, caption="Selected corners and GrabCut rectangle", width="content")
-
-    # Reassign the same widget keys to preserve values while settings are hidden.
+    # Both methods use the same processing image and rectangle; a change to either, or to a method's own settings,
+    # discards the results that depended on it.
     defaults = {
         "gaussian_kernel": 3, "gaussian_sigma": 0.8,
         "canny_lower": 50, "canny_upper": 150, "grabcut_iterations": 5,
         "cleanup_enabled": False, "morphology_kernel": 3,
     }
-    for name, default in defaults.items():
-        key = f"module4_{name}"
-        if key in st.session_state:
-            st.session_state[key] = st.session_state[key]
     settings = {
-        "gaussian_kernel_size": st.session_state.get("module4_gaussian_kernel", defaults["gaussian_kernel"]),
-        "gaussian_sigma": st.session_state.get("module4_gaussian_sigma", defaults["gaussian_sigma"]),
-        "canny_lower": st.session_state.get("module4_canny_lower", defaults["canny_lower"]),
-        "canny_upper": st.session_state.get("module4_canny_upper", defaults["canny_upper"]),
-        "grabcut_iterations": st.session_state.get("module4_grabcut_iterations", defaults["grabcut_iterations"]),
-        "cleanup_enabled": st.session_state.get("module4_cleanup_enabled", defaults["cleanup_enabled"]),
-        "morphology_kernel_size": st.session_state.get("module4_morphology_kernel", defaults["morphology_kernel"]),
+        "gaussian_kernel_size": ss.get("module4_gaussian_kernel", defaults["gaussian_kernel"]),
+        "gaussian_sigma": ss.get("module4_gaussian_sigma", defaults["gaussian_sigma"]),
+        "canny_lower": ss.get("module4_canny_lower", defaults["canny_lower"]),
+        "canny_upper": ss.get("module4_canny_upper", defaults["canny_upper"]),
+        "grabcut_iterations": ss.get("module4_grabcut_iterations", defaults["grabcut_iterations"]),
+        "cleanup_enabled": ss.get("module4_cleanup_enabled", defaults["cleanup_enabled"]),
+        "morphology_kernel_size": ss.get("module4_morphology_kernel", defaults["morphology_kernel"]),
     }
     cleanup_enabled = settings["cleanup_enabled"]
     shared_inputs = (image_digest, tuple(image.shape) if image is not None else None, rectangle)
     classical_inputs = (shared_inputs, tuple(settings.items()))
     sam2_inputs = (shared_inputs, sam2_configuration())
-    if st.session_state.get("module4_shared_inputs") != shared_inputs:
+    if ss.get("module4_shared_inputs") != shared_inputs:
         clear_results()
-        st.session_state["module4_shared_inputs"] = shared_inputs
-    if st.session_state.get("module4_result_inputs") != classical_inputs:
+        ss["module4_shared_inputs"] = shared_inputs
+    if ss.get("module4_result_inputs") != classical_inputs:
         clear_results("classical")
-        st.session_state["module4_result_inputs"] = classical_inputs
-    if st.session_state.get("module4_sam2_inputs") != sam2_inputs:
+        ss["module4_result_inputs"] = classical_inputs
+    if ss.get("module4_sam2_inputs") != sam2_inputs:
         clear_results("sam2")
-        st.session_state["module4_sam2_inputs"] = sam2_inputs
-
+        ss["module4_sam2_inputs"] = sam2_inputs
+    ready = rectangle is not None
     thresholds_valid = settings["canny_lower"] < settings["canny_upper"]
+    results = ss.get("module4_results")
+    sam2_results = ss.get("module4_sam2_results")
+    comparison_ready = (
+        ready and results is not None and sam2_results is not None
+        and ss.get("module4_classical_identity") == classical_inputs
+        and ss.get("module4_sam2_identity") == sam2_inputs
+    )
+    compared = comparison_ready and ss.get("module4_comparison") == (classical_inputs, sam2_inputs)
+    state = {
+        1: "done" if image is not None else "active",
+        2: "locked" if image is None else "done" if ready else "active",
+        3: "locked" if not ready else "done" if results is not None else "active",
+        4: "locked" if results is None else "done" if sam2_results is not None else "active",
+        5: "locked" if not comparison_ready else "done" if compared else "active",
+    }
+
     def process_classical():
         clear_results("classical")
         try:
@@ -299,11 +367,11 @@ def render_rgb():
                 result.pop("original_image", None)
                 if not cleanup_enabled:
                     result["cleaned_mask"] = result["raw_mask"]
-                st.session_state["module4_results"] = result
-                st.session_state["module4_classical_identity"] = classical_inputs
+                ss["module4_results"] = result
+                ss["module4_classical_identity"] = classical_inputs
         except Exception:
             logging.getLogger(__name__).exception("Module 4 classical inference failed")
-            st.session_state["module4_classical_error"] = "Classical processing could not complete. Check the image, rectangle, and settings, then try again."
+            ss["module4_classical_error"] = "Classical processing could not complete. Check the image, rectangle, and settings, then try again."
 
     def process_sam2():
         clear_results("sam2")
@@ -315,165 +383,207 @@ def render_rgb():
             # Refuse oversized CPU requests before downloading or loading weights.
             check_image_budget(image.shape, device, cpu_pixel_limit())
             with st.spinner("Preparing SAM2 model…"):
-                resource = cached_sam2_model(source, config, device)
+                resource = current_sam2_model(source, config, device)
             with st.spinner("Segmenting the selected person with SAM2…"):
                 result = run_sam2(image, rectangle, resource)
-                st.session_state["module4_sam2_results"] = result
-                st.session_state["module4_sam2_identity"] = sam2_inputs
+                ss["module4_sam2_results"] = result
+                ss["module4_sam2_identity"] = sam2_inputs
         except SAM2ResourceLimitError as error:
-            st.session_state["module4_sam2_error"] = str(error)
+            ss["module4_sam2_error"] = str(error)
         except Exception:
             logging.getLogger(__name__).exception("Module 4 SAM2 inference failed")
-            st.session_state["module4_sam2_error"] = (
+            ss["module4_sam2_error"] = (
                 "SAM2 could not complete. Model preparation or processing may be temporarily "
                 "unavailable; please try again. You can still use the classical method."
             )
 
-    def open_comparison():
-        st.session_state["module4_comparison"] = (classical_inputs, sam2_inputs)
+    def centered(image_array, caption):
+        with st.columns([1, 1.2, 1])[1]:
+            st.image(image_array, caption=caption, width="stretch")
 
-    # Reserve contextual areas once, then render each settings widget at most once.
-    top_actions = st.container()
-    if st.session_state.get("module4_rgb_first_method") == "sam2":
-        sam2_display = st.container()
-        after_sam2_actions = st.container()
-        classical_display = st.container()
-        after_classical_actions = st.container()
-    else:
-        classical_display = st.container()
-        after_classical_actions = st.container()
-        sam2_display = st.container()
-        after_sam2_actions = st.container()
+    def pair():
+        """Two equal columns for side-by-side images, kept at a moderate size on the wider page."""
+        return st.columns([1, 4, 4, 1])[1:3]
 
-    results = st.session_state.get("module4_results")
-    sam2_results = st.session_state.get("module4_sam2_results")
-    run_classical = run_sam = False
-    if results is None:
-        area = after_sam2_actions if sam2_results is not None else top_actions
-        with area:
-            if st.session_state.get("module4_classical_config_open", False):
+    with st.container(key="m4_vis_headings"):
+        st.title("Human Boundary Detection in RGB Images", anchor=False)
+        st.header("Upload an RGB image, select a person, and compare human boundary detection using classical computer "
+                  "vision and SAM2.", anchor=False)
+
+    with st.container(key="m4_vis_body"):
+        # ---------------------------------------------------------------- Step 1
+        with st.container(border=True, key="m4_stepbox_1"):
+            with st.container(key=f"m4_stmark_1_{state[1]}"):
+                step_head(1, state[1])
+            st.write("Upload an RGB image of one person, preferably fully visible and distinguishable from the background.")
+            st.file_uploader(
+                "Upload RGB Image", type=["jpg", "jpeg", "png"],
+                key=f"module4_upload_{ss['module4_upload_generation']}", on_change=update_rgb_upload,
+            )
+            st.caption(f"Supported formats: JPG, JPEG and PNG. Maximum upload size: {st.get_option('server.maxUploadSize')} MB per file.")
+            if image_bytes is not None and ss.get(f"module4_upload_{ss['module4_upload_generation']}") is None:
+                st.caption(f"Loaded RGB image: {ss.get('module4_rgb_filename', 'previous upload')}")
+                st.button("Clear RGB Image", key="module4_clear_image", on_click=clear_rgb_upload)
+            if preparation_error:
+                st.error(preparation_error)
+            if resized:
+                st.caption(
+                    f"Image resized from {original_shape[1]} × {original_shape[0]} to "
+                    f"{image.shape[1]} × {image.shape[0]} pixels for processing."
+                )
+
+        # ---------------------------------------------------------------- Step 2
+        with st.container(border=True, key="m4_stepbox_2"):
+            with st.container(key=f"m4_stmark_2_{state[2]}"):
+                step_head(2, state[2])
+            if state[2] != "locked":
+                with st.expander("How to select the rectangle", expanded=False):
+                    st.write("Click two opposite corners to create a rectangle around the person. Select the first corner above and "
+                             "to the left of the person, then select the second corner below and to the right.")
+                    st.write("Include the entire person, with a small margin around the body. Leave some background outside the rectangle.")
+                    with st.columns([1, 1.5, 1])[1]:
+                        st.image(rectangle_example(), caption="Select the first corner, then the second corner.", width="stretch")
+                if rectangle_error:
+                    st.warning(f"{rectangle_error} Use Reset Rectangle to select again.")
+                if rectangle is not None:
+                    st.caption(f"Rectangle (x, y, width, height): {rectangle} pixels")
+                # Limit preview payload size; click mapping uses actual rendered dimensions.
+                height, width = image.shape[:2]
+                scale = min(1.0, 700 / width, 700 / height)
+                preview = cv2.resize(rectangle_image, (max(1, round(width * scale)), max(1, round(height * scale))))
+                for x, y in points:
+                    position = (round(x * preview.shape[1] / width), round(y * preview.shape[0] / height))
+                    cv2.circle(preview, position, 5, (255, 200, 0), -1)
+                if len(points) < 2:
+                    st.info("Select the first corner." if not points else "Select the second corner.")
+                    with st.container(key="m4_rect_view"):
+                        click = streamlit_image_coordinates(
+                            preview, width="content", cursor="crosshair",
+                            key=f"module4_image_{ss['module4_click_generation']}",
+                        )
+                    if click is not None:
+                        try:
+                            point = original_point(click, image.shape)
+                        except (KeyError, ValueError, TypeError, OverflowError):
+                            st.warning("Could not read that click. Please click the image again.")
+                        else:
+                            points.append(point)
+                            clear_results()
+                            # A new component key consumes this event exactly once across reruns.
+                            ss["module4_click_generation"] += 1
+                            st.rerun()
+                else:
+                    with st.container(key="m4_rect_view"):
+                        st.image(preview, caption="Selected corners and GrabCut rectangle", width="content")
+                st.button("Reset Rectangle", key="module4_reset_rectangle", on_click=reset_rectangle, disabled=not points)
+
+        # ---------------------------------------------------------------- Step 3
+        with st.container(border=True, key="m4_stepbox_3"):
+            with st.container(key=f"m4_stmark_3_{state[3]}"):
+                step_head(3, state[3])
+            if state[3] != "locked":
+                st.write("The classical method uses Gaussian smoothing, Canny edge detection, GrabCut foreground segmentation, "
+                         "and contour extraction to detect the human boundary.")
                 render_classical_settings()
                 if not thresholds_valid:
                     st.warning("Canny lower threshold must be less than the upper threshold.")
-                run_classical = st.button(
-                    "Apply Classical Method", key="module4_apply_classical", type="primary",
-                    disabled=image is None or rectangle is None or not thresholds_valid,
-                )
-            elif sam2_results is not None:
-                st.button("Classical Method", key="module4_detect_after_sam2",
-                          on_click=open_classical_settings)
-            else:
-                classical_button, sam2_button = st.columns(2)
-                classical_button.button(
-                    "Classical Method", key="module4_detect", on_click=open_classical_settings,
-                    disabled=image is None or rectangle is None,
-                )
-                run_sam = sam2_button.button(
-                    "Run SAM2", key="module4_run_sam2",
-                    disabled=image is None or rectangle is None,
-                )
-    if sam2_results is None and (results is not None or st.session_state.get("module4_classical_config_open")):
-        with after_classical_actions if results is not None else top_actions:
-            run_sam = st.button(
-                "Run SAM2", key="module4_run_sam2_after_classical" if results is not None else "module4_run_sam2",
-                disabled=image is None or rectangle is None,
-            )
-    if run_classical:
-        process_classical()
-        if st.session_state.get("module4_results") is not None:
-            st.session_state["module4_classical_config_open"] = False
-            st.session_state.setdefault("module4_rgb_first_method", "classical")
-            st.rerun()
-    if run_sam:
-        process_sam2()
-        if st.session_state.get("module4_sam2_results") is not None:
-            st.session_state.setdefault("module4_rgb_first_method", "sam2")
-            st.rerun()
+                if st.button("Apply Classical Method", key="module4_apply_classical", type="primary", disabled=not thresholds_valid):
+                    process_classical()
+                    if ss.get("module4_results") is not None:
+                        st.rerun()
+                if ss.get("module4_classical_error"):
+                    st.error(ss["module4_classical_error"])
+                if results is not None:
+                    st.markdown("##### Gaussian Smoothing")
+                    original_column, smoothed_column = pair()
+                    with original_column:
+                        st.image(rectangle_image, caption="Processing Image with GrabCut Rectangle" if resized else "Original Image with GrabCut Rectangle", width="stretch")
+                    with smoothed_column:
+                        st.image(results["smoothed_image"], caption="Gaussian-Smoothed Image", width="stretch")
+                    st.write("Gaussian smoothing reduces image noise and small intensity variations before edge detection.")
+                    st.markdown("##### Canny Edge Detection")
+                    centered(results["canny_edges"], "Canny Edge Map")
+                    st.write("Canny detects intensity changes throughout the image, including the person's outline, clothing details, "
+                             "and background edges. It demonstrates edge detection and is not used as the input to GrabCut.")
+                    st.markdown("##### GrabCut Segmentation")
+                    if cleanup_enabled:
+                        raw_column, cleaned_column = pair()
+                        with raw_column:
+                            st.image(results["raw_mask"], caption="Raw GrabCut Foreground Mask", width="stretch")
+                        with cleaned_column:
+                            st.image(results["cleaned_mask"], caption="Foreground Mask After Morphological Cleanup", width="stretch")
+                    else:
+                        centered(results["raw_mask"], "GrabCut Foreground Mask")
+                    st.write("GrabCut uses the selected rectangle to separate the foreground from the background. White represents the "
+                             "foreground, and black represents the background.")
+                    if cleanup_enabled:
+                        st.write("Morphological cleanup refines small imperfections in the foreground mask. It cannot reliably recover "
+                                 "large missing body regions caused by incorrect segmentation.")
+                    st.write("Similar foreground and background colors, shadows, and complex backgrounds can cause parts of the person "
+                             "to be missed or background regions to be included.")
+                    st.markdown("##### Final Human Boundary")
+                    if results["contour"] is None:
+                        st.warning("No foreground contour was found. Adjust the rectangle or settings and try again; the image below is unchanged.")
+                    centered(results["boundary_overlay"], "External Boundary on the Processing Image" if resized else "External Boundary on the Original Image")
+                    st.write("The human boundary is extracted from the largest external contour of the segmentation mask.")
+                    st.button("Reset Classical Method", key="module4_reset_classical", on_click=reset_classical_result)
 
-    comparison_ready = (
-        image is not None and rectangle is not None
-        and results is not None and sam2_results is not None
-        and st.session_state.get("module4_classical_identity") == classical_inputs
-        and st.session_state.get("module4_sam2_identity") == sam2_inputs
-    )
-    with classical_display:
-        if st.session_state.get("module4_classical_error"):
-            st.error(st.session_state["module4_classical_error"])
-        if results is not None:
-            st.divider()
-            st.subheader("Results")
-            original_column, smoothed_column = st.columns(2)
-            with original_column:
-                st.image(rectangle_image, caption="Processing Image with GrabCut Rectangle" if resized else "Original Image with GrabCut Rectangle", width="stretch")
-            with smoothed_column:
-                st.image(results["smoothed_image"], caption="Gaussian Smoothed Image", width="stretch")
-            st.image(results["canny_edges"], caption="Canny Edge Map", width="stretch")
-            st.caption(
-                "Canny detects intensity changes: outer edges of the person, internal "
-                "clothing/body edges, and background edges. This edge map is not used as GrabCut input."
-            )
-            raw_column, cleaned_column = st.columns(2)
-            with raw_column:
-                st.image(results["raw_mask"], caption="Raw GrabCut Foreground Mask", width="stretch")
-            with cleaned_column:
-                mask_caption = "Cleaned Foreground Mask" if cleanup_enabled else "Foreground Mask — Unchanged (Cleanup Off)"
-                st.image(results["cleaned_mask"], caption=mask_caption, width="stretch")
-            st.caption("GrabCut uses the selected rectangle to initialize foreground/background segmentation. White = foreground; black = background.")
-            st.subheader("Final Human Boundary")
-            if results["contour"] is None:
-                st.warning("No foreground contour was found. Adjust the rectangle or settings and try again; the image below is unchanged.")
-            st.image(results["boundary_overlay"], caption="External Boundary on the Processing Image" if resized else "External Boundary on the Original Image", width="stretch")
-            st.caption("Contour extraction selects the largest external foreground contour, assuming the person is the dominant foreground component.")
-            st.metric("Selected contour area (pixels²)", f"{results['contour_area']:,.1f}")
-            st.caption(f"Rectangle width × height: {rectangle[2]} × {rectangle[3]} pixels. Contour area is geometric area, not a foreground pixel count.")
-            st.button("Reset Classical Method", key="module4_reset_classical", on_click=reset_classical_result)
+        # ---------------------------------------------------------------- Step 4
+        with st.container(border=True, key="m4_stepbox_4"):
+            with st.container(key=f"m4_stmark_4_{state[4]}"):
+                step_head(4, state[4])
+            if state[4] != "locked":
+                st.write("SAM2 uses the selected rectangle to segment the person from the background.")
+                if st.button("Run SAM2", key="module4_run_sam2", type="primary"):
+                    process_sam2()
+                    if ss.get("module4_sam2_results") is not None:
+                        st.rerun()
+                if ss.get("module4_sam2_error"):
+                    st.error(ss["module4_sam2_error"])
+                if sam2_results is not None:
+                    mask_column, boundary_column = pair()
+                    with mask_column:
+                        st.image(sam2_results["binary_mask"], caption="SAM2 Binary Mask", width="stretch")
+                    with boundary_column:
+                        st.image(sam2_results["boundary_overlay"], caption="SAM2 Human Boundary", width="stretch")
+                    metadata = sam2_results["metadata"]
+                    if metadata["empty_mask"]:
+                        st.info("SAM2 predicted no foreground. Try selecting another rectangle.")
+                if sam2_results is not None or ss.get("module4_sam2_error"):
+                    st.button("Reset SAM2", key="module4_reset_sam2", on_click=reset_sam2_result)
 
-    with sam2_display:
-        if sam2_results is not None or st.session_state.get("module4_sam2_error"):
-            st.divider()
-            st.subheader("SAM2 Results")
-            if st.session_state.get("module4_sam2_error"):
-                st.error(st.session_state["module4_sam2_error"])
-            if sam2_results is not None:
-                st.image(sam2_results["binary_mask"], caption="SAM2 Binary Mask", width="stretch")
-                st.image(sam2_results["boundary_overlay"], caption="SAM2 Human Boundary", width="stretch")
-                quality_column, device_column = st.columns(2)
-                with quality_column:
-                    st.metric("Predicted Mask Quality", f"{sam2_results['predicted_mask_quality']:.6f}")
-                with device_column:
-                    st.metric("Device Used", sam2_results["metadata"]["device"].upper())
-                st.caption("This is SAM2's predicted mask-quality score, not measured segmentation accuracy.")
-                st.caption("SAM 2.1 Hiera Tiny, box-only prompt. All external foreground boundaries are shown.")
-                if sam2_results["metadata"]["empty_mask"]:
-                    st.info("SAM2 predicted no foreground. Try selecting another rectangle.")
-                st.button("Reset SAM2", key="module4_reset_sam2", on_click=reset_sam2_result)
-    if comparison_ready and st.button("Compare Results", key="module4_compare_after_results"):
-        open_comparison()
+        # ---------------------------------------------------------------- Step 5
+        with st.container(border=True, key="m4_stepbox_5"):
+            with st.container(key=f"m4_stmark_5_{state[5]}"):
+                step_head(5, state[5])
+            if state[5] != "locked":
+                if st.button("Compare Results", key="module4_compare", type="primary"):
+                    ss["module4_comparison"] = (classical_inputs, sam2_inputs)
+                    st.rerun()
+                if compared:
+                    st.markdown("##### Foreground Mask Comparison")
+                    classical_column, sam2_column = pair()
+                    with classical_column:
+                        # the final classical foreground mask, the one the boundary was extracted from
+                        st.image(results["cleaned_mask"], caption="Classical Method — Cleaned Foreground Mask" if cleanup_enabled
+                                 else "Classical Method — GrabCut Foreground Mask", width="stretch")
+                    with sam2_column:
+                        st.image(sam2_results["binary_mask"], caption="SAM2 — Foreground Mask", width="stretch")
+                    st.markdown("##### Human Boundary Comparison")
+                    classical_column, sam2_column = pair()
+                    with classical_column:
+                        st.image(results["boundary_overlay"], caption="Classical Human Boundary", width="stretch")
+                    with sam2_column:
+                        st.image(sam2_results["boundary_overlay"], caption="SAM2 Human Boundary", width="stretch")
+                    mask_agreement_section(results["cleaned_mask"], sam2_results["binary_mask"])
+                    st.markdown("##### Observations & Limitations")
+                    st.markdown(
+                        "- The classical method depends on the selected rectangle and how clearly the person can be distinguished "
+                        "from the background. Shadows and similar colors may affect segmentation.\n"
+                        "- SAM2 results depend on image quality, background complexity, and rectangle selection.\n"
+                        "- Measuring actual segmentation accuracy requires a ground-truth mask.")
 
-    if comparison_ready and st.session_state.get("module4_comparison") == (classical_inputs, sam2_inputs):
-        st.divider()
-        st.subheader("Compare Results")
-        if resized:
-            st.caption(
-                f"Classical and SAM2: {image.shape[1]} × {image.shape[0]} pixels, "
-                "using the same processing image and rectangle."
-            )
-        classical_column, sam2_column = st.columns(2)
-        with classical_column:
-            st.markdown("**Classical Method**")
-            st.caption("Canny + GrabCut + contour extraction")
-            st.image(results["raw_mask"], caption="GrabCut Binary Mask", width="stretch")
-            st.image(results["boundary_overlay"], caption="Classical Boundary", width="stretch")
-            if cleanup_enabled:
-                st.caption("The classical boundary includes the selected morphological cleanup.")
-        with sam2_column:
-            st.markdown("**SAM2**")
-            st.caption("SAM 2.1 Hiera Tiny, box-only prompt")
-            st.image(sam2_results["binary_mask"], caption="SAM2 Binary Mask", width="stretch")
-            st.image(sam2_results["boundary_overlay"], caption="SAM2 Boundary", width="stretch")
-
-    if results is not None or sam2_results is not None:
-        st.button("Reset RGB Experiment", key="module4_reset_rgb_bottom", on_click=clear_rgb_upload)
+        st.button("Reset Experiment", key="module4_reset_rgb", on_click=reset_experiment)
 
 
 def clear_thermal_results(method=None):
@@ -514,12 +624,6 @@ def record_thermal_corner(component_key, image_shape):
     clear_thermal_results("sam2")
 
 
-def open_thermal_sam2_setup():
-    """Reveal the optional SAM2 box prompt without changing processing state."""
-    st.session_state["module4_q2_setup_open"] = True
-    st.session_state.setdefault("module4_q2_workflow", "sam2")
-
-
 def update_thermal_upload():
     """Persist Q2 bytes across navigation, independently of uploader widgets."""
     uploaded = st.session_state.get(f"module4_q2_upload_{st.session_state['module4_q2_upload_generation']}")
@@ -529,8 +633,6 @@ def update_thermal_upload():
     st.session_state.pop("module4_q2_processing_identity", None)
     clear_thermal_results()
     reset_thermal_rectangle()
-    st.session_state["module4_q2_setup_open"] = False
-    st.session_state.pop("module4_q2_workflow", None)
 
 
 def reset_thermal_upload():
@@ -542,8 +644,6 @@ def reset_thermal_upload():
     st.session_state.pop("module4_q2_processing_identity", None)
     clear_thermal_results()
     reset_thermal_rectangle()
-    st.session_state["module4_q2_setup_open"] = False
-    st.session_state.pop("module4_q2_workflow", None)
 
 
 def thermal_mask_iou(classical_mask, sam2_mask):
@@ -558,111 +658,175 @@ def thermal_mask_iou(classical_mask, sam2_mask):
     return float(np.count_nonzero(classical_foreground & sam2_foreground) / union)
 
 
+# ---- Mask Agreement (IoU): one educational section shared by both visitor pages. The IoU itself comes from thermal_mask_iou
+# above; the diagrams are static inline SVG (text and lines use the current text color, so they follow the theme).
+IOU_BLUE, IOU_ORANGE, IOU_GREEN, IOU_INK = "#478BD1", "#E7A33D", "#459B70", "#10261B"
+IOU_CSS = """
+<style>
+.st-key-m4_iou_box h5, .st-key-m4_iou_box h3, .st-key-m4_iou_box p, .st-key-m4_iou_box [data-testid="stCaptionContainer"] { text-align: center; }
+.st-key-m4_iou_box h3 { font-size: clamp(2rem, 8vw, 2.75rem); font-weight: 800; padding: 0.25rem 0; }
+.st-key-m4_iou_art svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+</style>
+"""
+
+
+def overlap_distance(iou):
+    """Distance between the centres of two equal circles of radius 1 whose intersection over union equals iou."""
+    def circles_iou(distance):
+        lens = 2 * math.acos(distance / 2) - (distance / 2) * math.sqrt(4 - distance * distance)
+        return lens / (2 * math.pi - lens)
+    low, high = 0.0, 2.0
+    for _ in range(60):
+        middle = (low + high) / 2
+        low, high = (middle, high) if circles_iou(middle) > iou else (low, middle)
+    return (low + high) / 2
+
+
+def svg_circles(cx_left, cx_right, cy, r, overlap):
+    """Blue and orange circles; their lens-shaped intersection, if they overlap, in green."""
+    shapes = [f'<circle cx="{cx_left:.1f}" cy="{cy}" r="{r}" fill="{IOU_BLUE}"/>',
+              f'<circle cx="{cx_right:.1f}" cy="{cy}" r="{r}" fill="{IOU_ORANGE}"/>']
+    if overlap:
+        middle, half = (cx_left + cx_right) / 2, math.sqrt(r * r - ((cx_right - cx_left) / 2) ** 2)
+        shapes.append(f'<path d="M {middle:.1f} {cy - half:.1f} A {r} {r} 0 0 1 {middle:.1f} {cy + half:.1f} '
+                      f'A {r} {r} 0 0 1 {middle:.1f} {cy - half:.1f} Z" fill="{IOU_GREEN}"/>')
+    return "".join(shapes)
+
+
+def iou_diagram_svg():
+    r, cy, gap = 75, 118, 56
+    left = (380 - (2 * r + gap)) / 2 + r
+    right = left + gap
+    edge_left, edge_right = left - r, right + r
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 250" width="380" role="img" '
+            f'aria-label="Two overlapping circles: the classical mask, the SAM2 mask and their intersection, with the union bracketed below">'
+            f'{svg_circles(left, right, cy, r, True)}'
+            f'<g fill="currentColor" font-size="14" font-weight="600" text-anchor="middle">'
+            f'<text x="{left - 22:.1f}" y="30">Classical Mask</text><text x="{right + 22:.1f}" y="30">SAM2 Mask</text>'
+            f'<text x="{(left + right) / 2:.1f}" y="{cy + 4}" font-size="12" fill="{IOU_INK}">Intersection</text>'
+            f'<text x="190" y="238">Union — combined foreground area</text></g>'
+            f'<path d="M {edge_left:.1f} 202 v10 H {edge_right:.1f} v-10" fill="none" stroke="currentColor" stroke-width="2"/></svg>')
+
+
+def iou_example_svg(value, text, kind):
+    r, cy = 26, 34
+    gap = {"none": 2 * r + 10, "partial": overlap_distance(0.5) * r, "same": 0}[kind]
+    left = 75 - gap / 2
+    right = 75 + gap / 2
+    shapes = (f'<circle cx="75" cy="{cy}" r="{r}" fill="{IOU_GREEN}"/>' if kind == "same"
+              else svg_circles(left, right, cy, r, kind == "partial"))
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 112" width="150" role="img" aria-label="Example: IoU {value}, {text}">'
+            f'{shapes}<g fill="currentColor" text-anchor="middle">'
+            f'<text x="75" y="88" font-size="18" font-weight="700">{value}</text>'
+            f'<text x="75" y="106" font-size="12">{text}</text></g></svg>')
+
+
+IOU_EXAMPLES = (("0.0", "No overlap", "none"), ("0.5", "Partial overlap", "partial"), ("1.0", "Identical masks", "same"))
+
+
+def mask_agreement_section(classical_mask, sam2_mask):
+    """The Mask Agreement (IoU) box: the IoU of the two current foreground masks plus a static explanation of what it measures."""
+    iou = thermal_mask_iou(classical_mask, sam2_mask)
+    with st.container(border=True, key="m4_iou_box"):
+        st.markdown(IOU_CSS, unsafe_allow_html=True)
+        st.markdown("##### Mask Agreement (IoU)")
+        st.markdown(f"### {iou:.4f}" if iou is not None else "### N/A")
+        if iou is None:
+            st.caption("IoU is undefined because both masks contain no foreground.")
+        st.write("Intersection over Union (IoU) measures how closely the foreground masks from the classical method and SAM2 overlap.")
+        with st.container(key="m4_iou_art"):
+            st.html(iou_diagram_svg())
+            st.latex(r"\mathrm{IoU} = \dfrac{\text{Intersection}}{\text{Union}}")
+            st.caption("Illustration of mask overlap.")
+            for column, (value, text, kind) in zip(st.columns(3), IOU_EXAMPLES):
+                with column:
+                    st.html(iou_example_svg(value, text, kind))
+        st.caption("Values closer to 1 indicate greater agreement between the two masks, not necessarily greater segmentation accuracy.")
+
+
+# Thermal visitor page: black outlines and rectangle markers stand out against the false-color palette.
+THERMAL_MARK = (0, 0, 0)
+THERMAL_BOUNDARY_THICKNESS = 5
+THERMAL_CSS = """
+<style>
+/* this page only: keep the click image and the completed preview centered whatever the width of the element wrapper */
+.st-key-m4_rect_view [data-testid="stElementContainer"] { width: 100%; display: flex; justify-content: center; }
+.st-key-m4_rect_view iframe, .st-key-m4_rect_view img { display: block; margin-left: auto; margin-right: auto; }
+</style>
+"""
+
+
+def visitor_centered(image_array, caption):
+    """One tall image at a moderate width, centered (as on the RGB visitor page)."""
+    with st.columns([1, 1.2, 1])[1]:
+        st.image(image_array, caption=caption, width="stretch")
+
+
+def visitor_pair():
+    """Two equal columns for side-by-side images, kept at a moderate size on the wide page."""
+    return st.columns([1, 4, 4, 1])[1:3]
+
+
+def hue_text(ranges):
+    return " and ".join(f"{lower[0]}–{upper[0]}" for lower, upper in ranges)
+
+
 def render_thermal():
-    st.subheader("Question 2 – Thermal Image Human Boundary Detection")
-    st.caption(
-        "Upload a false-color thermal image containing one person. "
-        "This method selects the largest warm-colored region, so use an image "
-        "where the person is green/yellow/orange/red against a mostly blue background."
-    )
-    st.session_state.setdefault("module4_q2_upload_generation", 0)
-    st.button("Reset Question 2", key="module4_q2_reset", on_click=reset_thermal_upload)
-    uploaded = st.file_uploader(
-        "Upload Thermal Image", type=["jpg", "jpeg", "png"],
-        key=f"module4_q2_upload_{st.session_state['module4_q2_upload_generation']}",
-        on_change=update_thermal_upload,
-    )
-    image_bytes = uploaded.getvalue() if uploaded is not None else st.session_state.get("module4_q2_bytes")
-    if uploaded is not None:
-        st.session_state["module4_q2_bytes"] = image_bytes
-        st.session_state["module4_q2_filename"] = uploaded.name
-    elif image_bytes is not None:
-        st.caption(f"Loaded thermal image: {st.session_state.get('module4_q2_filename', 'previous upload')}")
+    ss = st.session_state
+    ss.setdefault("module4_q2_upload_generation", 0)
+    ss.setdefault("module4_q2_points", [])
+    ss.setdefault("module4_q2_click_generation", 0)
+    st.markdown(VISITOR_CSS + THERMAL_CSS, unsafe_allow_html=True)
+
+    # ---- everything the step states depend on is worked out first, from the stored upload, rectangle and results
+    image_bytes = ss.get("module4_q2_bytes")
     digest = hashlib.sha256(image_bytes).hexdigest() if image_bytes is not None else None
-    if st.session_state.get("module4_q2_digest") != digest:
+    if ss.get("module4_q2_digest") != digest:
         clear_thermal_results()
         reset_thermal_rectangle()
-        st.session_state["module4_q2_setup_open"] = False
-        st.session_state.pop("module4_q2_workflow", None)
-        st.session_state["module4_q2_digest"] = digest
-
-    image = None
-    original_shape = None
-    prepared_identity = None
+        ss["module4_q2_digest"] = digest
+    image = original_shape = preparation_error = prepared_identity = None
     if image_bytes is not None:
-        image, original_shape, preparation_error = prepared_thermal_upload(
-            st.session_state, image_bytes, digest,
-        )
-        prepared_identity = st.session_state["module4_q2_prepared"][0]
-        if preparation_error:
-            st.error(preparation_error)
-    if st.session_state.get("module4_q2_processing_identity") != prepared_identity:
+        image, original_shape, preparation_error = prepared_thermal_upload(ss, image_bytes, digest)
+        prepared_identity = ss["module4_q2_prepared"][0]
+    if ss.get("module4_q2_processing_identity") != prepared_identity:
         clear_thermal_results()
         reset_thermal_rectangle()
-        st.session_state["module4_q2_processing_identity"] = prepared_identity
+        ss["module4_q2_processing_identity"] = prepared_identity
     resized = image is not None and image.shape != original_shape
-    if resized:
-        st.caption(
-            f"Thermal image resized from {original_shape[1]} × {original_shape[0]} to "
-            f"{image.shape[1]} × {image.shape[0]} pixels for Classical and SAM2 processing."
-        )
-    if image is None:
-        st.info("Upload a false-color thermal image to run the classical method.")
-    else:
-        st.image(image, caption="Thermal Image for Processing" if resized else "Original Thermal Image", width="stretch")
 
-    st.session_state.setdefault("module4_q2_points", [])
-    st.session_state.setdefault("module4_q2_click_generation", 0)
-    # Presentation order follows the chosen starting method, not processing identity.
-    workflow = st.session_state.get("module4_q2_workflow")
-    initial_actions = st.container()
-    if workflow == "classical":
-        classical_display = st.container()
-        sam2_setup_display = st.container()
-        sam2_display = st.container()
-    else:
-        sam2_setup_display = st.container()
-        sam2_display = st.container()
-        classical_display = st.container()
-    st.session_state.setdefault("module4_q2_setup_open", False)
-    rectangle = None
-    with sam2_setup_display:
-        if image is not None and st.session_state["module4_q2_setup_open"]:
-            st.subheader("Select SAM2 Rectangle")
-            st.caption("Click two opposite corners around the person on the thermal processing image. This box prompts SAM2 only; the classical method does not use it.")
-            st.button("Reset SAM2 Rectangle", key="module4_q2_reset_rectangle", on_click=reset_thermal_rectangle)
-            points = st.session_state["module4_q2_points"]
-            height, width = image.shape[:2]
-            # Preview clicks map to the shared processing image used for inference.
-            scale = min(1.0, 700 / width, 700 / height)
-            preview = cv2.resize(image, (max(1, round(width * scale)), max(1, round(height * scale))))
-            for x, y in points:
-                cv2.circle(preview, (round(x * preview.shape[1] / width), round(y * preview.shape[0] / height)), 5, (255, 0, 255), -1)
-            if len(points) == 2:
-                left, right = sorted((points[0][0], points[1][0]))
-                top, bottom = sorted((points[0][1], points[1][1]))
-                try:
-                    rectangle = validate_rectangle((left, top, right - left, bottom - top), image.shape)
-                except ValueError as error:
-                    st.warning(f"{error} Use Reset SAM2 Rectangle to select again.")
-                else:
-                    cv2.rectangle(preview, (round(left * scale), round(top * scale)),
-                                  (round((right - 1) * scale), round((bottom - 1) * scale)), (255, 0, 255), 2)
-                    st.caption(f"SAM2 box (x, y, width, height): {rectangle} pixels")
-                st.image(preview, caption="SAM2 box on thermal processing image", width="content")
-            else:
-                st.info("Select the first SAM2 corner." if not points else "Select the second SAM2 corner.")
-                component_key = f"module4_q2_click_{st.session_state['module4_q2_click_generation']}"
-                streamlit_image_coordinates(
-                    preview, width="content", cursor="crosshair", key=component_key,
-                    on_click=lambda: record_thermal_corner(component_key, image.shape),
-                )
+    points = ss["module4_q2_points"]
+    rectangle = rectangle_error = None
+    if image is not None and len(points) == 2:
+        left, right = sorted((points[0][0], points[1][0]))
+        top, bottom = sorted((points[0][1], points[1][1]))
+        try:
+            rectangle = validate_rectangle((left, top, right - left, bottom - top), image.shape)
+        except ValueError as error:
+            rectangle_error = str(error)
 
+    # The classical method needs only the processing image; SAM2 needs the image and its own rectangle.
     classical_inputs = (prepared_identity, tuple(image.shape) if image is not None else None)
     sam2_inputs = (classical_inputs, rectangle, sam2_configuration())
-    if st.session_state.get("module4_q2_sam2_inputs") != sam2_inputs:
+    if ss.get("module4_q2_sam2_inputs") != sam2_inputs:
         clear_thermal_results("sam2")
-        st.session_state["module4_q2_sam2_inputs"] = sam2_inputs
+        ss["module4_q2_sam2_inputs"] = sam2_inputs
+    results = ss.get("module4_q2_results")
+    if results is not None and ss.get("module4_q2_classical_identity") != classical_inputs:
+        clear_thermal_results("classical")
+        results = None
+    sam2_results = ss.get("module4_q2_sam2_results")
+    comparison_ready = (
+        image is not None and rectangle is not None and results is not None and sam2_results is not None
+        and ss.get("module4_q2_sam2_identity") == sam2_inputs
+    )
+    compared = comparison_ready and ss.get("module4_q2_comparison") == (classical_inputs, sam2_inputs)
+    state = {
+        1: "done" if image is not None else "active",
+        2: "locked" if image is None else "done" if results is not None else "active",
+        3: "locked" if results is None else "done" if sam2_results is not None else "active",
+        4: "locked" if not comparison_ready else "done" if compared else "active",
+    }
 
     def process_classical():
         clear_thermal_results("classical")
@@ -672,13 +836,16 @@ def render_thermal():
                 # Retain display stages and metrics; the upload preserves the original.
                 for key in ("original_image", "hsv_image", "closed_mask"):
                     result.pop(key)
-                st.session_state["module4_q2_results"] = result
-                st.session_state["module4_q2_classical_identity"] = classical_inputs
+                # Display only: the same contour, drawn in black with the page's boundary thickness instead of the library's magenta.
+                result["boundary_overlay"] = image.copy()
+                cv2.drawContours(result["boundary_overlay"], [result["contour"]], -1, THERMAL_MARK, THERMAL_BOUNDARY_THICKNESS)
+                ss["module4_q2_results"] = result
+                ss["module4_q2_classical_identity"] = classical_inputs
         except ValueError as error:
-            st.session_state["module4_q2_error"] = str(error)
+            ss["module4_q2_error"] = str(error)
         except cv2.error:
             logging.getLogger(__name__).exception("Module 4 thermal processing failed")
-            st.session_state["module4_q2_error"] = "Thermal processing could not complete. Please try another image."
+            ss["module4_q2_error"] = "Thermal processing could not complete. Please try another image."
 
     def process_sam2():
         clear_thermal_results("sam2")
@@ -689,128 +856,194 @@ def render_thermal():
             device = select_device(requested_device)
             check_image_budget(image.shape, device, cpu_pixel_limit())
             with st.spinner("Preparing SAM2 model…"):
-                resource = cached_sam2_model(source, config, device)
+                resource = current_sam2_model(source, config, device)
             with st.spinner("Segmenting the thermal person with SAM2…"):
                 result = run_sam2(image, rectangle, resource)
-                # Q2 presentation only: preserve every SAM2 mask pixel/component.
+                # Presentation only: preserve every SAM2 mask pixel/component.
                 contours, _ = cv2.findContours(result["binary_mask"].copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 result["boundary_overlay"] = image.copy()
-                cv2.drawContours(result["boundary_overlay"], contours, -1, (255, 0, 255), 3)
-                result["metadata"] = {**result["metadata"], "overlay": "All external contours, magenta, thickness 3; no mask editing"}
-                st.session_state["module4_q2_sam2_results"] = result
-                st.session_state["module4_q2_sam2_identity"] = sam2_inputs
+                cv2.drawContours(result["boundary_overlay"], contours, -1, THERMAL_MARK, THERMAL_BOUNDARY_THICKNESS)
+                result["metadata"] = {**result["metadata"], "overlay": "All external contours, black, thickness 5; no mask editing"}
+                ss["module4_q2_sam2_results"] = result
+                ss["module4_q2_sam2_identity"] = sam2_inputs
         except SAM2ResourceLimitError as error:
-            st.session_state["module4_q2_sam2_error"] = str(error)
+            ss["module4_q2_sam2_error"] = str(error)
         except Exception:
             logging.getLogger(__name__).exception("Module 4 thermal SAM2 inference failed")
-            st.session_state["module4_q2_sam2_error"] = "SAM2 could not complete. Please try again. The classical thermal method remains available."
+            ss["module4_q2_sam2_error"] = "SAM2 could not complete. Please try again. The classical thermal method remains available."
 
-    if workflow is None and image is not None:
-        with initial_actions:
-            classical_column, sam2_column = st.columns(2)
-            if classical_column.button("Run Classical Method", key="module4_q2_run", type="primary"):
-                st.session_state["module4_q2_workflow"] = "classical"
-                process_classical()
-                st.rerun()
-            sam2_column.button("Set Up SAM2", key="module4_q2_setup",
-                               on_click=open_thermal_sam2_setup)
-    if rectangle is not None and st.session_state.get("module4_q2_sam2_results") is None:
-        with sam2_setup_display:
-            if st.button("Run SAM2", key="module4_q2_run_sam2"):
-                process_sam2()
-    results = st.session_state.get("module4_q2_results")
-    sam2_results = st.session_state.get("module4_q2_sam2_results")
-    comparison_ready = (
-        image is not None and rectangle is not None
-        and results is not None and sam2_results is not None
-        and st.session_state.get("module4_q2_classical_identity") == classical_inputs
-        and st.session_state.get("module4_q2_sam2_identity") == sam2_inputs
-    )
-    def open_thermal_comparison():
-        st.session_state["module4_q2_comparison"] = (classical_inputs, sam2_inputs)
+    with st.container(key="m4_vis_headings"):
+        st.title("Human Boundary Detection in Thermal Images", anchor=False)
+        st.header("Upload a thermal image and compare human boundary detection using classical computer vision and SAM2.",
+                  anchor=False)
 
-    with classical_display:
-        if st.session_state.get("module4_q2_error"):
-            st.error(st.session_state["module4_q2_error"])
-        results = st.session_state.get("module4_q2_results")
-        if results is not None and image is not None:
-            st.subheader("Classical Thermal Results")
-            initial_column, cleaned_column = st.columns(2)
-            with initial_column:
-                st.image(results["initial_hsv_mask"], caption="Initial HSV Mask", width="stretch")
-            with cleaned_column:
-                st.image(results["cleaned_human_mask"], caption="Cleaned Human Mask", width="stretch")
-            st.image(results["boundary_overlay"], caption="Human Boundary", width="stretch")
-            st.caption(f"Processing dimensions: {results['width']} × {results['height']} pixels. Masks, overlays, and measurements use this resolution.")
-            count_column, area_column, percentage_column = st.columns(3)
-            count_column.metric("Foreground components", results["foreground_components"])
-            area_column.metric("Selected area (pixels)", f"{results['selected_component_area']:,}")
-            percentage_column.metric("Selected image occupancy", f"{results['selected_component_percentage']:.2f}%")
-            st.caption(
-                "Warm-color HSV thresholding → 3×3 elliptical closing → largest "
-                "8-connected foreground component → external contour. "
-                "Occupancy is the fraction of image pixels selected, not segmentation accuracy."
+    with st.container(key="m4_vis_body"):
+        # ---------------------------------------------------------------- Step 1
+        with st.container(border=True, key="m4_stepbox_1"):
+            with st.container(key=f"m4_stmark_1_{state[1]}"):
+                step_head(1, state[1], THERMAL_STEP_TITLES)
+            st.write("Upload a false-color thermal image of one person, preferably with warm body colors against a blue or purple "
+                     "background.")
+            st.file_uploader(
+                "Upload Thermal Image", type=["jpg", "jpeg", "png"],
+                key=f"module4_q2_upload_{ss['module4_q2_upload_generation']}", on_change=update_thermal_upload,
             )
+            st.caption(f"Supported formats: JPG, JPEG and PNG. Maximum upload size: {st.get_option('server.maxUploadSize')} MB per file.")
+            if image_bytes is not None and ss.get(f"module4_q2_upload_{ss['module4_q2_upload_generation']}") is None:
+                st.caption(f"Loaded thermal image: {ss.get('module4_q2_filename', 'previous upload')}")
+                st.button("Clear Thermal Image", key="module4_q2_clear_image", on_click=reset_thermal_upload)
+            if preparation_error:
+                st.error(preparation_error)
+            if image is not None:
+                visitor_centered(image, "Thermal Image for Processing" if resized else "Original Thermal Image")
+                if resized:
+                    st.caption(
+                        f"Thermal image resized from {original_shape[1]} × {original_shape[0]} to "
+                        f"{image.shape[1]} × {image.shape[0]} pixels for Classical and SAM2 processing."
+                    )
+                else:
+                    st.caption(f"Original and processing size: {image.shape[1]} × {image.shape[0]} pixels.")
 
-    with sam2_display:
-        if st.session_state.get("module4_q2_sam2_error"):
-            st.error(st.session_state["module4_q2_sam2_error"])
-        if sam2_results is not None:
-            st.subheader("SAM2 Results")
-            st.image(sam2_results["binary_mask"], caption="SAM2 Binary Mask", width="stretch")
-            st.image(sam2_results["boundary_overlay"], caption="SAM2 Human Boundary", width="stretch")
-            quality_column, device_column = st.columns(2)
-            quality_column.metric("Predicted Mask Quality", f"{sam2_results['predicted_mask_quality']:.6f}")
-            device_column.metric("Device Used", sam2_results["metadata"]["device"].upper())
-            st.caption("SAM 2.1 Hiera Tiny, box-only prompt. Predicted Mask Quality is the model's score, not measured segmentation accuracy.")
-            if sam2_results["metadata"]["empty_mask"]:
-                st.info("SAM2 predicted no foreground. Try another rectangle.")
+        # ---------------------------------------------------------------- Step 2
+        with st.container(border=True, key="m4_stepbox_2"):
+            with st.container(key=f"m4_stmark_2_{state[2]}"):
+                step_head(2, state[2], THERMAL_STEP_TITLES)
+            if state[2] != "locked":
+                st.write("The classical method identifies the largest warm-colored region in the thermal image and extracts its "
+                         "external boundary.")
+                st.write("Unlike the RGB classical method, which uses a rectangle to guide GrabCut segmentation, the thermal "
+                         "classical method identifies the person directly using warm-colored regions.")
+                with st.expander("View Processing Parameters", expanded=False):
+                    results_table("Parameter", [
+                        ("HSV hue range", hue_text(HSV_RANGES)),
+                        ("Minimum saturation", str(HSV_RANGES[0][0][1])),
+                        ("Minimum value", str(HSV_RANGES[0][0][2])),
+                        ("Morphological closing", f"{CLOSING_KERNEL_SIZE} × {CLOSING_KERNEL_SIZE} elliptical kernel"),
+                        ("Closing iterations", str(CLOSING_ITERATIONS)),
+                        ("Connected components", "8-connectivity")])
+                    st.caption("These parameters are fixed; they are not adjustable settings.")
+                if st.button("Apply Classical Method", key="module4_q2_run", type="primary"):
+                    process_classical()
+                    if ss.get("module4_q2_results") is not None:
+                        st.rerun()
+                if ss.get("module4_q2_error"):
+                    st.error(ss["module4_q2_error"])
+                if results is not None:
+                    st.markdown("##### HSV Thresholding & Human Segmentation")
+                    initial_column, cleaned_column = visitor_pair()
+                    with initial_column:
+                        st.image(results["initial_hsv_mask"], caption="Initial HSV Mask", width="stretch")
+                    with cleaned_column:
+                        st.image(results["cleaned_human_mask"], caption="Cleaned Human Mask", width="stretch")
+                    st.write("HSV thresholding identifies warm-colored regions. Morphological closing fills small gaps, and "
+                             "connected-component analysis retains the largest foreground region.")
+                    st.write("White represents the foreground, and black represents the background.")
+                    st.markdown("##### Final Human Boundary")
+                    visitor_centered(results["boundary_overlay"], "Classical Human Boundary")
+                    st.write("The human boundary is extracted from the cleaned mask and displayed in black.")
+                    st.button("Reset Classical Method", key="module4_q2_reset_classical",
+                              on_click=lambda: clear_thermal_results("classical"))
 
-    # Keep next actions below their corresponding workflow, with no top duplicates.
-    if workflow is not None and results is None and (workflow == "classical" or sam2_results is not None):
-        with classical_display:
-            if st.button("Run Classical Method", key="module4_q2_classical_next", disabled=image is None):
-                process_classical()
-                st.rerun()
-    if results is not None and not st.session_state["module4_q2_setup_open"]:
-        with classical_display:
-            st.button("Set Up SAM2", key="module4_q2_setup_after_classical",
-                      on_click=open_thermal_sam2_setup)
-    if comparison_ready:
-        if st.button("Compare Results", key="module4_q2_compare_after_results"):
-            open_thermal_comparison()
+        # ---------------------------------------------------------------- Step 3
+        with st.container(border=True, key="m4_stepbox_3"):
+            with st.container(key=f"m4_stmark_3_{state[3]}"):
+                step_head(3, state[3], THERMAL_STEP_TITLES)
+            if state[3] != "locked":
+                st.write("SAM2 uses the selected rectangle to segment the person from the background.")
+                st.markdown("##### Select Person Rectangle")
+                with st.expander("How to select the rectangle", expanded=False):
+                    st.write("Click two opposite corners to create a rectangle around the person. Select the first corner above and "
+                             "to the left of the person, then select the second corner below and to the right.")
+                    st.write("Include the entire person, with a small margin around the body. Leave some background outside the rectangle.")
+                    with st.columns([1, 1.5, 1])[1]:
+                        st.image(rectangle_example(THERMAL_EXAMPLE_IMAGE, THERMAL_EXAMPLE_CORNERS, THERMAL_MARK),
+                                 caption="Select the first corner, then the second corner.", width="stretch")
+                if rectangle_error:
+                    st.warning(f"{rectangle_error} Use Reset Rectangle to select again.")
+                if rectangle is not None:
+                    st.caption(f"Rectangle (x, y, width, height): {rectangle} pixels")
+                height, width = image.shape[:2]
+                # Preview clicks map to the shared processing image used for inference.
+                scale = min(1.0, 700 / width, 700 / height)
+                preview = cv2.resize(image, (max(1, round(width * scale)), max(1, round(height * scale))))
+                for x, y in points:
+                    cv2.circle(preview, (round(x * preview.shape[1] / width), round(y * preview.shape[0] / height)), 5, THERMAL_MARK, -1)
+                if len(points) == 2:
+                    if rectangle is not None:
+                        left, right = sorted((points[0][0], points[1][0]))
+                        top, bottom = sorted((points[0][1], points[1][1]))
+                        cv2.rectangle(preview, (round(left * scale), round(top * scale)),
+                                      (round((right - 1) * scale), round((bottom - 1) * scale)), THERMAL_MARK, 2)
+                    with st.container(key="m4_rect_view"):
+                        st.image(preview, caption="Selected corners and rectangle on the thermal processing image", width="content")
+                else:
+                    st.info("Select the first corner." if not points else "Select the second corner.")
+                    component_key = f"module4_q2_click_{ss['module4_q2_click_generation']}"
+                    with st.container(key="m4_rect_view"):
+                        streamlit_image_coordinates(
+                            preview, width="content", cursor="crosshair", key=component_key,
+                            on_click=lambda: record_thermal_corner(component_key, image.shape),
+                        )
+                st.button("Reset Rectangle", key="module4_q2_reset_rectangle", on_click=reset_thermal_rectangle, disabled=not points)
+                if rectangle is not None:
+                    if st.button("Run SAM2", key="module4_q2_run_sam2", type="primary"):
+                        process_sam2()
+                        if ss.get("module4_q2_sam2_results") is not None:
+                            st.rerun()
+                if ss.get("module4_q2_sam2_error"):
+                    st.error(ss["module4_q2_sam2_error"])
+                if sam2_results is not None:
+                    mask_column, boundary_column = visitor_pair()
+                    with mask_column:
+                        st.image(sam2_results["binary_mask"], caption="SAM2 Binary Mask", width="stretch")
+                    with boundary_column:
+                        st.image(sam2_results["boundary_overlay"], caption="SAM2 Human Boundary", width="stretch")
+                    metadata = sam2_results["metadata"]
+                    if metadata["empty_mask"]:
+                        st.info("SAM2 predicted no foreground. Try another rectangle.")
+                if sam2_results is not None or ss.get("module4_q2_sam2_error"):
+                    st.button("Reset SAM2", key="module4_q2_reset_sam2", on_click=lambda: clear_thermal_results("sam2"))
 
-    if comparison_ready and st.session_state.get("module4_q2_comparison") == (classical_inputs, sam2_inputs):
-        st.subheader("Compare Results")
-        st.caption(
-            f"Classical and SAM2: {image.shape[1]} × {image.shape[0]} pixels, "
-            "using the same processing image. IoU uses masks at this resolution."
-        )
-        iou = thermal_mask_iou(results["cleaned_human_mask"], sam2_results["binary_mask"])
-        st.metric("IoU with SAM2", f"{iou:.4f}" if iou is not None else "N/A")
-        st.caption("IoU measures the overlap between the Classical and SAM2 segmentation masks. A value closer to 1 indicates greater agreement between the two segmentations.")
-        st.caption("SAM2 is the comparison segmentation, not ground truth.")
-        if iou is None:
-            st.caption("IoU is undefined because both masks contain no foreground.")
-        st.caption("Classical Thermal Method: HSV thresholding + morphology + largest connected component + contour. SAM2: SAM 2.1 Hiera Tiny, box-only prompt.")
-        # Each equal-width row starts together, independently of caption wrapping.
-        classical_column, sam2_column = st.columns(2)
-        classical_column.image(results["cleaned_human_mask"], caption="Classical Mask", width="stretch")
-        sam2_column.image(sam2_results["binary_mask"], caption="SAM2 Mask", width="stretch")
-        classical_column, sam2_column = st.columns(2)
-        classical_column.image(results["boundary_overlay"], caption="Classical Boundary", width="stretch")
-        sam2_column.image(sam2_results["boundary_overlay"], caption="SAM2 Boundary", width="stretch")
+        # ---------------------------------------------------------------- Step 4
+        with st.container(border=True, key="m4_stepbox_4"):
+            with st.container(key=f"m4_stmark_4_{state[4]}"):
+                step_head(4, state[4], THERMAL_STEP_TITLES)
+            if state[4] != "locked":
+                if st.button("Compare Results", key="module4_q2_compare", type="primary"):
+                    ss["module4_q2_comparison"] = (classical_inputs, sam2_inputs)
+                    st.rerun()
+                if compared:
+                    st.markdown("##### Foreground Mask Comparison")
+                    classical_column, sam2_column = visitor_pair()
+                    with classical_column:
+                        st.image(results["cleaned_human_mask"], caption="Classical Method — Cleaned Human Mask", width="stretch")
+                    with sam2_column:
+                        st.image(sam2_results["binary_mask"], caption="SAM2 — Foreground Mask", width="stretch")
+                    st.markdown("##### Human Boundary Comparison")
+                    classical_column, sam2_column = visitor_pair()
+                    with classical_column:
+                        st.image(results["boundary_overlay"], caption="Classical Human Boundary", width="stretch")
+                    with sam2_column:
+                        st.image(sam2_results["boundary_overlay"], caption="SAM2 Human Boundary", width="stretch")
+                    mask_agreement_section(results["cleaned_human_mask"], sam2_results["binary_mask"])
+                    st.markdown("##### Observations & Limitations")
+                    st.markdown(
+                        "- The classical method relies on displayed thermal colors, not actual temperature measurements. Other "
+                        "warm-colored objects may affect segmentation.\n"
+                        "- SAM2 results depend on image quality, background complexity, and rectangle selection.\n"
+                        "- Measuring actual segmentation accuracy requires a ground-truth mask.")
+
+        st.button("Reset Experiment", key="module4_q2_reset", on_click=reset_thermal_upload)
 
 
 ACCENT = "#C9363E"
 HOME_TITLE = "Module 4"
 HOME_SUBTITLE = "Human Boundary Detection"
 
-# Buttons on the homepage and on the RGB and thermal selection pages share one style.
-NAV_BUTTON_KEYS = (
-    "m4_open_rgb", "m4_open_thermal", "m4_rgb_visitor", "m4_rgb_results",
-    "m4_thermal_visitor", "m4_thermal_results",
-)
+BLUE, BLUE_DARK = "#1D5FD1", "#174DA8"   # same blue as Modules 2 and 7; white text on these is above 6:1
+# Homepage and My Experiments & Results page: stacked, centered buttons using Module 2's finalized values. The three homepage buttons and
+# the two selection buttons all use the same fixed 110px height, so labels that wrap onto two lines never change a button's size.
+NAV_BUTTON_KEYS = ("m4_open_results", "m4_open_rgb", "m4_open_thermal", "m4_res_rgb", "m4_res_thermal")
 
 
 def nav_selector(suffix):
@@ -834,315 +1067,364 @@ HOME_CSS = f"""
     font-size: clamp(1.1rem, 4.6vw, 32px); font-weight: 600; color: inherit; opacity: 0.85; line-height: 1.2;
     text-align: center; padding: 0; margin: 0;
 }}
-@media (min-width: 641px) {{ .st-key-m4_home_subtitle h2 {{ white-space: nowrap; }} }}
-.st-key-m4_home_nav {{ flex-direction: row; flex-wrap: wrap; gap: 24px; }}
-{nav_selector("")} {{ flex: 1 1 280px; width: auto; min-width: 0; max-width: 100%; }}
+@media (min-width: 801px) {{ .st-key-m4_home_subtitle h2 {{ white-space: nowrap; }} }}
+.st-key-m4_home_nav {{ flex-direction: column; flex-wrap: nowrap; gap: 24px; max-width: 560px; width: 100%; margin: 0 auto; }}
+{nav_selector("")}, {nav_selector(' [data-testid="stButton"]')} {{ flex: 0 0 auto; width: 100%; min-width: 0; max-width: 100%; }}
 {nav_selector(" button")} {{
-    width: 100%; height: 110px; min-height: 110px; padding: 0.75rem 1.25rem; border-radius: 12px;
+    width: 100%; height: 110px; min-height: 110px; max-height: 110px; padding: 0.75rem 1.25rem; border-radius: 12px;
     background-color: {ACCENT}; border: 2px solid {ACCENT}; color: #FFFFFF;
     display: flex; align-items: center; justify-content: center; text-align: center;
 }}
 {nav_selector(" button p")} {{
-    font-size: 21px; font-weight: 700; color: #FFFFFF; line-height: 1.3; text-align: center; text-wrap: balance;
+    font-size: 18px; font-weight: 500; color: #FFFFFF; line-height: 1.3; text-align: center; text-wrap: balance;
 }}
+{nav_selector(" button p strong")} {{ display: block; font-size: 21px; font-weight: 700; line-height: 1.3; color: #FFFFFF; }}
+{nav_selector(" button p br")} {{ display: none; }}
+.st-key-m4_res_rgb button p, .st-key-m4_res_thermal button p {{ font-size: 0.95rem; }}   /* the "(Question N)" line */
 {nav_selector(" button:hover")} {{ background-color: #A62A31; border-color: #A62A31; color: #FFFFFF; }}
 {nav_selector(" button:focus-visible")} {{
     outline: 3px solid #FFFFFF; outline-offset: 2px; box-shadow: 0 0 0 6px {ACCENT};
 }}
 {nav_selector(" button:active")} {{ background-color: #8E2229; border-color: #8E2229; }}
-@media (max-width: 640px) {{
-    .st-key-m4_home_nav {{ flex-direction: column; flex-wrap: nowrap; gap: 16px; }}
-    {nav_selector("")} {{ flex: 0 0 auto; width: 100%; }}
-}}
+.st-key-m4_open_results button {{ background-color: {BLUE}; border-color: {BLUE}; }}
+.st-key-m4_open_results button:hover {{ background-color: {BLUE_DARK}; border-color: {BLUE_DARK}; }}
+.st-key-m4_open_results button:active {{ background-color: #123F8F; border-color: #123F8F; }}
+.st-key-m4_open_results button:focus-visible {{ box-shadow: 0 0 0 6px {BLUE}; }}
+@media (max-width: 640px) {{ .st-key-m4_home_nav {{ gap: 16px; }} }}
 </style>
 """
+
+
+RESULTS_TITLE_CSS = """
+<style>
+.st-key-m4_home_title h1 { font-size: clamp(1.75rem, 7vw, 48px); }   /* My Experiments & Results page only */
+@media (min-width: 801px) { .st-key-m4_home_title h1 { white-space: nowrap; } }
+</style>
+"""
+
+
+def home_layout(title, subtitle, buttons, extra_css=""):
+    """Centered title, subtitle and stacked buttons; (label, key, destination) triples. Shared by the homepage and the results page."""
+    st.markdown(HOME_CSS + extra_css, unsafe_allow_html=True)
+    with st.container(key="m4_home_layout"):
+        with st.container(key="m4_home_title"):
+            st.title(title, anchor=False)
+        with st.container(key="m4_home_subtitle"):
+            st.header(subtitle, anchor=False)
+        with st.container(key="m4_home_nav"):
+            for label, key, destination in buttons:
+                st.button(label, key=key, on_click=navigate_module4, args=(destination,), width="stretch")
+
+
+def question_label(title, number):
+    """Button label: the title (bold block) and a smaller "(Question N)" line, both inside the one clickable button."""
+    return f"**{title}**  \n(Question {number})"
 
 
 DISPLAY_DIR = REPOSITORY_ROOT / "Modules" / "Module_4" / "display"
 
-# Values below are the ones documented in my original Module 4 report.
+# Recorded values of my RGB experiment.
 RGB_EXPERIMENT = {
     "kernel": 3, "sigma": "0.80", "canny": "50 / 150", "iterations": 5, "cleanup": "Disabled",
-    "rectangle": "1766 \u00d7 5620 pixels", "contour_area": "6,574,847.0 pixels\u00b2",
+    "rectangle": "1766 × 5620 pixels", "contour_area": "6,574,847.0 pixels²",
     "sam2_score": "0.989319", "sam2_device": "MPS",
 }
 
-
-def rgb_results_page():
-    r = RGB_EXPERIMENT
-    st.header("My RGB Experiment & Results", anchor=False)
-
-    def with_text(image, caption, *text):
-        image_column, text_column = st.columns([3, 2], vertical_alignment="center")
-        image_column.image(str(DISPLAY_DIR / image), caption=caption, width="stretch")
-        with text_column:
-            for line in text:
-                st.write(line)
-
-    st.subheader("Step 1 \u2014 Original RGB Image & Parameters", anchor=False)
-    image_column, text_column = st.columns([3, 2], vertical_alignment="center")
-    image_column.image(str(DISPLAY_DIR / "step1_original.jpg"), caption="Original RGB image", width="stretch")
-    with text_column:
-        st.metric("Gaussian kernel size", r["kernel"])
-        st.metric("Sigma", r["sigma"])
-        st.metric("Canny thresholds (lower / upper)", r["canny"])
-        st.metric("GrabCut iterations", r["iterations"])
-        st.metric("Morphological cleanup", r["cleanup"])
-        st.metric("GrabCut rectangle (width \u00d7 height)", r["rectangle"])
-    st.caption("The rectangle's position was not recorded in the report, so it is not drawn on the image.")
-
-    st.subheader("Step 2 \u2014 Gaussian Smoothing", anchor=False)
-    with_text(
-        "step2_gaussian_reproduced.jpg",
-        "Gaussian-smoothed image \u2014 reproduced using the documented settings (kernel 3, sigma 0.80)",
-        "Smoothing reduces small variations and noise before edge detection. "
-        "The visual change is subtle by design.",
-    )
-
-    st.subheader("Step 3 \u2014 Canny Edge Detection", anchor=False)
-    with_text(
-        "step3_canny.jpg", "Canny edge map (thresholds 50 / 150)",
-        "Canny found strong intensity changes along the body, clothing, hair and face.",
-        "It also marks internal and background edges and does not know which edges form the outer "
-        "boundary, so edges alone cannot give a single human boundary.",
-    )
-
-    st.subheader("Step 4 \u2014 GrabCut Segmentation", anchor=False)
-    with_text(
-        "step4_grabcut_mask.png", "GrabCut binary mask (white = foreground)",
-        "GrabCut separated foreground from background using the rectangle (5 iterations).",
-        "Morphological cleanup was disabled, so the final foreground mask is the raw GrabCut mask.",
-    )
-
-    st.subheader("Step 5 \u2014 Classical Human Boundary", anchor=False)
-    with_text(
-        "step5_classical_boundary.png", "Classical boundary (largest external contour)",
-        "The contour follows much of the visible person, but a large cast shadow near the lower right "
-        "was included in the foreground. Because the shadow stays connected to the person's mask, "
-        "the external contour follows both.",
-    )
-    st.metric("Classical contour area", r["contour_area"])
-    st.caption("Geometric area enclosed by the contour, not a count of foreground pixels.")
-
-    st.subheader("Step 6 \u2014 SAM2 Segmentation", anchor=False)
-    st.write("SAM 2.1 Hiera Tiny, with a box-only prompt around the person on the same RGB image.")
-    mask_column, boundary_column = st.columns(2)
-    mask_column.image(str(DISPLAY_DIR / "step6_sam2_mask.png"), caption="SAM2 binary mask (from report Figure 6)", width="stretch")
-    boundary_column.image(str(DISPLAY_DIR / "step6_sam2_boundary.png"), caption="SAM2 boundary (from report Figure 7)", width="stretch")
-    score_column, device_column = st.columns(2)
-    score_column.metric("Predicted mask-quality score", r["sam2_score"])
-    device_column.metric("Device", r["sam2_device"])
-    st.caption("The score is SAM2's own estimate of its mask, not measured accuracy; no ground-truth mask was used.")
-
-    st.subheader("Step 7 \u2014 Classical vs. SAM2 Comparison", anchor=False)
-    st.image(str(DISPLAY_DIR / "step7_mask_comparison.png"), caption="GrabCut mask vs. SAM2 mask", width="stretch")
-    st.image(str(DISPLAY_DIR / "step7_boundary_comparison.png"), caption="Classical boundary vs. SAM2 boundary", width="stretch")
-    st.write(
-        "The classical mask and contour include a large part of the connected cast shadow. SAM2 follows "
-        "the visible person more closely, especially around the lower body, and isolates the person "
-        "without the shadow."
-    )
-    back_button("m4_rgb_results_back_bottom", navigate_module4, ("rgb_select",))
-
-
-def svg_icon(path):
-    return ("url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' "
-            f"fill='white'%3E%3Cpath d='{path}'/%3E%3C/svg%3E\")")
-
-
-ICON_IMAGE = svg_icon("M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z")
-ICON_CHART = svg_icon("M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z")
-ICON_CHEVRON = svg_icon("M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z")
-ICON_THERMAL = svg_icon("M15 13V5c0-1.66-1.34-3-3-3S9 3.34 9 5v8c-1.21.91-2 2.37-2 4 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.63-.79-3.09-2-4zm-4-8c0-.55.45-1 1-1s1 .45 1 1h-1v1h1v2h-1v1h1v2h-2V5z")
-PANEL_KEYS = {"m4_rgb_visitor": ICON_IMAGE, "m4_rgb_results": ICON_CHART,
-              "m4_thermal_visitor": ICON_THERMAL, "m4_thermal_results": ICON_CHART}
-
-SELECT_CSS = """
+# Results-page layout, mirroring Module 2's finalized results page (RESULTS_CSS in Pages/app_module2.py) under Module 4 keys.
+RGB_RESULTS_CSS = """
 <style>
-.st-key-m4_sel_layout {
-    max-width: 500px; width: 100%; margin: 0 auto; gap: 0; min-height: calc(100vh - 14rem);
-    justify-content: center; align-items: stretch;
+.st-key-m4_res_head { gap: 0; padding-bottom: 28px; }
+.st-key-m4_res_head h1 {
+    font-size: clamp(2.5rem, 8vw, 60px); font-weight: 800; line-height: 1.1; text-align: center; padding: 0; margin: 0;
+    color: inherit; overflow-wrap: anywhere;
 }
-@media (min-width: 641px) {
-    .st-key-m4_sel_layout { box-sizing: border-box; padding-bottom: 270px; }  /* centers the group ~135px above the middle */
+.st-key-m4_res_head h2 {
+    font-size: clamp(1.4rem, 4.6vw, 2.4rem); font-weight: 600; line-height: 1.2; text-align: center; padding: 0; margin: 0;
+    color: inherit; opacity: 0.85; overflow-wrap: anywhere;
 }
-.st-key-m4_sel_label { margin-bottom: 24px; }  /* spacing lives on the wrappers, not on the text elements */
-.st-key-m4_sel_heading { margin-bottom: 44px; }
-.st-key-m4_sel_heading [data-testid="stHeading"] > div { margin: 0; }  /* Streamlit's default -16px bottom margin */
-.st-key-m4_sel_label [data-testid="stMarkdownContainer"] { margin: 0; }
-.st-key-m4_sel_label p {
-    margin: 0; text-align: center; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.18em; opacity: 0.55;
+.st-key-m4_res_title { padding-bottom: 28px; }
+.st-key-m4_res_body h2 { text-align: center; font-size: clamp(1.7rem, 5.2vw, 2.4rem); font-weight: 800; line-height: 1.2; padding: 1.5rem 0 0.25rem; overflow-wrap: anywhere; }
+.st-key-m4_res_body h3 { text-align: center; font-size: clamp(1.4rem, 4.5vw, 1.9rem); font-weight: 700; padding-top: 1.5rem; }
+.st-key-m4_res_body h5 { text-align: left; font-weight: 700; margin: 0; padding: 0.5rem 0 0.25rem; }
+.st-key-m4_res_body [data-testid="stTable"] { overflow-x: auto; }
+.st-key-m4_res_body img { max-width: 100%; height: auto; }
+[class*="st-key-m4_res_sec_"] { border-top: 1px solid color-mix(in srgb, currentColor 16%, transparent); margin-top: 1.5rem; padding-top: 0.5rem; }
+.st-key-m4_res_conclusion {
+    background: color-mix(in srgb, currentColor 5%, transparent); border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+    border-radius: 16px; padding: 0.5rem 28px 28px; margin-top: 2rem;
 }
-.st-key-m4_sel_heading h2 {
-    font-size: clamp(1.5rem, 6.5vw, 2.25rem); font-weight: 800; line-height: 1.15; text-align: center;
-    padding: 0; margin: 0; color: inherit; overflow-wrap: anywhere;
-}
-@media (min-width: 801px) {
-    .st-key-m4_sel_heading, .st-key-m4_sel_heading [data-testid="stHeading"] { display: block; width: 100%; }
-    .st-key-m4_sel_heading h2 {  /* one line, centered on the panels' axis even when wider than the 500px column */
-        position: relative; left: 50%; transform: translateX(-50%); width: max-content; max-width: 94vw; white-space: nowrap;
+@media (max-width: 640px) { .st-key-m4_res_conclusion { padding: 0.25rem 14px 18px; } }
+/* Light theme only (Streamlit follows prefers-color-scheme): every gray text on this page uses the primary body text color; sizes,
+   weights and spacing are untouched. The red Home accent is not affected. */
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --nav-muted: #31333F; }  /* intermediate breadcrumb labels and separators */
+    :root:not([data-theme="dark"]) .st-key-m4_res_head h2,
+    :root:not([data-theme="dark"]) .st-key-m4_res_body :is([data-testid="stCaptionContainer"], [data-testid="stImageCaption"],
+        [data-testid="stCaptionContainer"] *, [data-testid="stImageCaption"] *, [data-testid="stTable"] th, [data-testid="stTable"] td) {
+        color: #31333F !important; opacity: 1;
     }
-}
-.st-key-m4_sel_panels { gap: 14px; }
-__PANEL_SELECTOR__ { width: 100%; }
-__PANEL_BUTTON__ {
-    width: 100%; height: auto; min-height: 84px; padding: 14px 16px; border-radius: 14px;
-    background-color: #262A33; border: 1px solid #3A3F4B; color: #F2F3F5;
-    display: flex; align-items: center; justify-content: flex-start; gap: 16px; text-align: left;
-    transition: border-color 0.15s, background-color 0.15s, transform 0.15s;
-}
-__PANEL_BUTTON__::before {
-    content: ""; flex: 0 0 48px; height: 48px; border-radius: 12px; background-color: __ACCENT__;
-    background-repeat: no-repeat; background-position: center; background-size: 26px;
-}
-__PANEL_BUTTON__::after {
-    content: ""; flex: 0 0 28px; height: 28px; margin-left: auto; opacity: 0.7;
-    background-image: __CHEVRON__; background-repeat: no-repeat; background-position: center; background-size: 28px;
-}
-__PANEL_BUTTON__ > div { flex: 1 1 auto; min-width: 0; justify-content: flex-start; }
-__PANEL_BUTTON_SPAN__ { justify-content: flex-start; width: 100%; }
-__PANEL_BUTTON__ p {
-    margin: 0; text-align: left; font-size: 0.85rem; font-weight: 400; line-height: 1.45; color: #B4B9C4;
-}
-__PANEL_BUTTON__ p strong { display: block; font-size: 1.05rem; font-weight: 700; color: #FFFFFF; }
-__PANEL_BUTTON_BR__ { display: none; }  /* the title is a block, so the label's line break would add a blank line */
-__PANEL_BUTTON_HOVER__ { background-color: #2F343F; border-color: __ACCENT__; color: #F2F3F5; transform: translateY(-1px); }
-__PANEL_BUTTON_FOCUS__ { outline: 3px solid #FFFFFF; outline-offset: 2px; box-shadow: 0 0 0 6px __ACCENT__; }
-__PANEL_ICONS__
-@media (max-width: 640px) {
-    .st-key-m4_sel_layout { min-height: calc(100vh - 12rem); }
-    __PANEL_BUTTON__ { padding: 12px; gap: 12px; min-height: 76px; }
-    __PANEL_BUTTON__::before { flex-basis: 42px; height: 42px; background-size: 22px; }
-    __PANEL_BUTTON__ p strong { font-size: 0.98rem; }
 }
 </style>
 """
 
 
-def select_css():
-    def selector(suffix):
-        return ", ".join(f".st-key-{key} button{suffix}" for key in PANEL_KEYS)
-
-    icons = "\n".join(f".st-key-{key} button::before {{ background-image: {icon}; }}" for key, icon in PANEL_KEYS.items())
-    css = SELECT_CSS
-    for token, value in (("__PANEL_SELECTOR__", ", ".join(f".st-key-{key}" for key in PANEL_KEYS)),
-                         ("__PANEL_BUTTON_HOVER__", selector(":hover")),
-                         ("__PANEL_BUTTON_FOCUS__", selector(":focus-visible")),
-                         ("__PANEL_BUTTON__::before", selector("::before")),
-                         ("__PANEL_BUTTON__::after", selector("::after")),
-                         ("__PANEL_BUTTON_SPAN__", selector(" > div > span")),
-                         ("__PANEL_BUTTON__ > div", selector(" > div")),
-                         ("__PANEL_BUTTON__ p strong", selector(" p strong")),
-                         ("__PANEL_BUTTON_BR__", selector(" p br")),
-                         ("__PANEL_BUTTON__ p", selector(" p")),
-                         ("__PANEL_BUTTON__", selector("")),
-                         ("__PANEL_ICONS__", icons), ("__CHEVRON__", ICON_CHEVRON), ("__ACCENT__", ACCENT)):
-        css = css.replace(token, value)
-    return css
+SURROUND_BGR = (23, 17, 13)  # the dark page-colored frame around the screenshot-style outputs (SAM2 outputs and comparisons)
 
 
-def panel_label(title, subtitle):
-    return f"**{title}**  \n{subtitle}"
+@st.cache_data(show_spinner=False)
+def framed_output(name):
+    """Display-only copy of a saved output that is a dark-framed screenshot with its own caption: the original file is never changed.
+    Each picture (a composite yields two, left to right) is cropped out of the frame, so the embedded gray caption is dropped, and the
+    frame's rounded corners become transparent, so the picture sits on the page background in either theme. The picture's own pixels,
+    including the black background of a binary mask, are kept as they are."""
+    bgr = cv2.imread(str(DISPLAY_DIR / name), cv2.IMREAD_COLOR)
+    outside = (np.abs(bgr.astype(int) - SURROUND_BGR).sum(axis=2) <= 12).astype(np.uint8)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(1 - outside, connectivity=8)
+    boxes = sorted((tuple(int(v) for v in stats[i][:4]) for i in range(1, count) if stats[i][4] >= 0.05 * outside.size))
+    pictures = []
+    for x, y, w, h in boxes:
+        crop, corner = bgr[y:y + h, x:x + w], outside[y:y + h, x:x + w]
+        edge_count, edge_labels = cv2.connectedComponents(corner, connectivity=4)
+        touching = np.unique(np.concatenate([edge_labels[0], edge_labels[-1], edge_labels[:, 0], edge_labels[:, -1]]))
+        transparent = np.isin(edge_labels, touching[touching > 0]) & (corner > 0)
+        rgba = np.dstack([cv2.cvtColor(crop, cv2.COLOR_BGR2RGB), np.where(transparent, 0, 255).astype(np.uint8)])
+        pictures.append(rgba)
+    return pictures
 
 
-def module4_selection_page(heading, panels):
-    st.markdown(select_css(), unsafe_allow_html=True)
-    with st.container(key="m4_sel_layout"):
-        with st.container(key="m4_sel_label"):
-            st.markdown("MODULE 4")
-        with st.container(key="m4_sel_heading"):
-            st.header(heading, anchor=False)
-        with st.container(key="m4_sel_panels"):
-            for key, title, subtitle, destination in panels:
-                st.button(panel_label(title, subtitle), key=key, on_click=navigate_module4, args=(destination,), width="stretch")
+
+def results_image(name, caption=None):
+    """One saved image at the width of its column; images that already carry their own label get no extra caption."""
+    st.image(str(DISPLAY_DIR / name), caption=caption, width="stretch")
 
 
-def rgb_select_page():
-    module4_selection_page("RGB Image Boundary Detection", (
-        ("m4_rgb_visitor", "Detect Human Boundaries in Your Own RGB Image", "Upload and analyze your own RGB image", "rgb"),
-        ("m4_rgb_results", "View My Experiment & Results", "Explore my RGB boundary detection results", "rgb_results")))
+def results_framed(name, caption, index=0):
+    """One picture of a dark-framed screenshot output (see framed_output), shown with a theme-aware caption."""
+    st.image(framed_output(name)[index], caption=caption, width="stretch", output_format="PNG")
 
 
-# Values below are the ones documented in my original Module 4 report (thermal experiment).
+def results_centered(show, *args):
+    """A single tall image, kept to a moderate width so it does not dominate the page."""
+    with st.columns([1, 1.6, 1])[1]:
+        show(*args)
+
+
+def results_table(index_name, rows, value_name="Value"):
+    st.table(pd.DataFrame({index_name: [k for k, _ in rows], value_name: [v for _, v in rows]}).set_index(index_name))
+
+
+def rgb_results_page():
+    r = RGB_EXPERIMENT
+    st.markdown(RGB_RESULTS_CSS, unsafe_allow_html=True)
+
+    with st.container(key="m4_res_head"):
+        with st.container(key="m4_res_title"):
+            st.title("My Experiment & Results", anchor=False)
+        st.header("Human Boundary Detection in RGB Images", anchor=False)
+
+    with st.container(key="m4_res_body"):
+        st.markdown("##### Objective")
+        st.write("Detect the human boundary in an RGB image using classical computer vision techniques and compare the result with SAM2.")
+
+        with st.container(key="m4_res_sec_1"):
+            st.header("Step 1 — Original RGB Image & Experimental Parameters", anchor=False)
+            image_column, table_column = st.columns(2, vertical_alignment="center")
+            with image_column:
+                results_image("step1_original.jpg", "Original RGB Image")
+            with table_column:
+                results_table("Parameter", [
+                    ("Gaussian kernel", f"{r['kernel']} × {r['kernel']}"), ("Gaussian sigma", r["sigma"]),
+                    ("Canny thresholds", r["canny"]), ("GrabCut iterations", str(r["iterations"])),
+                    ("Morphological cleanup", r["cleanup"]), ("GrabCut rectangle", r["rectangle"])])
+                st.caption("Only the size of the GrabCut rectangle was recorded, so its position is not drawn on the image.")
+
+        with st.container(key="m4_res_sec_2"):
+            st.header("Step 2 — Gaussian Smoothing", anchor=False)
+            st.write(
+                f"Gaussian smoothing reduces noise and small intensity variations before edge detection. A {r['kernel']} × {r['kernel']} "
+                f"kernel with a sigma of {r['sigma']} was used, so the change is subtle by design.")
+            original_column, smoothed_column = st.columns(2)
+            with original_column:
+                results_image("step1_original.jpg", "Original RGB Image")
+            with smoothed_column:
+                results_image("step2_gaussian_reproduced.jpg", "Gaussian-Smoothed Image (regenerated from the same kernel and sigma)")
+
+        with st.container(key="m4_res_sec_3"):
+            st.header("Step 3 — Canny Edge Detection", anchor=False)
+            st.write(
+                "Canny detects strong intensity changes along the body, clothing, hair and face. It also marks internal and "
+                "background edges and does not know which edges form the outer boundary, so edge detection alone cannot give a "
+                "single human boundary.")
+            results_centered(results_image, "step3_canny.jpg", "Canny Edge Map")
+
+        with st.container(key="m4_res_sec_4"):
+            st.header("Step 4 — GrabCut Segmentation", anchor=False)
+            st.write(
+                f"GrabCut separates the foreground from the background using the selected rectangle. {r['iterations']} iterations were used "
+                "and morphological cleanup was disabled, so the foreground mask is the raw GrabCut result. In the binary mask, white "
+                "is the foreground and black is the background.")
+            results_centered(results_framed, "step4_grabcut_mask.png", "GrabCut Binary Mask")
+
+        with st.container(key="m4_res_sec_5"):
+            st.header("Step 5 — Classical Human Boundary Detection", anchor=False)
+            st.write(
+                "The largest external contour of the foreground mask was extracted as the human boundary. The contour follows much of "
+                "the visible person, but it also includes a connected cast shadow near the lower body, which is not part of the person.")
+            results_centered(results_framed, "step5_classical_boundary.png", "Classical Human Boundary")
+            results_table("Measurement", [("Classical contour area", r["contour_area"])])
+            st.caption("The contour area is the geometric area enclosed by the contour, not a count of foreground pixels.")
+
+        with st.container(key="m4_res_sec_6"):
+            st.header("Step 6 — SAM2 Segmentation & Boundary Detection", anchor=False)
+            st.write(
+                "SAM2 is a deep learning segmentation model, used here for comparison. SAM 2.1 Hiera Tiny was applied to the same RGB "
+                "image with a bounding-box prompt around the person.")
+            mask_column, boundary_column = st.columns(2)
+            with mask_column:
+                results_framed("step6_sam2_mask.png", "SAM2 Binary Mask")
+            with boundary_column:
+                results_framed("step6_sam2_boundary.png", "SAM2 Human Boundary")
+            results_table("Parameter", [("Model", "SAM 2.1 Hiera Tiny"), ("Prompt", "Bounding box"), ("Device", r["sam2_device"]),
+                                ("Predicted mask-quality score", r["sam2_score"])])
+            st.caption(
+                "The predicted mask-quality score is SAM2's own estimate of its mask, not a measured segmentation accuracy; no "
+                "ground-truth mask was used. The device is the one used when this experiment was run on my computer.")
+
+        with st.container(key="m4_res_sec_7"):
+            st.header("Step 7 — Classical vs. SAM2 Comparison", anchor=False)
+            st.subheader("Mask Comparison", anchor=False)
+            for column, caption, index in zip(st.columns(2), ("Classical Binary Mask (GrabCut)", "SAM2 Binary Mask"), (0, 1)):
+                with column:
+                    results_framed("step7_mask_comparison.png", caption, index)
+            st.subheader("Boundary Comparison", anchor=False)
+            for column, caption, index in zip(st.columns(2), ("Classical Human Boundary", "SAM2 Human Boundary"), (0, 1)):
+                with column:
+                    results_framed("step7_boundary_comparison.png", caption, index)
+            st.write(
+                "In this experiment the classical method includes a large part of the connected cast shadow, in both its mask and its "
+                "contour. SAM2 follows the visible human shape more closely, especially around the lower body, and isolates the "
+                "person without the shadow.")
+
+        with st.container(key="m4_res_conclusion"):
+            st.header("Conclusion", anchor=False)
+            st.markdown(
+                "The classical approach detected much of the human boundary, but it was affected by the difficulty of separating "
+                "foreground from background and by the connected cast shadow. SAM2 produced a cleaner human boundary and separated the "
+                "person from the background more effectively in this experiment.")
+            st.markdown(
+                "These results show that classical human boundary detection is sensitive to scene characteristics and to how well the "
+                "foreground can be separated from the background.")
+
+
+# Recorded values of my thermal experiment.
 THERMAL_EXPERIMENT = {
-    "size": "1080 × 1440 pixels", "closing": "3 × 3 elliptical", "connectivity": "8-connectivity",
+    "size": "1080 × 1440 pixels", "closing": "3 × 3 elliptical kernel", "connectivity": "8-connectivity",
     "components": "20", "foreground": "392,206 pixels", "occupancy": "25.22%",
-    "sam2_box": "(263, 57, 574, 1380) pixels", "sam2_score": "0.977383", "sam2_device": "MPS",
+    "sam2_box_xy": "(263, 57) pixels", "sam2_box_size": "574 × 1380 pixels", "sam2_score": "0.977383", "sam2_device": "MPS",
     "iou": "0.9813",
 }
 
 
 def thermal_results_page():
     r = THERMAL_EXPERIMENT
-    st.header("My Thermal Experiment & Results", anchor=False)
+    st.markdown(RGB_RESULTS_CSS, unsafe_allow_html=True)  # the same results-page layout and light-theme text colors as the RGB page
 
-    st.subheader("Step 1 — Original Thermal Image & Settings", anchor=False)
-    image_column, text_column = st.columns([3, 2], vertical_alignment="center")
-    image_column.image(str(DISPLAY_DIR / "thermal_step1_original.jpg"),
-                       caption="Original thermal pseudocolor image", width="stretch")
-    with text_column:
-        st.metric("Image size (width × height)", r["size"])
-        st.metric("Morphological closing", r["closing"])
-        st.metric("Connected components", r["connectivity"])
-    st.write(
-        "The input is a colorized thermal image, not raw temperature data, so the classical method "
-        "works on the displayed colors."
-    )
-    st.caption("The HSV threshold values were not recorded in the report, so they are not listed.")
+    with st.container(key="m4_res_head"):
+        with st.container(key="m4_res_title"):
+            st.title("My Experiment & Results", anchor=False)
+        st.header("Human Boundary Detection in Thermal Images", anchor=False)
 
-    st.subheader("Step 2 — Classical Thermal Segmentation", anchor=False)
-    st.write(
-        "The image was converted to HSV and the warm colors of the person were thresholded away from the "
-        "cooler background. A 3 × 3 elliptical closing connected small gaps, and connected-component "
-        "analysis kept the largest warm region as the person."
-    )
-    components_column, foreground_column, occupancy_column = st.columns(3)
-    components_column.metric("Foreground components found", r["components"])
-    foreground_column.metric("Selected foreground size", r["foreground"])
-    occupancy_column.metric("Image occupancy", r["occupancy"])
-    st.caption("Occupancy is the share of all image pixels in the selected component, not segmentation accuracy.")
+    with st.container(key="m4_res_body"):
+        st.markdown("##### Objective")
+        st.write("Detect the human boundary in a thermal image using classical computer vision techniques and compare the results with SAM2.")
 
-    st.subheader("Step 3 — SAM2 Thermal Segmentation", anchor=False)
-    st.write("SAM2 was applied to the same thermal image with a box prompt around the person.")
-    box_column, score_column, device_column = st.columns([2, 1, 1])
-    box_column.metric("SAM2 box (x, y, width, height)", r["sam2_box"])
-    score_column.metric("Predicted mask quality", r["sam2_score"])
-    device_column.metric("Device", r["sam2_device"])
-    st.caption(
-        "The box only prompts SAM2; the classical method does not use it. The score is SAM2's own estimate "
-        "of its mask, not measured accuracy."
-    )
+        with st.container(key="m4_res_sec_1"):
+            st.header("Step 1 — Original Thermal Image & Experimental Parameters", anchor=False)
+            image_column, table_column = st.columns(2, vertical_alignment="center")
+            with image_column:
+                results_image("thermal_step1_original.jpg", "Original Thermal Image")
+            with table_column:
+                results_table("Parameter", [
+                    ("Image resolution", r["size"]), ("Color space", "HSV"), ("Segmentation method", "Color thresholding"),
+                    ("Morphological closing", r["closing"]), ("Connected components", r["connectivity"]),
+                    ("Region selection", "Largest foreground component")])
+            st.write(
+                "The thermal image uses colors to represent temperature differences. The classical method uses these colors to "
+                "separate the person from the background.")
 
-    st.subheader("Step 4 — Mask Comparison", anchor=False)
-    st.image(str(DISPLAY_DIR / "thermal_step4_mask_comparison.png"),
-             caption="Classical thermal mask vs. SAM2 mask (from report Figure 9)", width="stretch")
-    st.write(
-        "The two masks are visually very similar. Small differences appear around the head, hands, "
-        "waist and lower body."
-    )
+        with st.container(key="m4_res_sec_2"):
+            st.header("Step 2 — Classical Thermal Segmentation", anchor=False)
+            st.write(
+                "The thermal image was converted to HSV color space to separate warm-colored regions from the cooler background. "
+                "Morphological closing filled small gaps in the mask, and the largest connected foreground region was selected as "
+                "the person.")
+            st.write("In the binary mask, white represents the person and black represents the background.")
+            results_centered(results_framed, "thermal_step4_mask_comparison.png", "Classical Binary Mask", 0)
+            results_table("Measurement", [("Foreground components found", r["components"]),
+                                          ("Selected foreground size", r["foreground"]), ("Image occupancy", r["occupancy"])], "Result")
+            st.caption("Image occupancy represents the percentage of the image occupied by the selected foreground.")
 
-    st.subheader("Step 5 — Boundary Comparison", anchor=False)
-    st.image(str(DISPLAY_DIR / "thermal_step5_boundary_comparison.png"),
-             caption="Classical thermal boundary vs. SAM2 boundary (from report Figure 10)", width="stretch")
-    st.write(
-        "Both boundaries closely follow the same person. The warm body is strongly separated from much of "
-        "the cooler background, which makes the HSV-based classical method effective here."
-    )
+        with st.container(key="m4_res_sec_3"):
+            st.header("Step 3 — Classical Human Boundary Detection", anchor=False)
+            st.write(
+                "The outer contour of the foreground mask was extracted and drawn on the original thermal image to identify the "
+                "human boundary.")
+            results_centered(results_framed, "thermal_step5_boundary_comparison.png", "Classical Human Boundary", 0)
 
-    st.subheader("Step 6 — Quantitative Comparison", anchor=False)
-    st.metric("IoU with SAM2", r["iou"])
-    st.write(
-        "An IoU of 1.0 would mean the masks overlap perfectly, so 0.9813 indicates very high agreement "
-        "between the classical thermal segmentation and SAM2."
-    )
-    st.caption("This is not 98.13% accuracy: SAM2 is a comparison segmentation, not manually labeled ground truth.")
-    back_button("m4_thermal_results_back_bottom", navigate_module4, ("thermal_select",))
+        with st.container(key="m4_res_sec_4"):
+            st.header("Step 4 — SAM2 Segmentation & Boundary Detection", anchor=False)
+            st.write(
+                "SAM2 is a deep learning segmentation model. A bounding box around the person was used to guide SAM2 in generating "
+                "the human mask and boundary.")
+            mask_column, boundary_column = st.columns(2)
+            with mask_column:
+                results_framed("thermal_step4_mask_comparison.png", "SAM2 Binary Mask", 1)
+            with boundary_column:
+                results_framed("thermal_step5_boundary_comparison.png", "SAM2 Human Boundary", 1)
+            results_table("Parameter", [
+                ("Prompt", "Bounding box"), ("Bounding box (x, y)", r["sam2_box_xy"]),
+                ("Bounding box (width × height)", r["sam2_box_size"]), ("Experimental device", r["sam2_device"]),
+                ("Predicted mask-quality score", r["sam2_score"])])
+            st.caption("The predicted mask-quality score represents SAM2's estimated segmentation quality.")
 
+        with st.container(key="m4_res_sec_5"):
+            st.header("Step 5 — Classical vs. SAM2 Comparison", anchor=False)
+            st.subheader("Mask Comparison", anchor=False)
+            for column, caption, index in zip(st.columns(2), ("Classical Binary Mask", "SAM2 Binary Mask"), (0, 1)):
+                with column:
+                    results_framed("thermal_step4_mask_comparison.png", caption, index)
+            st.write("Both methods produced similar masks, with minor differences around the head, hands, waist, and lower body.")
+            st.subheader("Boundary Comparison", anchor=False)
+            for column, caption, index in zip(st.columns(2), ("Classical Human Boundary", "SAM2 Human Boundary"), (0, 1)):
+                with column:
+                    results_framed("thermal_step5_boundary_comparison.png", caption, index)
+            st.write("Both methods closely followed the visible outline of the person, producing similar human boundaries.")
 
-def thermal_select_page():
-    module4_selection_page("Thermal Image Boundary Detection", (
-        ("m4_thermal_visitor", "Detect Human Boundaries in Your Own Thermal Image", "Upload and analyze your own thermal image", "thermal"),
-        ("m4_thermal_results", "View My Experiment & Results", "Explore my thermal boundary detection results", "thermal_results")))
+        with st.container(key="m4_res_sec_6"):
+            st.header("Step 6 — Quantitative Comparison", anchor=False)
+            st.write("Intersection over Union (IoU) measures how closely two segmentation masks overlap.")
+            st.latex(r"\mathrm{IoU} = \dfrac{|A \cap B|}{|A \cup B|}")
+            st.markdown(
+                "- **A** is the classical foreground mask.\n"
+                "- **B** is the SAM2 foreground mask.\n"
+                "- The numerator is the number of pixels shared by both masks.\n"
+                "- The denominator is the total number of pixels belonging to either mask.")
+            results_table("Measurement", [("Intersection over Union (IoU)", r["iou"])], "Result")
+            st.write(
+                "An IoU of 1.0 represents perfect overlap. The experimental result of 0.9813 indicates very high agreement between "
+                "the two methods.")
+
+        with st.container(key="m4_res_conclusion"):
+            st.header("Conclusion", anchor=False)
+            st.markdown(
+                "The classical computer vision method successfully detected the human boundary in the thermal image. The strong color "
+                "contrast between the person and the background made color-based segmentation effective.")
+            st.markdown(
+                "Both the classical method and SAM2 produced similar results, with an IoU of 0.9813 indicating high agreement between "
+                "their segmentation masks.")
+            st.markdown(
+                "This experiment demonstrates that classical computer vision techniques can effectively detect human boundaries when "
+                "the person and background are clearly distinguishable.")
 
 
 st.set_page_config(page_title="Module 4 - Human Boundary Detection", layout="centered")
@@ -1158,38 +1440,32 @@ for setting_key in (
         st.session_state[setting_key] = st.session_state[setting_key]
 
 section = st.session_state["module4_section"]
-# breadcrumb levels below Home for every view: (label, section); the last is the current page
-_M4, _RGB, _THERMAL = ("Module 4", "home"), ("RGB Images", "rgb_select"), ("Thermal Images", "thermal_select")
-CRUMBS = {"home": (_M4,), "rgb_select": (_M4, _RGB), "thermal_select": (_M4, _THERMAL),
-          "rgb": (_M4, _RGB, ("Your Own RGB Image", "rgb")), "rgb_results": (_M4, _RGB, ("My Experiment & Results", "rgb_results")),
-          "thermal": (_M4, _THERMAL, ("Your Own Thermal Image", "thermal")),
-          "thermal_results": (_M4, _THERMAL, ("My Experiment & Results", "thermal_results"))}
+# breadcrumb levels below Home for every view: (label, section); the last is the current page, the one before it is the Back target
+_M4, _RESULTS = ("Module 4", "home"), ("My Experiments & Results", "my_results")
+CRUMBS = {"home": (_M4,), "my_results": (_M4, _RESULTS),
+          "rgb": (_M4, ("Detect Human Boundaries in Your Own RGB Image", "rgb")),
+          "thermal": (_M4, ("Detect Human Boundaries in Your Own Thermal Image", "thermal")),
+          "rgb_results": (_M4, _RESULTS, ("Human Boundary Detection in RGB Images", "rgb_results")),
+          "thermal_results": (_M4, _RESULTS, ("Human Boundary Detection in Thermal Images", "thermal_results"))}
+if section not in CRUMBS:  # e.g. a session left on a removed selection page
+    navigate_module4("home")
+    section = "home"
 nav_row(CRUMBS[section], navigate_module4, view=f"m4:{section}")
 if section == "home":
-    st.markdown(HOME_CSS, unsafe_allow_html=True)
-    with st.container(key="m4_home_layout"):
-        with st.container(key="m4_home_title"):
-            st.title(HOME_TITLE, anchor=False)
-        with st.container(key="m4_home_subtitle"):
-            st.header(HOME_SUBTITLE, anchor=False)
-        with st.container(key="m4_home_nav"):
-            for label, destination in (("Detect Human Boundaries in RGB Images", "rgb"),
-                                       ("Detect Human Boundaries in Thermal Images", "thermal")):
-                st.button(label, key=f"m4_open_{destination}", on_click=navigate_module4,
-                          args=("rgb_select" if destination == "rgb" else "thermal_select",), width="stretch")
-elif section == "rgb_select":
-    rgb_select_page()
+    home_layout(HOME_TITLE, HOME_SUBTITLE, (
+        ("View My Experiments & Results", "m4_open_results", "my_results"),
+        ("Detect Human Boundaries in Your Own RGB Image", "m4_open_rgb", "rgb"),
+        ("Detect Human Boundaries in Your Own Thermal Image", "m4_open_thermal", "thermal")))
+elif section == "my_results":
+    home_layout("My Experiments & Results", HOME_SUBTITLE, (
+        (question_label("Human Boundary Detection in RGB Images", 1), "m4_res_rgb", "rgb_results"),
+        (question_label("Human Boundary Detection in Thermal Images", 2), "m4_res_thermal", "thermal_results")),
+        RESULTS_TITLE_CSS)
 elif section == "rgb_results":
     rgb_results_page()
 elif section == "rgb":
-    st.title("Module 4 – Human Boundary Detection")
     render_rgb()
-    back_button("m4_rgb_visitor_back_bottom", navigate_module4, ("rgb_select",))
-elif section == "thermal_select":
-    thermal_select_page()
 elif section == "thermal_results":
     thermal_results_page()
 elif section == "thermal":
-    st.title("Module 4 – Human Boundary Detection")
     render_thermal()
-    back_button("m4_thermal_visitor_back_bottom", navigate_module4, ("thermal_select",))

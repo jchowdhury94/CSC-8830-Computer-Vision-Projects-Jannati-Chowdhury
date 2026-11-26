@@ -1,4 +1,4 @@
-"""Module 4 thermal navigation tests: home -> thermal selection -> visitor / results, with one top Back button on the selection page and two (top and bottom) on the visitor and results pages.
+"""Module 4 thermal navigation tests: homepage -> thermal visitor directly, and homepage -> My Experiments & Results -> thermal results, with top navigation only.
 
 Streamlit pages are exercised with AppTest (no browser). Nothing here writes into the repository.
 """
@@ -11,7 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "Pages" / "app_module4.py"
 DISPLAY = ROOT / "Modules" / "Module_4" / "display"
 
-HOME_BUTTONS = ["Home", "Detect Human Boundaries in RGB Images", "Detect Human Boundaries in Thermal Images"]
+HOME_BUTTONS = ["Home", "View My Experiments & Results", "Detect Human Boundaries in Your Own RGB Image",
+                "Detect Human Boundaries in Your Own Thermal Image"]
+RESULT_LABELS = ["**Human Boundary Detection in RGB Images**  \n(Question 1)",
+                 "**Human Boundary Detection in Thermal Images**  \n(Question 2)"]
 
 
 def new_app():
@@ -27,8 +30,8 @@ def click(app, key):
     assert not app.exception
 
 
-def open_select(app):
-    click(app, "m4_open_thermal")
+def page_buttons(app):
+    return [b.label for b in app.button if not (b.key or "").startswith("nav")]
 
 
 def back_keys(app):
@@ -36,128 +39,96 @@ def back_keys(app):
 
 
 class Module4ThermalNavigationTests(unittest.TestCase):
-    def test_home_unchanged_and_opens_thermal_selection(self):
+    def test_thermal_visitor_opens_directly_with_no_bottom_back(self):
         app = new_app()
         self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
-        open_select(app)
-        self.assertEqual(app.session_state["module4_section"], "thermal_select")
-
-    def test_selection_page_layout(self):
-        app = new_app()
-        open_select(app)
-        self.assertEqual(len(app.title), 0)
-        self.assertIn("MODULE 4", [m.value for m in app.markdown])
-        self.assertEqual([h.value for h in app.header], ["Thermal Image Boundary Detection"])
-        labels = [b.label for b in app.button if not (b.key or "").startswith("nav")]
-        self.assertEqual(labels, ["**Detect Human Boundaries in Your Own Thermal Image**  \nUpload and analyze your own thermal image",
-                                  "**View My Experiment & Results**  \nExplore my thermal boundary detection results"])
+        click(app, "m4_open_thermal")
+        self.assertEqual(app.session_state["module4_section"], "thermal")
+        self.assertEqual([t.value for t in app.title], ["Human Boundary Detection in Thermal Images"])
         self.assertEqual(back_keys(app), [])
-        # The breadcrumb row sits above the heading; selection pages have no Back button.
         self.assertEqual(getattr(app.main[0], "key", None), "nav_row")
-        self.assertEqual([b.key for b in app.main[0].button], ["nav_arrow_button", "nav_home_button", "navbtn_0"])  # Back arrow, Home > Module 4 (ancestor)
+        self.assertEqual([b.key for b in app.main[0].button], ["nav_arrow_button", "nav_home_button", "navbtn_0"])
 
-    def test_selection_matches_rgb_selection_structure(self):
-        rgb = new_app()
-        click(rgb, "m4_open_rgb")
-        thermal = new_app()
-        open_select(thermal)
-        self.assertEqual(len(rgb.button), len(thermal.button))
-        self.assertEqual([b.label for b in rgb.button][:3], [b.label for b in thermal.button][:3])
-        self.assertTrue(all("**  \n" in b.label for page in (rgb, thermal) for b in list(page.button)[3:]))
-        self.assertEqual([t.value for t in rgb.title], [t.value for t in thermal.title])
-        self.assertEqual(len(rgb.markdown), len(thermal.markdown))
-
-    def test_selection_back_returns_home(self):
-        app = new_app()
-        open_select(app)
-        click(app, "navbtn_0")
-        self.assertEqual(app.session_state["module4_section"], "home")
-        self.assertEqual([b.label for b in app.button if b.key != "nav_arrow_button"], HOME_BUTTONS)
-
-    def test_visitor_page_keeps_existing_thermal_experiment_and_two_backs(self):
-        app = new_app()
-        open_select(app)
-        click(app, "m4_thermal_visitor")
-        labels = [b.label for b in app.button if not (b.key or "").startswith("nav")]
-        self.assertEqual(labels[-1], "Back")
-        self.assertEqual(len(back_keys(app)), 1)
-        self.assertEqual(app.subheader[0].value, "Question 2 – Thermal Image Human Boundary Detection")
-        self.assertEqual(getattr(app.main[0], "key", None), "nav_row")
-        self.assertNotIn("Back to Module 4", labels)
-
-    def test_visitor_back_returns_to_selection(self):
-        for key in ("navbtn_1", "m4_thermal_visitor_back_bottom"):
+    def test_thermal_visitor_back_returns_home(self):
+        for key in ("nav_arrow_button", "navbtn_0"):
             app = new_app()
-            open_select(app)
-            click(app, "m4_thermal_visitor")
+            click(app, "m4_open_thermal")
             click(app, key)
-            self.assertEqual(app.session_state["module4_section"], "thermal_select")
+            self.assertEqual(app.session_state["module4_section"], "home")
 
-    def test_results_page_steps_values_and_two_backs(self):
+    def test_results_selection_opens_thermal_results(self):
         app = new_app()
-        open_select(app)
-        click(app, "m4_thermal_results")
+        click(app, "m4_open_results")
+        self.assertEqual(page_buttons(app), RESULT_LABELS)
+        click(app, "m4_res_thermal")
+        self.assertEqual(app.session_state["module4_section"], "thermal_results")
         self.assertEqual(getattr(app.main[0], "key", None), "nav_row")
-        self.assertEqual([h.value for h in app.header], ["My Thermal Experiment & Results"])
-        self.assertEqual([s.value for s in app.subheader], [
-            "Step 1 — Original Thermal Image & Settings", "Step 2 — Classical Thermal Segmentation",
-            "Step 3 — SAM2 Thermal Segmentation", "Step 4 — Mask Comparison",
-            "Step 5 — Boundary Comparison", "Step 6 — Quantitative Comparison"])
-        metrics = {m.label: m.value for m in app.metric}
-        self.assertEqual(metrics, {
-            "Image size (width × height)": "1080 × 1440 pixels",
-            "Morphological closing": "3 × 3 elliptical",
-            "Connected components": "8-connectivity",
-            "Foreground components found": "20",
-            "Selected foreground size": "392,206 pixels",
-            "Image occupancy": "25.22%",
-            "SAM2 box (x, y, width, height)": "(263, 57, 574, 1380) pixels",
-            "Predicted mask quality": "0.977383",
-            "Device": "MPS",
-            "IoU with SAM2": "0.9813",
-        })
-        self.assertEqual(len(app.get("image")), 3)
-        self.assertEqual([b.label for b in app.button if not (b.key or "").startswith("nav")], ["Back"])
+        self.assertEqual([b.key for b in app.main[0].button],
+                         ["nav_arrow_button", "nav_home_button", "navbtn_0", "navbtn_1"])
+
+    def test_results_page_steps_values(self):
+        app = new_app()
+        click(app, "m4_open_results")
+        click(app, "m4_res_thermal")
+        self.assertEqual([t.value for t in app.title], ["My Experiment & Results"])
+        self.assertEqual([h.value for h in app.header], [
+            "Human Boundary Detection in Thermal Images",
+            "Step 1 — Original Thermal Image & Experimental Parameters", "Step 2 — Classical Thermal Segmentation",
+            "Step 3 — Classical Human Boundary Detection", "Step 4 — SAM2 Segmentation & Boundary Detection",
+            "Step 5 — Classical vs. SAM2 Comparison", "Step 6 — Quantitative Comparison", "Conclusion"])
+        self.assertEqual([s.value for s in app.subheader], ["Mask Comparison", "Boundary Comparison"])
+        tables = [{k: v.iloc[0] for k, v in t.value.iterrows()} for t in app.table]
+        self.assertEqual(tables, [
+            {"Image resolution": "1080 × 1440 pixels", "Color space": "HSV", "Segmentation method": "Color thresholding",
+             "Morphological closing": "3 × 3 elliptical kernel", "Connected components": "8-connectivity",
+             "Region selection": "Largest foreground component"},
+            {"Foreground components found": "20", "Selected foreground size": "392,206 pixels", "Image occupancy": "25.22%"},
+            {"Prompt": "Bounding box", "Bounding box (x, y)": "(263, 57) pixels",
+             "Bounding box (width × height)": "574 × 1380 pixels", "Experimental device": "MPS",
+             "Predicted mask-quality score": "0.977383"},
+            {"Intersection over Union (IoU)": "0.9813"}])
+        self.assertEqual(len(app.metric), 0)
+        self.assertEqual(len(app.latex), 1)
+        text = " ".join(m.value for m in app.markdown) + " ".join(c.value for c in app.caption)
+        self.assertIn("Detect the human boundary in a thermal image", text)
+        self.assertIn("estimated segmentation quality", text)
+        self.assertIn("very high agreement between the two methods", text)
+        self.assertNotIn("accuracy", text)
+        self.assertNotIn("98.13", text)
+        self.assertNotIn("report", text.lower())
+        self.assertEqual(len(app.get("image")), 9)  # original, classical mask + boundary, SAM2 mask + boundary, 2 + 2 comparisons
+        self.assertEqual(page_buttons(app), [])  # no bottom Back
 
     def test_results_page_has_no_rgb_values(self):
         app = new_app()
-        open_select(app)
-        click(app, "m4_thermal_results")
+        click(app, "m4_open_results")
+        click(app, "m4_res_thermal")
         shown = " ".join([*(m.value for m in app.metric), *(m.value for m in app.markdown)])
         for rgb_only in ("1766", "6,574,847", "0.989319", "GrabCut", "Canny", "0.80"):
             self.assertNotIn(rgb_only, shown)
 
-    def test_results_back_returns_to_selection(self):
-        for key in ("navbtn_1", "m4_thermal_results_back_bottom"):
+    def test_results_back_returns_to_selection_then_home(self):
+        for key in ("nav_arrow_button", "navbtn_1"):
             app = new_app()
-            open_select(app)
-            click(app, "m4_thermal_results")
+            click(app, "m4_open_results")
+            click(app, "m4_res_thermal")
             click(app, key)
-            self.assertEqual(app.session_state["module4_section"], "thermal_select")
+            self.assertEqual(app.session_state["module4_section"], "my_results")
+        click(app, "navbtn_0")
+        self.assertEqual(app.session_state["module4_section"], "home")
 
     def test_navigation_state_survives_reruns(self):
         app = new_app()
-        open_select(app)
-        click(app, "m4_thermal_results")
-        app.run()
-        self.assertEqual(app.session_state["module4_section"], "thermal_results")
-        click(app, "navbtn_1")
-        click(app, "m4_thermal_visitor")
+        click(app, "m4_open_thermal")
         app.run()
         self.assertEqual(app.session_state["module4_section"], "thermal")
 
     def test_rgb_section_regression(self):
         app = new_app()
         click(app, "m4_open_rgb")
-        self.assertEqual(app.session_state["module4_section"], "rgb_select")
+        self.assertEqual(app.session_state["module4_section"], "rgb")
+        self.assertEqual([t.value for t in app.title], ["Human Boundary Detection in RGB Images"])
         self.assertEqual(back_keys(app), [])
-        click(app, "m4_rgb_visitor")
-        self.assertEqual(app.subheader[0].value, "Question 1 – Human Boundary Detection in an RGB Image")
-        self.assertEqual(len(back_keys(app)), 1)
-        click(app, "navbtn_1")
-        click(app, "m4_rgb_results")
-        self.assertEqual([h.value for h in app.header], ["My RGB Experiment & Results"])
-        self.assertEqual(len(app.get("image")), 9)
 
     def test_thermal_display_assets_exist(self):
         for name in ("thermal_step1_original.jpg", "thermal_step4_mask_comparison.png",
