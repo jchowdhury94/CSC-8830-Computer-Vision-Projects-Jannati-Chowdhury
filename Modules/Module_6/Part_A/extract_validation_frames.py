@@ -1,4 +1,12 @@
-"""Extract original Video 1 frames for a known CSV tracking transition."""
+"""Extract original Video 1 frames for a known CSV tracking transition.
+
+Run from the repository root:
+    .venv/bin/python -m Modules.Module_6.Part_A.extract_validation_frames
+
+Inputs: input/video_1_horizontal.MOV (kept locally) and output/video_1_tracking.csv.
+Outputs (in output/): video_1_validation_frame_old.png and _new.png, their _annotated.png versions and
+video_1_validation_comparison.png. Requires NumPy and OpenCV (repository requirements.txt).
+"""
 
 import csv
 import math

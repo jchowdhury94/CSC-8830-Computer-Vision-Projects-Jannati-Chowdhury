@@ -9,6 +9,10 @@ Positions and displacements in the CSV and summary are in ORIGINAL-frame pixels
 (processing-resolution values divided by the resize scale). One displacement is
 the motion between two consecutive *processed* frames, which are `stride`
 source frames (stride / source_fps seconds) apart.
+
+This module is imported by Pages/app_module6.py, not run. Inputs: an uploaded video, a selected
+rectangle and tracking settings. Outputs (returned in memory): annotated MP4, tracking CSV and summary.
+Requires NumPy, OpenCV and imageio-ffmpeg (repository requirements.txt).
 """
 
 import csv
@@ -26,7 +30,7 @@ import cv2
 import numpy as np
 
 from Modules.Module_6.Part_A.optical_flow import (
-    CSV_COLUMNS, FEATURE_PARAMS, LK_PARAMS, annotate, TRACK_COLOR,
+    CSV_COLUMNS, DOT_RADIUS, FEATURE_PARAMS, LK_PARAMS, annotate, draw_motion_arrows,
 )
 
 MAX_FILE_BYTES = 50 * 1024 * 1024
@@ -51,6 +55,10 @@ class NoFeaturesError(VideoError):
 
 
 class BusyError(VideoError):
+    pass
+
+
+class EncodingError(VideoError):
     pass
 
 
@@ -140,29 +148,25 @@ class ProcessingPlan:
     def step_seconds(self):
         return self.stride / self.source_fps
 
-    def messages(self):
-        """Disclosures to show whenever optimization changes the video."""
-        notes = []
+    def summary_line(self):
+        """One-line description of what will be processed, naming every change made to the video."""
+        size = f"Processing: {self.width} × {self.height} px"
         if self.resized:
-            notes.append(f"Your video was automatically resized from {self.source_width} × {self.source_height} "
-                         f"to {self.width} × {self.height} for faster processing.")
+            size += f" (resized from {self.source_width} × {self.source_height})"
+        parts = [size]
         if self.truncated:
-            notes.append(f"Your video is longer than the limit, so only the first segment "
-                         f"({self.source_frames_used / self.source_fps:.1f} s, "
-                         f"{self.source_frames_used} frames) will be tracked.")
+            parts.append(f"First {self.source_frames_used / self.source_fps:.0f} seconds")
         elif not self.length_known:
-            notes.append(f"The video length could not be determined, so tracking stops at "
-                         f"{MAX_DURATION_S:.0f} s or {MAX_FRAMES} frames, whichever comes first.")
+            parts.append(f"Unknown length, at most the first {MAX_DURATION_S:.0f} seconds")
+        parts.append(f"{'' if self.length_known else 'up to '}{self.frames_to_process} frames")
         if self.stride > 1:
-            notes.append(f"To stay within {MAX_FRAMES} processed frames, every {self.stride}"
-                         f"{_ordinal_suffix(self.stride)} frame is tracked ({self.effective_fps:.1f} frames per second "
-                         f"instead of {self.source_fps:.1f}). Each tracking step now spans "
-                         f"{self.step_seconds:.3f} s, so per-step displacements are larger than in the full-rate video.")
-        return notes
+            parts.append(f"Every {ordinal(self.stride)} frame tracked ({self.step_seconds:.3f} s per step)")
+        return " · ".join(parts)
 
 
-def _ordinal_suffix(n):
-    return "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+def ordinal(n):
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
 
 
 def check_upload(size_bytes, filename):
@@ -322,13 +326,16 @@ class H264Writer:
     def __init__(self, path, width, height, fps):
         available, detail = encoder_status()
         if not available:
-            raise VideoError(f"Video encoding is unavailable: {detail}")
+            raise EncodingError(f"Video encoding is unavailable: {detail}")
         import imageio_ffmpeg
-        self._writer = imageio_ffmpeg.write_frames(
-            str(path), (width, height), fps=fps, codec="libx264", pix_fmt_in="bgr24", pix_fmt_out="yuv420p",
-            macro_block_size=2, quality=6, ffmpeg_log_level="error",
-            output_params=["-movflags", "+faststart", "-preset", "veryfast"])
-        self._writer.send(None)
+        try:
+            self._writer = imageio_ffmpeg.write_frames(
+                str(path), (width, height), fps=fps, codec="libx264", pix_fmt_in="bgr24", pix_fmt_out="yuv420p",
+                macro_block_size=2, quality=6, ffmpeg_log_level="error",
+                output_params=["-movflags", "+faststart", "-preset", "veryfast"])
+            self._writer.send(None)
+        except Exception as error:
+            raise EncodingError("Video encoding could not start.") from error
         self._closed = False
 
     def write(self, frame):
@@ -336,7 +343,7 @@ class H264Writer:
             self._writer.send(np.ascontiguousarray(frame).tobytes())
         except Exception as error:
             self.abort()
-            raise VideoError("Video encoding failed while writing frames.") from error
+            raise EncodingError("Video encoding failed while writing frames.") from error
 
     def close(self):
         if not self._closed:
@@ -344,7 +351,7 @@ class H264Writer:
             try:
                 self._writer.close()
             except Exception as error:
-                raise VideoError("Video encoding failed while finishing the file.") from error
+                raise EncodingError("Video encoding failed while finishing the file.") from error
 
     def abort(self):
         if not self._closed:
@@ -376,12 +383,6 @@ def direction_label(mean_u, mean_v, threshold=0.05):
     return names[int((angle + 22.5) // 45) % 8].capitalize()
 
 
-def _draw_tracks(frame, old_points, new_points):
-    for old, new in zip(old_points, new_points):
-        cv2.line(frame, tuple(np.rint(old).astype(int)), tuple(np.rint(new).astype(int)),
-                 TRACK_COLOR, 1, cv2.LINE_AA)
-
-
 def track_video(video_path, plan, roi, params, output_path, progress=None):
     """Track features inside `roi` (processing-frame x, y, w, h) and write an annotated H.264 MP4.
 
@@ -394,7 +395,7 @@ def track_video(video_path, plan, roi, params, output_path, progress=None):
         raise VideoError("The selected rectangle is outside the video frame.")
     available, detail = encoder_status()
     if not available:
-        raise VideoError(f"Video encoding is unavailable: {detail}")
+        raise EncodingError(f"Video encoding is unavailable: {detail}")
 
     lk_params = params.lk_params()
     csv_buffer = io.StringIO(newline="")
@@ -434,7 +435,7 @@ def track_video(video_path, plan, roi, params, output_path, progress=None):
                 old_points = points.reshape(-1, 2)[valid]
                 new_points = next_points.reshape(-1, 2)[valid]
                 feature_ids = feature_ids[valid]
-                _draw_tracks(frame, old_points, new_points)
+                draw_motion_arrows(frame, old_points, new_points)
                 scale = np.array([sx, sy])
                 old_orig, new_orig = old_points / scale, new_points / scale
                 delta = new_orig.astype(np.float64) - old_orig.astype(np.float64)
@@ -459,7 +460,9 @@ def track_video(video_path, plan, roi, params, output_path, progress=None):
                 per_frame.append(dict(frame=index + 1, source_frame=source_frame, time_s=time_s, tracked=0,
                                       mean_u=None, mean_v=None, mean_magnitude=None,
                                       mean_cumulative_u=None, mean_cumulative_v=None))
-            annotate(frame, source_frame, points)
+            # With skipped frames, the overlay says that its number counts source frames.
+            annotate(frame, source_frame, points, "Source frame" if plan.stride > 1 else "Frame",
+                     dot_radius=DOT_RADIUS)
             writer.write(frame)
             previous_gray = gray
             if progress is not None:
@@ -473,9 +476,10 @@ def track_video(video_path, plan, roi, params, output_path, progress=None):
             writer.abort()
         raise
 
-    video_bytes = Path(output_path).read_bytes()
+    output = Path(output_path)
+    video_bytes = output.read_bytes() if output.is_file() else b""
     if not video_bytes:
-        raise VideoError("Video encoding produced an empty file.")
+        raise EncodingError("Video encoding produced an empty file.")
     summary = summarize(plan, initial_count, len(points), processed, csv_buffer.getvalue(), per_frame, first_lost_frame)
     return TrackingResult(video_bytes, csv_buffer.getvalue().encode("utf-8"), summary, per_frame)
 

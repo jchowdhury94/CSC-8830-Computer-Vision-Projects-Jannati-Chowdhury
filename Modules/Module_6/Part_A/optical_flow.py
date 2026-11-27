@@ -5,6 +5,13 @@ Run from the repository root:
     .venv/bin/python Modules/Module_6/Part_A/optical_flow.py --video 2
 
 Frame numbers are one-based; CSV frame 2 describes motion from frame 1 to 2.
+
+Input: input/video_<n>_*.MOV (kept locally, not in Git).
+Interaction: a window opens on the first frame; draw a rectangle around the can and press Enter.
+Outputs: output/video_<n>_tracking.csv (overwritten) and output/video_<n>_optical_flow.mp4 (local only).
+The rectangle is not saved, so a new run can select different features than the saved experiment.
+Requires NumPy and OpenCV with window support: the repository requirements.txt installs the headless
+build, so install opencv-python in a separate environment to run this script.
 """
 
 import argparse
@@ -25,17 +32,43 @@ LK_PARAMS = dict(
     criteria=(cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 30, 0.01),
 )
 TRACK_COLOR = (0, 255, 255)  # Yellow in OpenCV's BGR color order.
+# Motion arrows (drawing only; measured displacements are never changed).
+ARROW_MAGNIFICATION = 30  # drawn arrow length = 30 x measured frame-to-frame displacement
+ARROW_THICKNESS = 1  # pixels
+ARROW_MAX_LENGTH = 90.0  # pixels; longer arrows are shortened, keeping their direction
+ARROW_HEAD_LENGTH = 8.0  # pixels, and never more than 40% of the arrow
+DOT_RADIUS = 2  # feature dot in arrow visualizations
 CSV_COLUMNS = ["frame", "feature_id", "old_x", "old_y", "new_x", "new_y", "u", "v", "magnitude"]
 
 
-def annotate(frame, frame_number, points):
+def annotate(frame, frame_number, points, frame_label="Frame", dot_radius=3):
     """Add compact markers and readable frame/feature counts."""
     for point in points.reshape(-1, 2):
-        cv2.circle(frame, tuple(np.rint(point).astype(int)), 3, TRACK_COLOR, -1)
-    labels = (f"Frame: {frame_number}", f"Tracked features: {len(points)}")
+        cv2.circle(frame, tuple(np.rint(point).astype(int)), dot_radius, TRACK_COLOR, -1)
+    labels = (f"{frame_label}: {frame_number}", f"Tracked features: {len(points)}")
     for label, y in zip(labels, (28, 56)):
         cv2.putText(frame, label, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)
         cv2.putText(frame, label, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, TRACK_COLOR, 1)
+
+
+def draw_motion_arrows(frame, old_points, new_points, thickness=ARROW_THICKNESS, color=TRACK_COLOR, zoom=1.0):
+    """Draw one arrow per feature, from its current position along its measured displacement new - old.
+
+    For an enlarged view, pass points in the view's coordinates and its enlargement as `zoom`.
+    """
+    shift = 4  # 1/16-pixel endpoints keep the direction of short vectors accurate
+    for old, new in zip(old_points, new_points):
+        old, new = np.asarray(old, dtype=np.float64), np.asarray(new, dtype=np.float64)
+        vector = (new - old) * ARROW_MAGNIFICATION
+        length = float(np.hypot(*vector))
+        if length < 1.0:  # no visible direction; the feature dot alone marks it
+            continue
+        if length > ARROW_MAX_LENGTH * zoom:
+            vector *= ARROW_MAX_LENGTH * zoom / length
+            length = ARROW_MAX_LENGTH * zoom
+        tail, tip = (tuple(int(c) for c in np.rint(p * 2 ** shift)) for p in (new, new + vector))
+        cv2.arrowedLine(frame, tail, tip, color, thickness, cv2.LINE_AA, shift,
+                        min(ARROW_HEAD_LENGTH * zoom / length, 0.4))
 
 
 def main():

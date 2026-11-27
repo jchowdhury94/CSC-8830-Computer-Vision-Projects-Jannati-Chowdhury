@@ -1,4 +1,12 @@
-"""A worked bilinear intensity example from Video 2's verified feature."""
+"""A worked bilinear intensity example from Video 2's verified feature.
+
+Run from the repository root:
+    .venv/bin/python -m Modules.Module_6.Part_A.bilinear_interpolation_validation
+
+Inputs (in output/): video_2_validation_frame_old.png and video_2_tracking.csv.
+Outputs (in output/): video_2_bilinear_interpolation.png and .txt.
+Requires NumPy and OpenCV (repository requirements.txt).
+"""
 
 import csv
 import math

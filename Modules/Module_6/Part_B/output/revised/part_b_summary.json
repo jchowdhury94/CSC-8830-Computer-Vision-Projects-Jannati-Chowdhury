@@ -1,0 +1,86 @@
+{
+  "status": "Correspondences approved; used on the results page",
+  "landmarks_found": 4,
+  "views": [
+    {
+      "view": 2,
+      "matches": 1137,
+      "inliers": 1036,
+      "coverage": 0.7263109895735586
+    },
+    {
+      "view": 3,
+      "matches": 558,
+      "inliers": 517,
+      "coverage": 0.6847932142856871
+    },
+    {
+      "view": 4,
+      "matches": 1553,
+      "inliers": 1513,
+      "coverage": 0.88533592803662
+    }
+  ],
+  "landmark_corrections": {},
+  "singular_values": [
+    6754.497417335541,
+    4893.079320473027,
+    491.54824511640334,
+    302.43099490181424,
+    24.358606037511493,
+    8.54659818434756,
+    1.3207796169348407,
+    5.452637429507698e-13
+  ],
+  "L_eigenvalues": [
+    0.00044053274936930634,
+    0.0007481768337548958,
+    0.0021567271226875925
+  ],
+  "scale_cm_per_unit": 0.00606079940783918,
+  "view_rms_px": [
+    46.24087320734087,
+    86.57269171908436,
+    23.61354338345293,
+    36.41333420605599
+  ],
+  "max_plane_displacement_cm": 1.939489046957258,
+  "measurements": [
+    {
+      "edge": "Top edge",
+      "measured_cm": 14.5,
+      "reconstructed_cm": 13.108222604456163,
+      "error_percent": 9.59846479685405
+    },
+    {
+      "edge": "Bottom edge",
+      "measured_cm": 14.5,
+      "reconstructed_cm": 15.947513491560043,
+      "error_percent": 9.982851665931333
+    },
+    {
+      "edge": "Left edge",
+      "measured_cm": 21.7,
+      "reconstructed_cm": 21.34622824337955,
+      "error_percent": 1.6302845927209673
+    },
+    {
+      "edge": "Right edge",
+      "measured_cm": 21.7,
+      "reconstructed_cm": 22.016425026779462,
+      "error_percent": 1.458179846909967
+    },
+    {
+      "edge": "Diagonal P1\u2013P3",
+      "measured_cm": 26.098658969380015,
+      "reconstructed_cm": 27.069774981921267,
+      "error_percent": 3.7209421897140533
+    },
+    {
+      "edge": "Diagonal P2\u2013P4",
+      "measured_cm": 26.098658969380015,
+      "reconstructed_cm": 24.473358449178487,
+      "error_percent": 6.227525031490678
+    }
+  ]
+}

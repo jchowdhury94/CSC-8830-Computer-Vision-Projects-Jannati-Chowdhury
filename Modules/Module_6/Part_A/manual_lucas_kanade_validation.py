@@ -1,4 +1,12 @@
-"""Estimate one local flow vector directly from the optical-flow constraint."""
+"""Estimate one local flow vector directly from the optical-flow constraint.
+
+Run from the repository root:
+    .venv/bin/python -m Modules.Module_6.Part_A.manual_lucas_kanade_validation
+
+Inputs (in output/): video_1_validation_frame_old.png, video_1_validation_frame_new.png and
+video_1_tracking.csv. Output: output/video_1_manual_lk_validation.txt.
+Requires NumPy and OpenCV (repository requirements.txt).
+"""
 
 import csv
 from pathlib import Path

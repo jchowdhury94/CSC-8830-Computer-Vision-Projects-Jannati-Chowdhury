@@ -101,12 +101,32 @@ Module 4 detects the boundary of a person in an RGB image and in a thermal (fals
 
 ### Module 6 - Optical Flow and Structure from Motion
 
-`Pages/app_module6.py` presents saved results; the scripts and outputs are in `Modules/Module_6/`.
+`Pages/app_module6.py` presents the saved experiments and runs the visitor workflows; the scripts and results are in `Modules/Module_6/`.
 
-- **Part A - Optical flow and Lucas-Kanade validation:** Sparse pyramidal Lucas-Kanade tracking of manually selected features in two videos (horizontal and diagonal motion), with a manual Lucas-Kanade estimate from the optical-flow constraint and a worked bilinear-interpolation example as validation.
-- **Part B - Structure from Motion by factorization:** Eight manually matched points on a book cover in four views form a measurement matrix. Rank-3 factorization (Tomasi-Kanade, orthographic model) gives an unscaled 3D reconstruction, which is scaled to the measured cover size and validated, with its limitations stated. Step notes are in `Modules/Module_6/Part_B/README*.md`.
+**Pages.** The Module 6 homepage has three buttons: **View My Experiments & Results**, **Track Motion in Your Own Video** and **Reconstruct an Object from Your Own Images**. The results selection page opens **Optical Flow and Motion Tracking** (Part A) and **Structure from Motion Reconstruction** (Part B).
 
-The original videos and high-resolution photographs are git-ignored; the page uses the saved outputs.
+Open it from the home page of the website or directly at [/module-6](https://jannati-chowdhury-computer-vision-projects.streamlit.app/module-6).
+
+**Part A - Optical Flow and Motion Tracking**
+
+- **Experiment:** two videos of a soda can, moving horizontally and diagonally. Shi-Tomasi features are tracked with pyramidal Lucas-Kanade optical flow and shown with motion arrows.
+- **Theory and validation:** the motion-tracking and bilinear-interpolation equations, a worked interpolation example, and a manual Lucas-Kanade estimate compared with OpenCV on a pair of consecutive frames from each video.
+- **Visitor workflow:** upload a video, select the object with a rectangle, adjust the tracking settings, run tracking, view the annotated video and motion charts, and download the video (MP4), tracking data (CSV) and summary (JSON).
+- **Limits:** MP4, MOV, M4V, AVI, MKV or WebM up to 50 MB. Only the first 20 seconds are analyzed, at most 600 frames are tracked, and larger videos are reduced to 960 px on the longest side.
+
+Script order and inputs: [Modules/Module_6/Part_A/README.md](Modules/Module_6/Part_A/README.md).
+
+**Part B - Structure from Motion Reconstruction**
+
+- **Experiment:** an approximately planar book cover (14.5 x 21.7 cm) photographed from four viewpoints. Four reference corners were selected and manually verified, four interior feature points were identified automatically, and all eight corresponding points were verified before reconstruction.
+- **Reconstruction:** Tomasi-Kanade factorization (orthographic model) with a metric upgrade, coordinate alignment and one physical scale factor from the measured width and height, followed by the estimated boundary, a scaled 3D reconstruction and edge measurements with percentage errors. Limitations are stated on the page.
+- **Results:** edge errors of 9.60 % (top), 9.98 % (bottom), 1.63 % (left) and 1.46 % (right). The measured width and height set the scale, so this is not an independent validation.
+- **Visitor workflow:** upload four photographs, select the four corners in the first, find the corresponding points automatically, verify and correct them in every photograph, enter the measured width and height, reconstruct, and download the points and edge lengths (CSV).
+- **Limits:** exactly four JPG, PNG or HEIC/HEIF photographs, up to 25 MB each, 100 MB in total and 64 megapixels each.
+
+The experiment and the visitor workflow use the same functions in `Modules/Module_6/Part_B/sfm_pipeline.py`. Reproduction commands: [Modules/Module_6/Part_B/README.md](Modules/Module_6/Part_B/README.md).
+
+The original videos and photographs in the `input/` folders are git-ignored. The repository includes the saved results and copies of the Part B photographs without location metadata.
 
 ### Module 7 - Stereo Vision
 

@@ -13,7 +13,7 @@ import home_navigation as hn
 ROOT = Path(__file__).resolve().parents[1]
 KEYS = hn.MODULE_VIEW_KEYS
 # module -> nested view reached from the module homepage
-NESTED = {"2": "experiment", "3": "experiment", "4": "thermal_results", "6": "b_select", "7": "experiment"}
+NESTED = {"2": "experiment", "3": "experiment", "4": "thermal_results", "6": "my_results", "7": "experiment"}
 VISITOR = {"2": "visitor", "3": "visitor", "4": "thermal", "6": "b_visitor", "7": "1"}
 
 
@@ -96,11 +96,11 @@ class HomeResetTests(unittest.TestCase):
         self.assertEqual(at.session_state["module4_section"], "thermal_select")
         at = module("6", module6_section="b_results")
         next(b for b in at.button if b.key == "navbtn_1").click().run()
-        self.assertEqual(at.session_state["module6_section"], "b_select")
+        self.assertEqual(at.session_state["module6_section"], "my_results")
 
     def test_ordinary_reruns_do_not_reset_navigation(self):
         for n, view in {"4": "thermal_results", "7": "experiment", "3": "experiment", "2": "experiment",
-                        "6": "b_select"}.items():
+                        "6": "my_results"}.items():
             with self.subTest(module=n):
                 at = module(n, **{KEYS[n]: view})
                 at.run()

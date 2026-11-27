@@ -1,8 +1,11 @@
-"""Module 6 Part B visitor SfM backend tests (synthetic data only; no Streamlit, no browser)."""
+"""Module 6 Part B shared backend tests: images, correspondence estimation, eight-point reconstruction.
+
+Synthetic data plus the saved book experiment; no Streamlit, no browser.
+"""
 import csv
 import hashlib
 import io
-import threading
+import json
 import unittest
 from pathlib import Path
 
@@ -10,90 +13,36 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from Modules.Module_6.Part_B import sfm_pipeline as sfm
 from Modules.Module_6.Part_B import visitor_reconstruction as vr
 
 ROOT = Path(__file__).resolve().parents[1]
 PART_B = ROOT / "Modules" / "Module_6" / "Part_B"
+SAVED = PART_B / "output" / "revised"
+PHOTOS = PART_B / "submission_images"
+BOOK_NAMES = ("IMG_7596.jpeg", "IMG_7597.jpeg", "IMG_7598.jpeg", "IMG_7603.jpeg")
 
 
 # ----------------------------------------------------------------- synthetic data
 
-def texture(size, seed):
+def texture(size, seed, width=None):
     rng = np.random.default_rng(seed)
-    img = np.zeros((size, size, 3), np.float32)
+    width = width or size
+    img = np.zeros((size, width, 3), np.float32)
     for scale in (4, 8, 16, 32):
-        noise = rng.random((size // scale + 1, size // scale + 1, 3)).astype(np.float32)
-        img += cv2.resize(noise, (size, size), interpolation=cv2.INTER_CUBIC) * (scale ** .5)
+        noise = rng.random((size // scale + 1, width // scale + 1, 3)).astype(np.float32)
+        img += cv2.resize(noise, (width, size), interpolation=cv2.INTER_CUBIC) * (scale ** .5)
     img = (255 * (img - img.min()) / (img.max() - img.min())).astype(np.uint8)
-    for _ in range(60):
-        center = tuple(int(v) for v in rng.integers(0, size, 2))
+    for _ in range(80):
+        center = (int(rng.integers(0, width)), int(rng.integers(0, size)))
         cv2.circle(img, center, int(rng.integers(3, 12)), tuple(int(v) for v in rng.integers(0, 255, 3)), -1)
     return img
-
-
-def rotation(yaw, pitch):
-    cy, sy, cp, sp = np.cos(yaw), np.sin(yaw), np.cos(pitch), np.sin(pitch)
-    return (np.array([[1, 0, 0], [0, cp, -sp], [0, sp, cp]]) @ np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]]))
-
-
-CUBE = np.array([[x, y, z] for z in (-1, 1) for y in (-1, 1) for x in (-1, 1)], float)
-FACES = [(0, 1, 3, 2), (4, 5, 7, 6), (0, 1, 5, 4), (2, 3, 7, 6), (0, 2, 6, 4), (1, 3, 7, 5)]
-TEXTURES = None
-
-
-def cube_view(yaw, pitch, size=(900, 700), scale=230, distance=40.):
-    """Textured cube seen by a distant (nearly orthographic) camera; painter's algorithm."""
-    global TEXTURES
-    if TEXTURES is None:
-        TEXTURES = [texture(256, i) for i in range(6)]
-    w, h = size
-    canvas = np.full((h, w, 3), 90, np.uint8)
-    cam = CUBE @ rotation(yaw, pitch).T
-    for f in sorted(range(6), key=lambda i: -cam[list(FACES[i]), 2].mean()):
-        q = cam[list(FACES[f])]
-        if np.cross(q[1] - q[0], q[3] - q[0])[2] > 0:
-            continue
-        k = distance / (distance + q[:, 2])
-        dst = np.float32([[w / 2 + scale * p[0] * kk, h / 2 + scale * p[1] * kk] for p, kk in zip(q, k)])
-        s = TEXTURES[f].shape[0]
-        H = cv2.getPerspectiveTransform(np.float32([[0, 0], [s - 1, 0], [s - 1, s - 1], [0, s - 1]]), dst)
-        warped = cv2.warpPerspective(TEXTURES[f], H, (w, h))
-        mask = cv2.warpPerspective(np.full((s, s), 255, np.uint8), H, (w, h)) > 127
-        canvas[mask] = warped[mask]
-    return canvas
 
 
 def png_bytes(rgb):
     ok, data = cv2.imencode(".png", rgb[:, :, ::-1])
     assert ok
     return data.tobytes()
-
-
-def cube_files(count=4, step=0.17):
-    return [(png_bytes(cube_view(-0.5 + step * i, 0.45)), f"view{i + 1}.png") for i in range(count)]
-
-
-def orthographic_tracks(points, views=4, noise=0.0, seed=0):
-    """Exact orthographic projections of 3D points with known camera rotations."""
-    rng = np.random.default_rng(seed)
-    tracks = []
-    for v in range(views):
-        R = rotation(0.4 * v - 0.6, 0.15 * v + 0.2)
-        xy = (points @ R.T)[:, :2] * 100 + [500, 400] + [30 * v, -20 * v]
-        tracks.append(xy + rng.normal(0, noise, xy.shape))
-    return np.array(tracks)
-
-
-def procrustes_error(estimate, truth):
-    """Relative RMS error after the best similarity transform; reflection allowed (SfM is mirror-ambiguous)."""
-    a, b = estimate - estimate.mean(0), truth - truth.mean(0)
-    u, s, vt = np.linalg.svd(a.T @ b)
-    aligned = a @ (u @ vt) * (s.sum() / np.sum(a ** 2))
-    return float(np.sqrt(np.mean(np.sum((aligned - b) ** 2, axis=1))) / np.sqrt(np.mean(np.sum(b ** 2, axis=1))))
-
-
-def random_points(count=40, seed=3):
-    return np.random.default_rng(seed).uniform(-1, 1, (count, 3))
 
 
 def jpeg_with_orientation(size, orientation):
@@ -105,7 +54,79 @@ def jpeg_with_orientation(size, orientation):
     return buffer.getvalue()
 
 
-# ----------------------------------------------------------------- tests
+OBJECT_W, OBJECT_H = 420, 600
+# P1-P4 corners and four interior landmarks, in object (texture) pixel coordinates
+OBJECT_POINTS = np.array([[0, 0], [OBJECT_W - 1, 0], [OBJECT_W - 1, OBJECT_H - 1], [0, OBJECT_H - 1],
+                          [120, 150], [300, 110], [330, 470], [90, 500]], float)
+# Where the four object corners land in each 1000 x 900 photo (view 4 pushes P2 outside the photo).
+VIEW_CORNERS = (((300, 150), (700, 150), (700, 720), (300, 720)),
+                ((260, 210), (690, 120), (740, 700), (240, 760)),
+                ((350, 130), (760, 220), (680, 780), (290, 690)),
+                ((60, 780), (-25, 200), (600, 140), (680, 760)))  # rotated 90 degrees
+OBJECT_TEXTURE = None
+
+
+def planar_views():
+    """Four photos of one textured flat rectangle; returns (photo bytes, true points per view (4, 8, 2))."""
+    global OBJECT_TEXTURE
+    if OBJECT_TEXTURE is None:
+        OBJECT_TEXTURE = texture(OBJECT_H, 7, OBJECT_W)
+    source = np.float32(OBJECT_POINTS[:4])
+    files, truth = [], []
+    for v, corners in enumerate(VIEW_CORNERS):
+        H = cv2.getPerspectiveTransform(source, np.float32(corners))
+        canvas = np.full((900, 1000, 3), 205, np.uint8)
+        warped = cv2.warpPerspective(OBJECT_TEXTURE, H, (1000, 900), flags=cv2.INTER_LINEAR)
+        mask = cv2.warpPerspective(np.full((OBJECT_H, OBJECT_W), 255, np.uint8), H, (1000, 900)) > 127
+        canvas[mask] = warped[mask]
+        files.append((png_bytes(canvas), f"view{v + 1}.png"))
+        truth.append(cv2.perspectiveTransform(OBJECT_POINTS.reshape(-1, 1, 2), H).reshape(-1, 2))
+    return files, np.array(truth)
+
+
+def rotation(yaw, pitch):
+    cy, sy, cp, sp = np.cos(yaw), np.sin(yaw), np.cos(pitch), np.sin(pitch)
+    return np.array([[1, 0, 0], [0, cp, -sp], [0, sp, cp]]) @ np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+
+
+# A 10 x 20 rectangle (P1-P4) with four raised landmarks, so the orthographic data is exactly rank 3.
+SHAPE = np.array([[-5, -10, 0], [5, -10, 0], [5, 10, 0], [-5, 10, 0],
+                  [-2, -4, 1.5], [3, -6, -1.0], [2, 5, 2.0], [-3, 6, -1.5]], float)
+
+
+def orthographic_tracks(points=SHAPE, scale=40.0):
+    tracks = []
+    for v in range(4):
+        R = rotation(0.35 * v - 0.5, 0.25 * v - 0.3)
+        tracks.append((points @ R.T)[:, :2] * scale + [600 + 25 * v, 500 - 15 * v])
+    return np.array(tracks)
+
+
+def saved_rows(name):
+    with (SAVED / name).open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def book_tracks():
+    """The saved final (4, 8, 2) coordinates of the book experiment."""
+    rows = saved_rows("part_b_correspondences.csv")
+    return np.array([[[float(r[f"view{v}_x"]), float(r[f"view{v}_y"])] for r in rows] for v in range(1, 5)])
+
+
+def book_selection():
+    return json.loads((PART_B / "correspondence_selection.json").read_text(encoding="utf-8"))
+
+
+def book_images():
+    return [vr.decode_image((PHOTOS / name).read_bytes(), name) for name in BOOK_NAMES]
+
+
+def estimate(images, points):
+    """Homography estimates in photos 2-4 of points marked in photo 1 (the matching step of find_correspondences)."""
+    return sfm._match_views(images, np.asarray(points, float))[1]
+
+
+# ----------------------------------------------------------------- images
 
 class ImageDecodingTests(unittest.TestCase):
     def test_png_decodes_to_rgb(self):
@@ -158,494 +179,370 @@ class ImageDecodingTests(unittest.TestCase):
         self.assertEqual(image.rgb.shape, source.shape)
         self.assertLess(float(np.abs(image.rgb.astype(int) - source).mean()), 12.0)
 
-    def test_check_uploads(self):
-        ok = [(1000, f"{n}.jpg") for n in ("a", "b", "c")]
-        vr.check_uploads(ok)
-        for bad in (ok[:2], ok * 3, ok[:2] + [(1000, "c.gif")], ok[:2] + [(0, "c.jpg")],
-                    ok[:2] + [(vr.MAX_FILE_BYTES + 1, "c.jpg")]):
+    def test_file_type_and_size_limits(self):
+        vr.check_file(1000, "a.jpg")
+        for size, name in ((1000, "d.gif"), (0, "d.jpg"), (vr.MAX_FILE_BYTES + 1, "d.jpg")):
             with self.assertRaises(vr.ImageError):
-                vr.check_uploads(bad)
-        vr.check_uploads(ok[:2] + [(1000, "c.PNG")])
-
-
-class MatchingTests(unittest.TestCase):
-    def setUp(self):
-        self.base = texture(500, 11)
-        matrix = cv2.getRotationMatrix2D((250, 250), 8, 1.0)
-        matrix[:, 2] += (14, -9)
-        self.matrix = matrix
-        self.moved = cv2.warpAffine(self.base, matrix, (500, 500), borderMode=cv2.BORDER_REFLECT)
-        self.fa, self.fb = vr.detect_features(self.base), vr.detect_features(self.moved)
-
-    def test_features_detected(self):
-        self.assertGreater(len(self.fa.points), 100)
-        self.assertEqual(self.fa.descriptors.shape[1], 128)
-
-    def test_matches_follow_the_known_transform(self):
-        pairs = vr.match_descriptors(self.fa.descriptors, self.fb.descriptors)
-        self.assertGreater(len(pairs), 50)
-        predicted = self.fa.points[pairs[:, 0]] @ self.matrix[:, :2].T + self.matrix[:, 2]
-        error = np.linalg.norm(predicted - self.fb.points[pairs[:, 1]], axis=1)
-        self.assertGreater(np.mean(error < 3), 0.8)
-        self.assertEqual(len(set(pairs[:, 1])), len(pairs))  # one-to-one
-
-    def test_ransac_rejects_injected_outliers(self):
-        rng = np.random.default_rng(0)
-        a = rng.uniform(50, 450, (120, 2))
-        b = a @ self.matrix[:, :2].T + self.matrix[:, 2]
-        outlier = np.zeros(120, bool)
-        outlier[:30] = True
-        b[outlier] = rng.uniform(50, 450, (30, 2))
-        mask = vr.ransac_inliers(a.astype(np.float32), b.astype(np.float32))
-        self.assertGreater(mask[~outlier].mean(), 0.95)
-        self.assertLess(mask[outlier].mean(), 0.25)
-        np.testing.assert_array_equal(mask, vr.ransac_inliers(a.astype(np.float32), b.astype(np.float32)))
-
-    def test_ransac_too_few_points(self):
-        self.assertIsNone(vr.ransac_inliers(np.zeros((5, 2), np.float32), np.zeros((5, 2), np.float32)))
-
-    def test_match_pair_statistics(self):
-        inliers, stats = vr.match_pair(self.fa, self.fb, 0, 1)
-        self.assertGreaterEqual(stats.inliers, vr.MIN_PAIR_INLIERS)
-        self.assertLessEqual(stats.inliers, stats.ratio_matches)
-        self.assertEqual(len(inliers), stats.inliers)
-        self.assertGreater(stats.median_displacement_px, 5)
-
-    def test_unrelated_images_are_insufficient(self):
-        other = vr.detect_features(texture(500, 99))
-        with self.assertRaises(vr.InsufficientMatchesError):
-            vr.match_pair(self.fa, other, 0, 1)
-
-    def test_identical_images_are_degenerate(self):
-        with self.assertRaises(vr.DegenerateError):
-            vr.match_pair(self.fa, vr.detect_features(self.base), 0, 1)
+                vr.check_file(size, name)
 
     def test_featureless_image(self):
         with self.assertRaises(vr.InsufficientMatchesError):
             vr.detect_features(np.full((400, 400, 3), 128, np.uint8))
 
-
-class TrackConsistencyTests(unittest.TestCase):
-    def test_chain_keeps_only_complete_consistent_tracks(self):
-        pairs = [np.array([[0, 10], [1, 11], [2, 12], [3, 13]]),
-                 np.array([[10, 20], [11, 21], [13, 23], [99, 98]]),
-                 np.array([[20, 30], [23, 33], [21, 31]])]
-        tracks = vr.chain_tracks(pairs)
-        self.assertEqual(sorted(map(tuple, tracks)), [(0, 10, 20, 30), (1, 11, 21, 31), (3, 13, 23, 33)])
-
-    def test_chain_empty(self):
-        self.assertEqual(vr.chain_tracks([np.array([[0, 1]]), np.array([[5, 6]])]).shape, (0, 3))
-
-    def test_trim_removes_inconsistent_track(self):
-        tracks = orthographic_tracks(random_points(60), noise=0.2)
-        tracks[2, 7] += (80, -60)  # one wrongly matched point in one view
-        keep = vr.trim_inconsistent(tracks)
-        self.assertNotIn(7, keep)
-        self.assertGreaterEqual(len(keep), 55)
+    def test_feature_mask_restricts_detection(self):
+        rgb = texture(400, 3)
+        mask = np.zeros((400, 400), np.uint8)
+        mask[100:300, 100:300] = 255
+        features = vr.detect_features(rgb, mask=mask)
+        self.assertTrue(((features.points >= 95) & (features.points <= 305)).all())
 
 
-class FactorizationTests(unittest.TestCase):
-    def test_measurement_matrix_layout_and_centering(self):
-        tracks = orthographic_tracks(random_points(10), views=4)
-        raw, centered, centroids = vr.measurement_matrix(tracks)
-        self.assertEqual(raw.shape, (8, 10))
-        np.testing.assert_array_equal(raw[0], tracks[0, :, 0])  # V1_x
-        np.testing.assert_array_equal(raw[3], tracks[1, :, 1])  # V2_y
-        np.testing.assert_allclose(centered.mean(axis=1), 0, atol=1e-10)
-        np.testing.assert_allclose(centroids[2], tracks[2].mean(axis=0))
+class CoordinateTests(unittest.TestCase):
+    def setUp(self):
+        # 4284 x 5712 upright original decoded to a 1200 x 1600 working image, like the book photos.
+        self.image = vr.DecodedImage(np.zeros((1600, 1200, 3), np.uint8), "x.jpg", (4284, 5712), 1200 / 4284, 6)
+
+    def test_working_and_original_round_trip(self):
+        points = np.array([[0, 0], [4283, 5711], [883, 1198], [2141.5, 2855.5]], float)
+        np.testing.assert_allclose(sfm.to_original(sfm.to_working(points, self.image), self.image), points, atol=1e-9)
+        # pixel-center convention: the image center maps to the center
+        np.testing.assert_allclose(sfm.to_working([[2141.5, 2855.5]], self.image), [[599.5, 799.5]], atol=1e-9)
+
+    def test_display_clicks_map_to_original_pixels(self):
+        # a 400 px wide display of the whole photo: each displayed pixel covers 4284 / 400 original pixels
+        center = sfm.display_to_original(199.5, 266.5, 400, 533, self.image)
+        np.testing.assert_allclose(center, [2141.5, 2855.5], atol=6)
+        corner = sfm.display_to_original(-5, 10_000, 400, 533, self.image)
+        np.testing.assert_allclose(corner, [0, 5711])  # clipped inside the photo
         with self.assertRaises(ValueError):
-            vr.measurement_matrix(np.zeros((4, 10)))
+            sfm.display_to_original(1, 1, 0, 533, self.image)
 
-    def test_exact_orthographic_data_is_rank_three(self):
-        _, centered, _ = vr.measurement_matrix(orthographic_tracks(random_points()))
-        sv = np.linalg.svd(centered, compute_uv=False)
-        self.assertLess(sv[3] / sv[0], 1e-12)
+    def test_zoom_clicks_map_through_the_crop(self):
+        origin, crop = (500, 700), (100, 100)  # working pixels, shown 4x larger
+        point = sfm.display_to_original(201.5, 41.5, 400, 400, self.image, origin, crop)
+        np.testing.assert_allclose(sfm.to_working(point, self.image), [550.0, 710.0], atol=1e-9)
 
-    def test_recovers_known_structure_up_to_similarity(self):
-        truth = random_points()
-        result = vr.reconstruct_from_tracks(orthographic_tracks(truth), [(1000, 800)] * 4, trim_outliers=False)
-        self.assertEqual(result.status, "ok")
-        self.assertLess(procrustes_error(result.points_metric, truth), 1e-6)
-        self.assertLess(procrustes_error(result.points, truth), 1e-6)
-        self.assertLess(result.diagnostics["reprojection_rms_px"], 1e-8)
-        self.assertEqual(result.quality, "good")
-
-    def test_noisy_reconstruction_is_close_and_deterministic(self):
-        truth = random_points(80)
-        tracks = orthographic_tracks(truth, noise=0.3)
-        a = vr.reconstruct_from_tracks(tracks, [(1000, 800)] * 4)
-        b = vr.reconstruct_from_tracks(tracks, [(1000, 800)] * 4)
-        np.testing.assert_array_equal(a.points, b.points)
-        self.assertLess(procrustes_error(a.points, truth), 0.05)
-        self.assertLess(a.diagnostics["reprojection_rms_px"], 1.0)
-
-    def test_metric_constraint_rows_are_orthonormal(self):
-        result = vr.reconstruct_from_tracks(orthographic_tracks(random_points()), [(1000, 800)] * 4)
-        for norm_i, norm_j, dot in result.diagnostics["camera_rows"]:
-            self.assertAlmostEqual(norm_i, 1, places=6)
-            self.assertAlmostEqual(norm_j, 1, places=6)
-            self.assertAlmostEqual(dot, 0, places=6)
-
-    def test_principal_axes_frame_is_rigid(self):
-        points = random_points() * [3, 2, 0.5]
-        aligned, spreads = vr.principal_axes_frame(points)
-        np.testing.assert_allclose(aligned.mean(axis=0), 0, atol=1e-12)
-        np.testing.assert_allclose(np.sort(np.linalg.norm(aligned[:, None] - aligned[None], axis=2).ravel()),
-                                   np.sort(np.linalg.norm(points[:, None] - points[None], axis=2).ravel()), atol=1e-9)
-        self.assertTrue(spreads[0] >= spreads[1] >= spreads[2])
-
-    def test_reproduces_original_book_experiment(self):
-        out = PART_B / "output"
-        with (out / "part_b_correspondences.csv").open(newline="") as handle:
-            rows = list(csv.DictReader(handle))
-        tracks = np.array([[[float(r[f"view{v}_x"]), float(r[f"view{v}_y"])] for r in rows] for v in range(1, 5)])
-        result = vr.reconstruct_from_tracks(tracks, [(4284, 5712)] * 4, min_points=8, trim_outliers=False)
-        with (out / "part_b_reconstructed_points_unscaled.csv").open(newline="") as handle:
-            saved = np.array([[float(r[a]) for a in "XYZ"] for r in csv.DictReader(handle)])
-        with (out / "part_b_singular_values.csv").open(newline="") as handle:
-            saved_sv = [float(r["singular_value"]) for r in csv.DictReader(handle)]
-        np.testing.assert_allclose(result.points_metric, saved, rtol=1e-9, atol=1e-6)
-        np.testing.assert_allclose(result.diagnostics["singular_values"], saved_sv, rtol=1e-9, atol=1e-6)
-        self.assertAlmostEqual(result.diagnostics["first_three_energy"], 0.99918174594472, places=9)
-        self.assertIn("near_planar", result.warnings)  # the cover is flat; the depth is model error
+    def test_zoom_window_stays_inside(self):
+        self.assertEqual(vr.zoom_window((5, 5), 50, (1200, 1600)), (0, 0, 100, 100))
+        self.assertEqual(vr.zoom_window((1199, 1599), 50, (1200, 1600)), (1100, 1500, 100, 100))
+        self.assertEqual(vr.zoom_window((600, 800), 50, (1200, 1600)), (550, 750, 100, 100))
 
 
-class DegenerateCaseTests(unittest.TestCase):
-    def test_too_few_views_or_points(self):
-        with self.assertRaises(vr.InsufficientMatchesError):
-            vr.reconstruct_from_tracks(orthographic_tracks(random_points(), views=2), [(1000, 800)] * 2)
-        with self.assertRaises(vr.InsufficientMatchesError):
-            vr.reconstruct_from_tracks(orthographic_tracks(random_points(8)), [(1000, 800)] * 4)
+# ----------------------------------------------------------------- correspondence estimation
 
-    def test_nonfinite_tracks_rejected(self):
-        tracks = orthographic_tracks(random_points())
-        tracks[0, 0, 0] = np.nan
+class PredictionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        files, cls.truth = planar_views()
+        cls.images = [vr.decode_image(data, name) for data, name in files]
+        cls.predictions = estimate(cls.images, cls.truth[0])
+
+    def test_predictions_follow_the_known_homographies(self):
+        self.assertEqual([p.view for p in self.predictions], [2, 3, 4])
+        for prediction in self.predictions:
+            self.assertTrue(prediction.reliable, prediction.message)
+            self.assertGreaterEqual(prediction.inliers, sfm.MIN_HOMOGRAPHY_INLIERS)
+            self.assertGreaterEqual(prediction.coverage, sfm.MIN_INLIER_COVERAGE)
+            found = np.isfinite(prediction.points).all(axis=1)
+            error = np.linalg.norm(prediction.points[found] - self.truth[prediction.view - 1][found], axis=1)
+            self.assertLess(error.max(), 2.0, prediction.view)
+
+    def test_point_identities_are_kept(self):
+        # each predicted point is nearest to its own true position, never to another point's
+        for prediction in self.predictions:
+            truth = self.truth[prediction.view - 1]
+            for i, point in enumerate(prediction.points):
+                if np.isfinite(point).all():
+                    self.assertEqual(int(np.argmin(np.linalg.norm(truth - point, axis=1))), i)
+
+    def test_point_outside_the_photo_is_reported_missing(self):
+        view4 = self.predictions[2]
+        self.assertEqual(view4.status[1], sfm.OUTSIDE)
+        self.assertTrue(np.isnan(view4.points[1]).all())
+        self.assertEqual(view4.status.count(sfm.PREDICTED), 7)
+        self.assertIn("outside the photo", view4.message)
+
+    def test_deterministic(self):
+        again = estimate(self.images, self.truth[0])
+        for a, b in zip(self.predictions, again):
+            np.testing.assert_array_equal(a.points, b.points)
+
+    def test_unrelated_photo_gives_no_prediction(self):
+        unrelated = vr.decode_image(png_bytes(texture(900, 42, 1000)), "other.png")
+        predictions = estimate([*self.images[:3], unrelated], self.truth[0])
+        self.assertTrue(predictions[0].reliable)
+        self.assertFalse(predictions[2].reliable)
+        self.assertEqual(predictions[2].status, (sfm.UNAVAILABLE,) * 8)
+        self.assertTrue(np.isnan(predictions[2].points).all())
+        self.assertIn("Select its points manually", predictions[2].message)
+
+    def test_featureless_object_gives_no_prediction(self):
+        blank = vr.DecodedImage(np.full((900, 1000, 3), 128, np.uint8), "blank.png", (1000, 900), 1.0, 1)
+        predictions = estimate([blank, *self.images[1:]], self.truth[0])
+        self.assertTrue(all(not p.reliable for p in predictions))
+
+    def test_invalid_reference_points(self):
+        size = self.images[0].original_size
+        truth = self.truth[0]
+        for bad in (truth[:7], np.where(np.arange(8)[:, None] == 2, np.nan, truth),
+                    truth[[0, 2, 1, 3, 4, 5, 6, 7]],  # corners out of order: crossing outline
+                    np.vstack([truth[:7], truth[:1]]),  # duplicate position
+                    truth + [2000, 0]):  # outside the photo
+            with self.assertRaises(sfm.PointError):
+                sfm.check_reference_points(bad, size)
+        tiny = truth.copy()
+        tiny[:4] = [[10, 10], [20, 10], [20, 20], [10, 20]]
+        with self.assertRaises(sfm.PointError):
+            sfm.check_reference_points(tiny, size)
+
+    def test_working_resolution_predictions_are_in_original_pixels(self):
+        # The same photos upscaled 2x decode to the same working image size; predictions scale back up.
+        files, truth = planar_views()
+        big = []
+        for data, name in files:
+            rgb = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)[:, :, ::-1]
+            big.append(vr.decode_image(png_bytes(cv2.resize(rgb, None, fx=2, fy=2)), name, long_side=1000))
+        self.assertAlmostEqual(big[0].scale, 0.5)
+        predictions = estimate(big, truth[0] * 2 + 0.5)
+        found = np.isfinite(predictions[0].points).all(axis=1)
+        error = np.linalg.norm(predictions[0].points[found] - (truth[1][found] * 2 + 0.5), axis=1)
+        self.assertLess(error.max(), 4.0)
+
+
+class AutomaticLandmarkTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        files, cls.truth = planar_views()
+        cls.images = [vr.decode_image(data, name) for data, name in files]
+        cls.found = sfm.find_correspondences(cls.images, cls.truth[0][:4])
+
+    def test_four_distinct_landmarks_inside_the_boundary_in_all_photos(self):
+        self.assertEqual(self.found.landmarks_found, 4)
+        points = self.found.points
+        np.testing.assert_array_equal(points[0, :4], self.truth[0][:4])
+        self.assertTrue(np.isfinite(points[:, 4:]).all())
+        to_object = cv2.getPerspectiveTransform(np.float32(self.truth[0][:4]),
+                                                np.float32([[0, 0], [1, 0], [1, 1], [0, 1]]))
+        inside = cv2.perspectiveTransform(points[0, 4:].reshape(-1, 1, 2), to_object).reshape(-1, 2)
+        self.assertTrue(((inside >= 0.045) & (inside <= 0.955)).all())
+        gaps = np.linalg.norm(inside[:, None] - inside[None], axis=2)[np.triu_indices(4, 1)]
+        self.assertGreaterEqual(gaps.min(), sfm.LANDMARK_SEPARATION - 0.01)
+        self.assertEqual([tuple((p >= 0.5).astype(int)) for p in inside], list(sfm.LANDMARK_QUADRANTS))
+
+    def test_landmarks_are_the_same_physical_points(self):
+        for v in range(1, 4):
+            H = cv2.findHomography(self.truth[0], self.truth[v])[0]
+            expected = cv2.perspectiveTransform(self.found.points[0, 4:].reshape(-1, 1, 2), H).reshape(-1, 2)
+            self.assertLess(np.linalg.norm(self.found.points[v, 4:] - expected, axis=1).max(), 3.0)
+
+    def test_corners_match_the_homography_estimates(self):
+        eight = np.vstack([self.truth[0][:4], self.truth[0][4:]])
+        for old, new in zip(estimate(self.images, eight), self.found.views):
+            np.testing.assert_array_equal(new.points[:4], old.points[:4])
+        self.assertTrue(np.isnan(self.found.points[3, 1]).all())
+
+    def test_deterministic(self):
+        again = sfm.find_correspondences(self.images, self.truth[0][:4])
+        np.testing.assert_array_equal(again.points, self.found.points)
+
+    def test_unreliable_photo_leaves_landmarks_missing(self):
+        unrelated = vr.decode_image(png_bytes(texture(900, 42, 1000)), "other.png")
+        found = sfm.find_correspondences([*self.images[:3], unrelated], self.truth[0][:4])
+        self.assertEqual(found.landmarks_found, 0)
+        self.assertTrue(np.isnan(found.points[:, 4:]).all())
+        self.assertTrue(np.isnan(found.points[3]).all())
+        self.assertTrue(np.isfinite(found.points[1, :4]).all())
+
+    def test_selection_never_invents_or_clusters_landmarks(self):
+        clustered = np.array([[0.3, 0.3], [0.31, 0.3], [0.7, 0.3], [0.01, 0.9]])
+        chosen = sfm.select_landmarks(clustered, [1, 2, 3, 4])
+        self.assertEqual(sorted(i for i in chosen if i is not None), [1, 2])
+        self.assertEqual(sfm.select_landmarks(np.empty((0, 2)), []), [None] * 4)
+
+    def test_invalid_corners(self):
+        with self.assertRaises(sfm.PointError):
+            sfm.find_correspondences(self.images, self.truth[0][[0, 2, 1, 3]])
+
+
+class SavedExperimentTests(unittest.TestCase):
+    def test_saved_outputs_reproduce_from_the_shared_functions(self):
+        final = book_tracks()
+        corners = np.array([p["views"] for p in book_selection()["points"]], float).transpose(1, 0, 2)
+        np.testing.assert_array_equal(final[:, :4], corners)  # verified corners
+        found = sfm.find_correspondences(book_images(), corners[0])
+        self.assertEqual(found.landmarks_found, 4)
+        np.testing.assert_allclose(final[:, 4:], found.points[:, 4:], atol=0.01)
+        script = (PART_B / "automatic_landmark_experiment.py").read_text()
+        self.assertIn("sfm.find_correspondences(", script)
+        self.assertIn("sfm.reconstruct(", script)
+        for duplicate in ("np.linalg.svd(", "def reconstruct", "def solve_metric", "def align"):
+            self.assertNotIn(duplicate, script)
+
+
+# ----------------------------------------------------------------- reconstruction
+
+class ReconstructionTests(unittest.TestCase):
+    def test_reproduces_the_saved_book_experiment(self):
+        dimensions = book_selection()["book_dimensions_cm"]
+        self.assertEqual((dimensions["width"], dimensions["height"]), (14.5, 21.7))
+        result = sfm.reconstruct(book_tracks(), 14.5, 21.7)
+        summary = json.loads((SAVED / "part_b_summary.json").read_text())
+        np.testing.assert_allclose(result.singular_values[:7], summary["singular_values"][:7], rtol=1e-9)
+        np.testing.assert_allclose(result.metric["eigenvalues"], summary["L_eigenvalues"], rtol=1e-9)
+        np.testing.assert_allclose(result.view_rms, summary["view_rms_px"], rtol=1e-8)
+        self.assertAlmostEqual(result.scale, summary["scale_cm_per_unit"], places=12)
+        cm = [[float(r[f"{a}_cm"]) for a in "XYZ"] for r in saved_rows("part_b_reconstructed_points_cm.csv")]
+        np.testing.assert_allclose(result.cm, cm, atol=1e-9)
+        for row, m in zip(saved_rows("part_b_measurements.csv"), result.measurements):
+            self.assertEqual(row["edge"], m["label"])
+            self.assertAlmostEqual(float(row["reconstructed_cm"]), m["reconstructed"], places=9)
+            self.assertAlmostEqual(float(row["error_percent"]), m["error"], places=9)
+        edges = result.measurements[:4]
+        self.assertEqual([round(m["reconstructed"], 3) for m in edges], [13.108, 15.948, 21.346, 22.016])
+        self.assertEqual([round(m["error"], 2) for m in edges], [9.60, 9.98, 1.63, 1.46])
+
+    def test_measurement_matrix_factorization_and_residual(self):
+        tracks = book_tracks()
+        result = sfm.reconstruct(tracks, 14.5, 21.7)
+        for v in range(4):
+            np.testing.assert_array_equal(result.raw[2 * v:2 * v + 2], tracks[v].T)
+        np.testing.assert_allclose(result.centered.mean(axis=1), 0, atol=1e-10)
+        U, sv, Vt = np.linalg.svd(result.centered)
+        rank3 = U[:, :3] @ np.diag(sv[:3]) @ Vt[:3]
+        np.testing.assert_allclose(result.factors["M_hat"] @ result.factors["S_hat"], rank3, atol=1e-8)
+        np.testing.assert_allclose(result.motion @ result.structure, rank3, atol=1e-8)  # the upgrade keeps MS
+        residual = result.centered - result.motion @ result.structure
+        self.assertAlmostEqual(np.linalg.norm(residual), np.linalg.norm(sv[3:]), places=7)
+        np.testing.assert_allclose(
+            result.view_rms, np.sqrt((residual.reshape(4, 2, 8) ** 2).sum(axis=1).mean(axis=1)), rtol=1e-12)
+        np.testing.assert_allclose(result.Q @ result.Q.T, result.metric["L"], rtol=1e-10)
+
+    def test_alignment_is_rigid_and_plane_distances_are_consistent(self):
+        result = sfm.reconstruct(book_tracks(), 14.5, 21.7)
+        frame, points = result.frame, result.structure.T
+        np.testing.assert_allclose(frame["basis"] @ frame["basis"].T, np.eye(3), atol=1e-12)
+        self.assertAlmostEqual(np.linalg.det(frame["basis"]), 1.0, places=12)
+        np.testing.assert_allclose(frame["book"], (points - frame["origin"]) @ frame["basis"].T, atol=1e-9)
+        np.testing.assert_allclose(frame["book"][:4].mean(axis=0), 0, atol=1e-8)
+        distances = (points - frame["centroid"]) @ frame["normal"]
+        np.testing.assert_allclose(frame["distances"], distances, atol=1e-9)
+        smallest = np.linalg.svd(points - frame["centroid"], compute_uv=False)[-1]
+        self.assertAlmostEqual(np.linalg.norm(distances) / smallest, 1.0, places=9)  # least-squares plane
+        np.testing.assert_allclose(frame["book"][:, 2] - frame["plane_z"], distances, atol=1e-8)
+        summary = json.loads((SAVED / "part_b_summary.json").read_text())
+        self.assertAlmostEqual(float(np.abs(result.scale * distances).max()),
+                               summary["max_plane_displacement_cm"], places=9)
+
+    def test_metric_upgrade_recovers_orthonormal_camera_rows(self):
+        motion = sfm.reconstruct(orthographic_tracks(), 10.0, 20.0).motion
+        for v in range(4):
+            rows = motion[2 * v:2 * v + 2]
+            gram = rows @ rows.T
+            np.testing.assert_allclose(gram / gram[0, 0], np.eye(2), atol=1e-8)
+
+    def test_identical_inputs_give_identical_results(self):
+        a = sfm.reconstruct(book_tracks(), 14.5, 21.7)
+        b = sfm.reconstruct(book_tracks().copy(), 14.5, 21.7)
+        np.testing.assert_array_equal(a.cm, b.cm)
+        self.assertEqual(a.measurements, b.measurements)
+
+    def test_exact_orthographic_shape_is_recovered(self):
+        result = sfm.reconstruct(orthographic_tracks(), 10.0, 20.0)
+        self.assertTrue(result.metric["positive_definite"])
+        for m in result.measurements:
+            self.assertLess(m["error"], 1e-6, m["label"])
+        # the whole shape is recovered up to a rigid motion (and mirror): all pairwise distances agree
+        def distances(points):
+            return np.linalg.norm(points[:, None] - points[None], axis=2)
+        np.testing.assert_allclose(distances(result.cm), distances(SHAPE), atol=1e-6)
+
+    def test_scaling_uses_both_dimensions_in_least_squares(self):
+        self.assertAlmostEqual(sfm.scale_factor(2.0, 4.0, 10.0, 20.0), 5.0)
+        w, h = 2.0, 3.0
+        s = sfm.scale_factor(w, h, 10.0, 20.0)
+        self.assertAlmostEqual(s, (10 * w + 20 * h) / (w * w + h * h))
         with self.assertRaises(ValueError):
-            vr.reconstruct_from_tracks(tracks, [(1000, 800)] * 4)
+            sfm.scale_factor(0.0, 3.0, 10.0, 20.0)
 
-    def test_exactly_planar_scene_is_degenerate(self):
-        points = random_points()
-        points[:, 2] = 0
-        # Planar scene + orthographic cameras gives rank 2: honest failure, not a fake 3D cloud.
+    def test_invalid_inputs(self):
+        tracks = orthographic_tracks()
+        missing = tracks.copy()
+        missing[2, 5] = np.nan
+        duplicate = tracks.copy()
+        duplicate[1, 6] = duplicate[1, 2]
+        for bad in (missing, duplicate, tracks[:3], tracks[:, :7]):
+            with self.assertRaises(sfm.PointError):
+                sfm.reconstruct(bad, 10, 20)
+        for width, height in ((0, 20), (10, -1), (float("nan"), 20), (None, 20)):
+            with self.assertRaises(sfm.PointError):
+                sfm.reconstruct(tracks, width, height)
+
+    def test_degenerate_views_fail_clearly(self):
+        flat = SHAPE.copy()
+        flat[:, 2] = 0  # exactly planar + orthographic cameras: rank 2, no third singular value
         with self.assertRaises(vr.DegenerateError):
-            vr.reconstruct_from_tracks(orthographic_tracks(points), [(1000, 800)] * 4, trim_outliers=False)
-
-    def test_noisy_planar_scene_warns(self):
-        points = random_points(80)
-        points[:, 2] = 0
-        result = vr.reconstruct_from_tracks(orthographic_tracks(points, noise=0.5), [(1000, 800)] * 4)
-        if result.status == "ok":
-            self.assertIn("near_planar", result.warnings)
-            self.assertNotEqual(result.quality, "good")
-
-    def test_collinear_points_are_degenerate(self):
-        line = np.outer(np.linspace(-1, 1, 30), [1, 0.5, 0.2])
-        with self.assertRaises(vr.DegenerateError):
-            vr.reconstruct_from_tracks(orthographic_tracks(line), [(1000, 800)] * 4, trim_outliers=False)
+            sfm.reconstruct(orthographic_tracks(flat), 10, 20)
 
     def test_non_positive_definite_metric_is_reported_not_corrected(self):
         motion = np.random.default_rng(2).normal(size=(8, 3))  # seed chosen: L has a negative eigenvalue
-        metric = vr.solve_metric(motion)
+        metric = sfm.solve_metric(motion)
         self.assertFalse(metric["positive_definite"])
-        self.assertLess(metric["eigenvalues"][0], 0)
-
-    def test_unstructured_tracks_never_look_good(self):
-        tracks = np.random.default_rng(1).uniform(0, 500, (4, 40, 2))
-        result = vr.reconstruct_from_tracks(tracks, [(500, 500)] * 4, trim_outliers=False)
-        self.assertEqual(result.status, "ok")
-        self.assertEqual(result.quality, "poor")
-
-    def test_failed_metric_upgrade_result(self):
-        original = vr.solve_metric
-        bad = dict(original(np.random.default_rng(2).normal(size=(8, 3))))
-        vr.solve_metric = lambda motion: bad
+        original = sfm.solve_metric
+        sfm.solve_metric = lambda m: metric
         try:
-            result = vr.reconstruct_from_tracks(orthographic_tracks(random_points()), [(1000, 800)] * 4)
+            with self.assertRaises(vr.DegenerateError) as raised:
+                sfm.reconstruct(orthographic_tracks(), 10, 20)
         finally:
-            vr.solve_metric = original
-        self.assertEqual(result.status, "metric_upgrade_failed")
-        self.assertIsNone(result.points)
-        self.assertEqual(result.quality, "poor")
-        self.assertIn("No correction was applied", result.message)
-        with self.assertRaises(ValueError):
-            vr.plotly_payload(result)
-        with self.assertRaises(ValueError):
-            vr.apply_reference_distance(result, 0, 1, 5.0)
+            sfm.solve_metric = original
+        self.assertIn("not positive definite", str(raised.exception))
+        self.assertIn("No correction was applied", str(raised.exception))
 
-
-class EndToEndTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.files = cube_files()
-        cls.result = vr.reconstruct_from_images(cls.files)
-
-    def test_output_shapes_and_finiteness(self):
-        r = self.result
-        self.assertEqual(r.status, "ok")
-        count = len(r.points)
-        self.assertGreater(count, 100)
-        self.assertEqual(r.points.shape, (count, 3))
-        self.assertEqual(r.points_metric.shape, (count, 3))
-        self.assertEqual(r.tracks.shape, (4, count, 2))
-        self.assertEqual(r.colors.shape, (count, 3))
-        self.assertEqual(r.point_errors.shape, (count,))
-        for array in (r.points, r.points_metric, r.tracks, r.point_errors):
-            self.assertTrue(np.isfinite(array).all())
-
-    def test_quality_and_statistics(self):
-        r = self.result
-        self.assertEqual(r.quality, "good")
-        self.assertLess(r.diagnostics["reprojection_rms_px"], 2.0)
-        self.assertGreater(r.diagnostics["planarity_ratio"], vr.PLANAR_RATIO)
-        self.assertEqual(len(r.pair_stats), 3)
-        for stats in r.pair_stats:
-            self.assertGreaterEqual(stats.inliers, vr.MIN_PAIR_INLIERS)
-            self.assertLessEqual(stats.inliers, stats.ratio_matches)
-        self.assertLessEqual(r.diagnostics["n_points_used"], r.diagnostics["n_points_initial"])
-
-    def test_reconstruction_is_three_dimensional_cube(self):
-        spreads = self.result.diagnostics["principal_spreads"]
-        self.assertGreater(spreads[2] / spreads[0], 0.4)  # a cube is not flat
-        self.assertIn("affine", self.result.model.lower())
-        self.assertEqual(self.result.units, vr.ARBITRARY_UNITS)
-
-    def test_deterministic(self):
-        again = vr.reconstruct_from_images(self.files)
-        np.testing.assert_array_equal(again.points, self.result.points)
-
-    def test_plotly_payload(self):
-        payload = vr.plotly_payload(self.result)
-        count = len(self.result.points)
-        for key in ("x", "y", "z", "colors", "hover"):
-            self.assertEqual(len(payload[key]), count)
-        self.assertEqual(payload["valid_point_count"], count)
-        self.assertEqual(payload["axis_titles"]["x"], f"X ({vr.ARBITRARY_UNITS})")
-        self.assertEqual(payload["aspectmode"], "data")
-        self.assertEqual(len(payload["match_statistics"]), 3)
-        self.assertIn("reprojection_rms_px", payload["diagnostics"])
-        self.assertTrue(all(c.startswith("rgb(") for c in payload["colors"]))
-
-    def test_reference_distance_scaling(self):
-        scaled = vr.apply_reference_distance(self.result, 0, 1, 10.0, "cm")
-        self.assertAlmostEqual(float(np.linalg.norm(scaled.points[0] - scaled.points[1])), 10.0)
-        self.assertEqual(scaled.units, "cm")
-        self.assertEqual(vr.plotly_payload(scaled)["axis_titles"]["z"], "Z (cm)")
-        self.assertAlmostEqual(procrustes_error(scaled.points, self.result.points), 0, places=9)  # shape unchanged
-        self.assertEqual(self.result.units, vr.ARBITRARY_UNITS)  # original untouched
-        for args in ((0, 0, 5.0), (0, 10 ** 6, 5.0), (0, 1, 0.0), (0, 1, float("nan")), (0, 1, -2.0)):
-            with self.assertRaises(ValueError):
-                vr.apply_reference_distance(self.result, *args)
-
-    def test_unrelated_photo_gives_actionable_error(self):
-        files = self.files[:3] + [(png_bytes(texture(700, 77)), "other.png")]
-        with self.assertRaises(vr.InsufficientMatchesError) as caught:
-            vr.reconstruct_from_images(files)
-        self.assertIn("Photos 3 and 4", str(caught.exception))
-
-    def test_bad_upload_sets(self):
-        with self.assertRaises(vr.ImageError):
-            vr.reconstruct_from_images(self.files[:2])
-        with self.assertRaises(vr.ImageError):
-            vr.reconstruct_from_images(self.files[:3] + [(b"garbage", "bad.jpg")])
-
-    def test_busy_server(self):
-        held = [vr._JOB_SLOTS.acquire(blocking=False) for _ in range(vr.MAX_CONCURRENT_JOBS)]
-        try:
-            with self.assertRaises(vr.BusyError):
-                vr.reconstruct_from_images(self.files)
-        finally:
-            for ok in held:
-                if ok:
-                    vr._JOB_SLOTS.release()
-        self.assertTrue(vr._JOB_SLOTS.acquire(blocking=False))  # slots were released after the failure too
-        vr._JOB_SLOTS.release()
-
-    def test_jobs_release_slots_after_errors(self):
-        for _ in range(vr.MAX_CONCURRENT_JOBS + 1):
-            with self.assertRaises(vr.ReconstructionError):
-                vr.reconstruct_from_images(self.files[:3] + [(png_bytes(texture(700, 5)), "x.png")])
-
-    def test_progress_callback(self):
-        stages = []
-        vr.reconstruct_from_images(self.files, progress=lambda stage, fraction: stages.append(stage))
-        self.assertEqual(stages[0], "Reading photos")
-        self.assertIn("Matching photos", stages)
-        self.assertEqual(stages[-1], "Factorizing")
-
-
-class StagedWorkflowTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.files = cube_files()
-        cls.match = vr.find_matches(cls.files)
-
-    def test_image_summary(self):
-        info = vr.image_summary(*self.files[0])
-        self.assertEqual((info["width"], info["height"]), (900, 700))
-        self.assertEqual(info["size_bytes"], len(self.files[0][0]))
-        thumb = vr.decode_image(info["thumbnail"], "t.jpg")
-        self.assertLessEqual(max(thumb.size), vr.THUMB_LONG_SIDE)
-        with self.assertRaises(vr.ImageError):
-            vr.image_summary(b"junk", "x.jpg")
-        with self.assertRaises(vr.ImageError):
-            vr.image_summary(b"junk", "x.gif")
-
-    def test_find_matches_contents(self):
-        m = self.match
-        self.assertEqual(m.tracks.shape, (4, m.n_tracks, 2))
-        self.assertLessEqual(m.n_tracks, m.n_tracks_found)
-        self.assertEqual(len(m.overlays), 3)
-        self.assertEqual(len(m.pair_stats), 3)
-        self.assertEqual(m.filenames, [name for _, name in self.files])
-        for blob in m.overlays + [m.marker_image]:
-            self.assertEqual(vr.decode_image(blob, "o.jpg").rgb.ndim, 3)
-        self.assertLessEqual(vr.decode_image(m.overlays[0], "o.jpg").size[0], vr.OVERLAY_MAX_WIDTH)
-        self.assertLessEqual(len(m.marker_candidates), vr.MAX_MARKERS)
-        self.assertEqual(m.marker_candidates, sorted(set(m.marker_candidates)))
-        self.assertTrue(all(0 <= i < m.n_tracks for i in m.marker_candidates))
-
-    def test_matches_are_not_invented(self):
-        # Every kept track must be a real SIFT keypoint position from the photos (sub-pixel coordinates).
-        image = vr.decode_image(self.files[0][0], "a.png")
-        keypoints = vr.detect_features(image.rgb).points
-        distance = np.min(np.linalg.norm(self.match.tracks[0][:, None] - keypoints[None], axis=2), axis=1)
-        self.assertLess(distance.max(), 1e-3)
-
-    def test_staged_equals_one_shot(self):
-        staged = vr.reconstruct_matches(self.match)
-        direct = vr.reconstruct_from_images(self.files)
-        np.testing.assert_allclose(staged.points, direct.points, atol=1e-9)
-        self.assertEqual(staged.diagnostics["n_points_initial"], self.match.n_tracks_found)
-        self.assertEqual(staged.diagnostics["n_points_used"], self.match.n_tracks)
-
-    def test_scale_applied_in_staged_workflow(self):
-        scaled = vr.reconstruct_matches(self.match, dict(a=0, b=5, distance=12.5, unit="mm"))
-        self.assertEqual(scaled.units, "mm")
-        self.assertAlmostEqual(float(np.linalg.norm(scaled.points[0] - scaled.points[5])), 12.5)
-        with self.assertRaises(vr.ReconstructionError):
-            vr.reconstruct_matches(self.match, dict(a=2, b=2, distance=1.0, unit="cm"))
-
-    def test_find_matches_failures_and_slots(self):
-        with self.assertRaises(vr.InsufficientMatchesError):
-            vr.find_matches(self.files[:3] + [(png_bytes(texture(700, 77)), "other.png")])
-        held = [vr._JOB_SLOTS.acquire(blocking=False) for _ in range(vr.MAX_CONCURRENT_JOBS)]
-        try:
-            with self.assertRaises(vr.BusyError):
-                vr.find_matches(self.files)
-        finally:
-            for ok in held:
-                if ok:
-                    vr._JOB_SLOTS.release()
-
-    def test_exports(self):
-        result = vr.reconstruct_matches(self.match)
-        rows = list(csv.reader(io.StringIO(vr.points_csv(result))))
-        self.assertEqual(len(rows), len(result.points) + 1)
-        self.assertEqual(rows[0][1], f"X ({vr.ARBITRARY_UNITS})")
-        self.assertEqual(float(rows[1][1]), float(f"{result.points[0, 0]:.6f}"))
-        lines = vr.points_ply(result).splitlines()
-        self.assertEqual(lines[0], "ply")
-        self.assertIn(f"element vertex {len(result.points)}", lines)
-        self.assertIn(f"comment coordinate units: {vr.ARBITRARY_UNITS}", lines)
-        body = lines[lines.index("end_header") + 1:]
-        self.assertEqual(len(body), len(result.points))
-        self.assertEqual(len(body[0].split()), 6)
-        report = vr.diagnostic_report(result)
-        for text in ("arbitrary reconstruction units", "Singular values", "RANSAC inliers", "not a calibrated"):
-            self.assertIn(text, report)
-        scaled = vr.reconstruct_matches(self.match, dict(a=0, b=5, distance=3.0, unit="cm"))
-        self.assertIn("Z (cm)", vr.points_csv(scaled))
-        self.assertIn("coordinate units: cm", vr.points_ply(scaled))
-        self.assertIn("points 1 and 6 set to 3 cm", vr.diagnostic_report(scaled))
-
-    def test_failed_result_has_report_but_no_points(self):
-        bad = dict(vr.solve_metric(np.random.default_rng(2).normal(size=(8, 3))))
-        original = vr.solve_metric
-        vr.solve_metric = lambda motion: bad
-        try:
-            result = vr.reconstruct_matches(self.match)
-        finally:
-            vr.solve_metric = original
-        self.assertEqual(result.status, "metric_upgrade_failed")
-        self.assertIn("metric upgrade failed", vr.diagnostic_report(result).lower())
-        with self.assertRaises(ValueError):
-            vr.points_csv(result)
-        with self.assertRaises(ValueError):
-            vr.points_ply(result)
+    def test_points_csv(self):
+        result = sfm.reconstruct(book_tracks(), 14.5, 21.7)
+        text = vr.points_csv(result, list(BOOK_NAMES))
+        rows = list(csv.reader(io.StringIO(text)))
+        self.assertEqual(rows[0][:4], ["point", "X_cm", "Y_cm", "Z_cm"])
+        self.assertEqual([r[0] for r in rows[1:9]], [f"P{i}" for i in range(1, 9)])
+        self.assertEqual(rows[1][4:6], ["883.00", "1198.00"])
+        start = rows.index(["edge", "measured_cm", "reconstructed_cm", "percentage_error"])
+        self.assertEqual(rows[start + 1:start + 6], [
+            ["Top edge", "14.5", "13.1082", "9.60"], ["Bottom edge", "14.5", "15.9475", "9.98"],
+            ["Left edge", "21.7", "21.3462", "1.63"], ["Right edge", "21.7", "22.0164", "1.46"], []])
+        self.assertNotIn("diagonal", text.lower())
+        self.assertEqual(len(result.measurements), 6)  # the reconstruction itself is unchanged
 
 
 class ProtectionTests(unittest.TestCase):
-    def test_backend_does_not_touch_experiment_files(self):
+    def test_original_photographs_are_unchanged(self):
+        if not all((PART_B / "input" / name).is_file() for name in BOOK_NAMES):
+            self.skipTest("The original photographs are kept locally and are not in the repository.")
+        for name, digest in book_selection()["original_photograph_sha256"].items():
+            self.assertEqual(hashlib.sha256((PART_B / "input" / name).read_bytes()).hexdigest(), digest, name)
+
+    def test_estimation_and_reconstruction_do_not_write_files(self):
         def digest():
             return {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(PART_B.rglob("*"))
-                    if p.is_file() and "__pycache__" not in p.parts and p.name != vr.__file__.split("/")[-1]}
+                    if p.is_file() and "__pycache__" not in p.parts}
         before = digest()
-        vr.reconstruct_from_images(cube_files(3, 0.2))
+        files, truth = planar_views()
+        sfm.find_correspondences([vr.decode_image(d, n) for d, n in files], truth[0][:4])
+        sfm.reconstruct(book_tracks(), 14.5, 21.7)
         self.assertEqual(digest(), before)
 
 
 class MarkerRenderingTests(unittest.TestCase):
-    POINTS = np.array([[40.0, 40.0], [160.0, 40.0], [100.0, 120.0], [40.0, 150.0]])
-    INDICES = [0, 1, 2, 3]
-
-    def render(self, background, selected=None):
-        rgb = np.full((200, 200, 3), background, np.uint8)
-        data = vr.render_point_markers(rgb, self.POINTS, self.INDICES, selected=selected)
-        return np.array(Image.open(io.BytesIO(data)).convert("RGB")).astype(int)
-
-    @staticmethod
-    def near(image, color, center, radius=14):
-        x, y = center
-        patch = image[y - radius:y + radius + 1, x - radius:x + radius + 1].reshape(-1, 3)
-        return int((np.abs(patch - np.array(color)).max(axis=1) < 60).sum())
-
-    def test_ordinary_points_are_cyan_with_dark_outline_on_light_and_dark(self):
-        for background in (255, 0):
-            image = self.render(background)
-            for x, y in self.POINTS.astype(int):
-                self.assertGreater(self.near(image, vr.MARKER_CYAN, (x, y)), 10)
-                if background == 255:  # on black the outline is indistinguishable from the photo
-                    self.assertGreater(self.near(image, vr.MARKER_OUTLINE, (x, y)), 4)
-                self.assertEqual(self.near(image, vr.MARKER_A_COLOR, (x, y)), 0)
-
-    def test_selected_points_have_distinct_larger_highlights(self):
-        plain = self.render(128)
-        image = self.render(128, selected=(0, 2))
-        a, b, other = (40, 40), (100, 120), (160, 40)
-        self.assertGreater(self.near(image, vr.MARKER_A_COLOR, a), 20)
-        self.assertGreater(self.near(image, vr.MARKER_B_COLOR, b), 20)
-        self.assertEqual(self.near(image, vr.MARKER_B_COLOR, a), 0)
-        self.assertEqual(self.near(image, vr.MARKER_A_COLOR, b), 0)
-        self.assertGreater(self.near(image, vr.MARKER_CYAN, other), 10)  # others stay cyan
-        self.assertEqual(self.near(image, vr.MARKER_A_COLOR, other), 0)
-        self.assertGreater(self.near(image, vr.MARKER_A_COLOR, a), self.near(plain, vr.MARKER_CYAN, a))
-
-    def test_connecting_line_follows_selected_coordinates(self):
-        image = self.render(0, selected=(0, 1))  # horizontal line y=40 between x=40 and x=160
-        middle = image[38:43, 100].reshape(-1, 3)
-        self.assertTrue((middle.min(axis=1) > 180).any())
-        off_line = image[100:105, 100].reshape(-1, 3)
-        self.assertTrue((off_line.max(axis=1) < 60).all())
-        diagonal = self.render(0, selected=(0, 2))
-        self.assertFalse((diagonal[38:43, 100].reshape(-1, 3).min(axis=1) > 180).any())
-
-    def test_changing_selection_changes_image_and_inputs_are_untouched(self):
-        rgb = np.full((200, 200, 3), 90, np.uint8)
-        points = self.POINTS.copy()
-        first = vr.render_point_markers(rgb, points, self.INDICES, selected=(0, 1))
-        second = vr.render_point_markers(rgb, points, self.INDICES, selected=(1, 2))
-        self.assertNotEqual(first, second)
-        self.assertEqual(first, vr.render_point_markers(rgb, points, self.INDICES, selected=(0, 1)))
-        np.testing.assert_array_equal(points, self.POINTS)
-
-    def test_base_rerender_matches_direct_render_and_numbering(self):
-        rgb = np.full((300, 3000, 3), 90, np.uint8)  # wide enough to be downscaled
-        points = np.array([[300.0, 100.0], [2400.0, 200.0]])
-        base = vr.marker_base(rgb)
-        self.assertLess(base[1], 1.0)
-        direct = vr.render_point_markers(rgb, points, [0, 1], selected=(0, 1))
-        again = vr.render_point_markers(None, points, [0, 1], selected=(0, 1), base=base)
-        self.assertEqual(direct, again)
+    def test_markers_and_outline_are_drawn_only_for_placed_points(self):
+        rgb = np.full((200, 200, 3), 128, np.uint8)
+        points = np.array([[40, 40], [160, 40], [160, 160], [40, 160], [100, 100], [np.nan, np.nan],
+                           [70, 120], [130, 80]], float)
+        statuses = ["automatic", "corrected", "automatic", "selected", "automatic", None, "automatic", "automatic"]
+        out = vr.render_points(rgb, points, statuses, active=4)
+        self.assertEqual(out.shape, rgb.shape)
+        self.assertFalse(np.array_equal(out, rgb))
+        np.testing.assert_array_equal(rgb, 128)  # input untouched
+        self.assertTrue(np.array_equal(out[100, 100], vr.MARKER_ACTIVE))  # active center dot
+        no_outline = vr.render_points(rgb, np.where(np.arange(8)[:, None] == 0, np.nan, points), statuses, active=4)
+        self.assertTrue(np.array_equal(no_outline[40, 100], rgb[40, 100]))  # no P1-P2 edge without P1
 
 
 if __name__ == "__main__":

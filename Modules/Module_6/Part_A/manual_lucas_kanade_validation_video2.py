@@ -1,4 +1,12 @@
-"""Validate Video 2 with the same direct local LK calculation as Video 1."""
+"""Validate Video 2 with the same direct local LK calculation as Video 1.
+
+Run from the repository root:
+    .venv/bin/python -m Modules.Module_6.Part_A.manual_lucas_kanade_validation_video2
+
+Inputs (in output/): video_2_validation_frame_old.png, video_2_validation_frame_new.png and
+video_2_tracking.csv. Output: output/video_2_manual_lk_validation.txt.
+Requires NumPy and OpenCV (repository requirements.txt).
+"""
 
 import csv
 from pathlib import Path

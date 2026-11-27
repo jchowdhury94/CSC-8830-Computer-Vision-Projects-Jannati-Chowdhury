@@ -5,7 +5,6 @@ import json
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -15,6 +14,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from Modules.Module_6.Part_A import optical_flow as of
 from Modules.Module_6.Part_A import visitor_tracking as vt  # noqa: E402
 
 PART_A = ROOT / "Modules" / "Module_6" / "Part_A"
@@ -70,12 +70,12 @@ class ProbeAndLimitTests(unittest.TestCase):
         self.assertTrue(plan.truncated)
         self.assertEqual(plan.source_frames_used, 600)
         self.assertEqual(plan.stride, 1)
-        self.assertTrue(any("only the first segment" in m for m in plan.messages()))
+        self.assertEqual(plan.summary_line(), "Processing: 640 × 480 px · First 20 seconds · 600 frames")
 
-    def test_within_limits_no_messages(self):
+    def test_within_limits_mentions_no_changes(self):
         plan = vt.plan_processing(fake_info(frames=300))
         self.assertFalse(plan.truncated or plan.resized or plan.stride > 1)
-        self.assertEqual(plan.messages(), [])
+        self.assertEqual(plan.summary_line(), "Processing: 640 × 480 px · 300 frames")
 
     def test_frame_limit_uses_stride_and_keeps_timing(self):
         plan = vt.plan_processing(fake_info(frames=1200, fps=60.0))  # exactly 20 s at 60 fps
@@ -84,23 +84,35 @@ class ProbeAndLimitTests(unittest.TestCase):
         self.assertLessEqual(plan.frames_to_process, vt.MAX_FRAMES)
         self.assertAlmostEqual(plan.effective_fps, 30.0)
         self.assertAlmostEqual(plan.step_seconds, 2 / 60.0)
-        self.assertTrue(any("every 2nd frame" in m for m in plan.messages()))
+        self.assertIn("Every 2nd frame tracked (0.033 s per step)", plan.summary_line())
 
     def test_unknown_length_is_capped_and_disclosed(self):
         info = vt.VideoInfo(640, 480, 30.0, False, 0, 0.0)
         plan = vt.plan_processing(info)
         self.assertLessEqual(plan.frames_to_process, vt.MAX_FRAMES)
-        self.assertTrue(any("could not be determined" in m for m in plan.messages()))
+        self.assertIn("Unknown length, at most the first 20 seconds · up to 600 frames", plan.summary_line())
 
     def test_resize_preserves_aspect_and_message(self):
         plan = vt.plan_processing(fake_info(3840, 2160, frames=100))
         self.assertEqual((plan.width, plan.height), (960, 540))
-        self.assertIn("automatically resized from 3840 × 2160 to 960 × 540", plan.messages()[0])
+        self.assertIn("Processing: 960 × 540 px (resized from 3840 × 2160)", plan.summary_line())
         portrait = vt.plan_processing(fake_info(1080, 1920, frames=100))
         self.assertEqual((portrait.width, portrait.height), (540, 960))
         small = vt.plan_processing(fake_info(641, 481, frames=10))
         self.assertFalse(small.resized)
         self.assertEqual((small.width % 2, small.height % 2), (0, 0))
+
+    def test_shared_arrow_style(self):
+        self.assertEqual((of.ARROW_THICKNESS, of.ARROW_MAGNIFICATION, of.ARROW_MAX_LENGTH, of.DOT_RADIUS),
+                         (1, 30, 90.0, 2))
+
+        def reach(motion):
+            frame = np.zeros((41, 200, 3), np.uint8)
+            of.draw_motion_arrows(frame, np.array([[20.0 - motion, 20.0]]), np.array([[20.0, 20.0]]))
+            return np.nonzero(frame.any(axis=(0, 2)))[0].max() - 20
+
+        self.assertAlmostEqual(reach(2), 60, delta=2)  # 30 x the motion
+        self.assertAlmostEqual(reach(20), 90, delta=2)  # capped
 
     def test_iter_frames_skips_with_correct_source_indices_and_size(self):
         with tempfile.TemporaryDirectory() as d:
