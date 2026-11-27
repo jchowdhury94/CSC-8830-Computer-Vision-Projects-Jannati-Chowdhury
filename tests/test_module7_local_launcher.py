@@ -1,4 +1,6 @@
 """Two-button room page (Cloud vs local mode), local_mode.py and the one-command launcher run_local.py."""
+import io
+import contextlib
 import os
 import socket
 import sys
@@ -137,6 +139,26 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(start.call_count, 1)          # the website is never started when the visitor application fails
         stop.assert_called()
 
+
+class EnvironmentCheckTests(unittest.TestCase):
+    def test_current_environment_passes(self):
+        self.assertIsNone(run_local.check_environment())
+
+    def test_missing_dependency_stops_before_any_server_starts(self):
+        real = run_local.importlib.import_module
+
+        def without_cv2(name):
+            if name == "cv2":
+                raise ModuleNotFoundError("No module named 'cv2'")
+            return real(name)
+
+        errors = io.StringIO()
+        with mock.patch.object(run_local.importlib, "import_module", without_cv2), \
+                mock.patch.object(run_local, "start") as start, contextlib.redirect_stderr(errors):
+            self.assertEqual(run_local.main([]), 1)
+        start.assert_not_called()
+        self.assertIn("No module named 'cv2'", errors.getvalue())
+        self.assertIn(".venv/bin/python run_local.py", errors.getvalue())
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ applications, including the streamlit processes the visitor launcher starts.  If
 nothing is left running and the reason is printed.
 """
 import argparse
+import importlib
 import os
 import signal
 import subprocess
@@ -27,6 +28,7 @@ ROOT = Path(__file__).resolve().parent
 HOME = ROOT / "home.py"
 VISITOR_LAUNCHER = ROOT / "Modules" / "Module_7" / "room_measurement_question_3" / "run_f8_integrated_app.py"
 STARTUP_TIMEOUT_S = 120.0
+REQUIRED_MODULES = ("cv2", "streamlit")   # both applications run on the interpreter that runs this launcher
 WINDOWS = os.name == "nt"
 
 
@@ -41,6 +43,20 @@ def parse_args(argv):
     if args.website_port == args.visitor_port:
         p.error("the website and the visitor application need different ports")
     return args
+
+
+def check_environment():
+    """-> None when this interpreter can import the required modules, otherwise a message naming what it cannot."""
+    missing = []
+    for name in REQUIRED_MODULES:
+        try:
+            importlib.import_module(name)
+        except ImportError as error:
+            missing.append(f"{name} ({error})")
+    if not missing:
+        return None
+    return (f"Cannot start: {sys.executable} cannot import {', '.join(missing)}.\n"
+            "Run the launcher with the project's environment, from the repository root:\n  .venv/bin/python run_local.py")
 
 
 def check_ports(website_port, visitor_port):
@@ -114,6 +130,10 @@ def wait_until_up(name, port, proc, timeout=STARTUP_TIMEOUT_S):
 
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    problem = check_environment()
+    if problem:
+        print(problem, file=sys.stderr)
+        return 1
     for path in (HOME, VISITOR_LAUNCHER):
         if not path.is_file():
             print(f"Missing file: {path}. Run this command from a complete copy of the repository.", file=sys.stderr)
