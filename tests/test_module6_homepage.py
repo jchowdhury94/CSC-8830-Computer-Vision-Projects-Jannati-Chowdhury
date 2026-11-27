@@ -5,7 +5,7 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 PAGE = Path(__file__).resolve().parents[1] / "Pages" / "app_module6.py"
-LABELS = ["View My Experiments & Results", "Track Motion in Your Own Video", "Reconstruct an Object from Your Own Images"]
+LABELS = ["View My Experiments & Results", "Optical Flow and Motion Tracking", "Structure from Motion Reconstruction"]
 HOME_KEYS = ["m6_open_results", "m6_open_a_visitor", "m6_open_b_visitor"]
 RESULT_LABELS = ["**Optical Flow and Motion Tracking**  \n(Part A)", "**Structure from Motion Reconstruction**  \n(Part B)"]
 

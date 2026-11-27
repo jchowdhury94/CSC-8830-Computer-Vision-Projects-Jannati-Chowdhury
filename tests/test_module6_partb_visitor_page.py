@@ -19,7 +19,7 @@ from Modules.Module_6.Part_B import sfm_pipeline as sfm  # noqa: E402
 from Modules.Module_6.Part_B import visitor_reconstruction as vr  # noqa: E402
 
 PAGE = ROOT / "Pages" / "app_module6.py"
-TITLE = "Reconstruct an Object from Your Own Images"
+TITLE = "Structure from Motion Reconstruction"
 STEP = {1: "Step 1 — Upload Your Images", 2: "Step 2 — Select Corresponding Points",
         3: "Step 3 — Enter Object Dimensions", 4: "Step 4 — Reconstruct Your Object", 5: "Step 5 — View Results"}
 FILES, TRUTH = planar_views()

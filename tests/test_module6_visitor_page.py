@@ -87,7 +87,7 @@ class VisitorPageTests(unittest.TestCase):
 
     def test_empty_page_shows_only_step_one(self):
         app = visitor_app()
-        self.assertEqual([t.value for t in app.title], ["Track Motion in Your Own Video"])
+        self.assertEqual([t.value for t in app.title], ["Optical Flow and Motion Tracking"])
         self.assertIn("MODULE 6 — PART A", [m.value for m in app.markdown])
         self.assertEqual(self.headers(app), ["Step 1 — Upload Your Video"])
         self.assertEqual([e.label for e in app.expander], ["Video Recording Instructions"])

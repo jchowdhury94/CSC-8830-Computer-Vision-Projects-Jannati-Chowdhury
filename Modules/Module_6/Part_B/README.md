@@ -42,7 +42,7 @@ the nearly planar object and point localization limit accuracy.
 
 ## Visitor workflow
 
-**Reconstruct an Object from Your Own Images** on the Module 6 page runs five steps:
+**Structure from Motion Reconstruction** on the Module 6 page runs five steps:
 
 1. Upload exactly four photographs: JPG, PNG or HEIC/HEIF, up to 25 MB each, 100 MB in total and 64 megapixels each.
 2. Select the four corners in the first photograph, find the corresponding points automatically, then verify or

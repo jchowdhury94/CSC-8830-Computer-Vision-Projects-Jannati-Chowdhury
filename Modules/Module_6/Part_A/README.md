@@ -77,7 +77,7 @@ saved and a new selection can give different features. It needs an OpenCV build 
 
 ## Visitor workflow
 
-**Track Motion in Your Own Video** on the Module 6 page runs four steps: upload a video, select the object with
+**Optical Flow and Motion Tracking** on the Module 6 page runs four steps: upload a video, select the object with
 a rectangle, run tracking, and view the results. The default tracking settings match the experiment and can be
 changed under **Advanced Settings (Optional)**. Downloads are the annotated video (MP4), tracking data (CSV) and
 summary (JSON); **Reset All** starts over.

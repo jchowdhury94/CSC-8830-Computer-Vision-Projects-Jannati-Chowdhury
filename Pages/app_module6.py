@@ -1708,7 +1708,7 @@ def part_a_visitor_page():
     with st.container(key="m6v_head"):
         with st.container(key="m6v_label"):
             st.markdown("MODULE 6 — PART A")
-        st.title("Track Motion in Your Own Video", anchor=False)
+        st.title("Optical Flow and Motion Tracking", anchor=False)
     # One continuous page: each step stays rendered once its prerequisites exist. The uploader runs first
     # because a removed or replaced video resets everything that depends on it within this same run.
     current = 1
@@ -2386,7 +2386,7 @@ def part_b_visitor_page():
     with st.container(key="m6b_head"):
         with st.container(key="m6b_label"):
             st.markdown("MODULE 6 — PART B")
-        st.title("Reconstruct an Object from Your Own Images", anchor=False)
+        st.title("Structure from Motion Reconstruction", anchor=False)
     # One continuous page: each step stays rendered once its prerequisites exist. The uploader runs first
     # because a removed or replaced photo resets everything that depends on it within this same run.
     current = 1
@@ -2422,8 +2422,8 @@ section = st.session_state["module6_section"]
 # breadcrumb levels below Home for every view: (label, section); the last is the current page, the one before it is the Back target
 _M6, _RESULTS = ("Module 6", "home"), ("My Experiments & Results", "my_results")
 CRUMBS = {"home": (_M6,), "my_results": (_M6, _RESULTS),
-          "a_visitor": (_M6, ("Track Motion in Your Own Video", "a_visitor")),
-          "b_visitor": (_M6, ("Reconstruct an Object from Your Own Images", "b_visitor")),
+          "a_visitor": (_M6, ("Optical Flow and Motion Tracking", "a_visitor")),
+          "b_visitor": (_M6, ("Structure from Motion Reconstruction", "b_visitor")),
           "a_results": (_M6, _RESULTS, ("Optical Flow and Motion Tracking", "a_results")),
           "b_results": (_M6, _RESULTS, ("Structure from Motion Reconstruction", "b_results"))}
 if section not in CRUMBS:  # e.g. a session left on a removed selection page
@@ -2437,8 +2437,8 @@ st.session_state["m6_shown_section"] = section
 if section == "home":
     home_layout(HOME_TITLE, (
         ("View My Experiments & Results", "m6_open_results", "my_results"),
-        ("Track Motion in Your Own Video", "m6_open_a_visitor", "a_visitor"),
-        ("Reconstruct an Object from Your Own Images", "m6_open_b_visitor", "b_visitor")), subtitle=HOME_SUBTITLE)
+        ("Optical Flow and Motion Tracking", "m6_open_a_visitor", "a_visitor"),
+        ("Structure from Motion Reconstruction", "m6_open_b_visitor", "b_visitor")), subtitle=HOME_SUBTITLE)
 elif section == "my_results":
     home_layout("My Experiments & Results", (
         (part_label("Optical Flow and Motion Tracking", "A"), "m6_res_a", "a_results"),

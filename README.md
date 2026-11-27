@@ -103,7 +103,7 @@ Module 4 detects the boundary of a person in an RGB image and in a thermal (fals
 
 `Pages/app_module6.py` presents the saved experiments and runs the visitor workflows; the scripts and results are in `Modules/Module_6/`.
 
-**Pages.** The Module 6 homepage has three buttons: **View My Experiments & Results**, **Track Motion in Your Own Video** and **Reconstruct an Object from Your Own Images**. The results selection page opens **Optical Flow and Motion Tracking** (Part A) and **Structure from Motion Reconstruction** (Part B).
+**Pages.** The Module 6 homepage has three buttons: **View My Experiments & Results**, **Optical Flow and Motion Tracking** and **Structure from Motion Reconstruction**. The results selection page opens **Optical Flow and Motion Tracking** (Part A) and **Structure from Motion Reconstruction** (Part B).
 
 Open it from the home page of the website or directly at [/module-6](https://jannati-chowdhury-computer-vision-projects.streamlit.app/module-6).
 
